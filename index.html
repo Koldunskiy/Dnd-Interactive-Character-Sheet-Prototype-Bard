@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Аурелия — лист персонажа</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="./styles/variables.css" />
+  <link rel="stylesheet" href="./styles/base.css" />
+  <link rel="stylesheet" href="./styles/layout.css" />
+  <link rel="stylesheet" href="./styles/tabs.css" />
+  <link rel="stylesheet" href="./styles/cards.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="topbar card">
+      <div class="brand">
+        <div class="sigil" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M12 2l2.5 5.5L20 10l-4 4 .9 6L12 17.8 7.1 20 8 14 4 10l5.5-2.5L12 2Z"/>
+            <path d="M12 6v8"/>
+            <path d="M9 11h6"/>
+          </svg>
+        </div>
+
+        <div>
+          <div class="eyebrow">Интерактивный лист персонажа</div>
+          <h1 id="heroName">Аурелия</h1>
+          <div class="subtitle" id="heroSubtitle">Тифлинг · Бард · Коллегия Мечей</div>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="btn" type="button" data-action="short-rest">Short Rest</button>
+        <button class="btn" type="button" data-action="long-rest">Long Rest</button>
+      </div>
+    </header>
+
+    <main class="app-layout">
+      <aside class="sidebar">
+        <section class="card section">
+          <h2>Портрет</h2>
+
+          <div class="portrait-stage" id="portraitStage">
+            <button class="portrait-toggle-btn" id="togglePortraitMotionBtn" type="button" aria-label="Пауза или запуск анимации">
+              ❚❚
+            </button>
+          </div>
+
+          <div class="portrait-controls">
+            <label class="btn file-btn" for="portraitFileInput">Выбрать файл</label>
+            <input
+              id="portraitFileInput"
+              class="file-input-hidden"
+              type="file"
+              accept=".png,.jpg,.jpeg,.gif,.mp4,.webm,image/png,image/jpeg,image/gif,video/mp4,video/webm"
+            />
+            <button class="btn" id="resetPortraitBtn" type="button">Сбросить</button>
+          </div>
+
+          <!-- <div class="hint">
+            Можно выбрать локальный PNG, JPG, GIF, MP4 или WebM. После обновления страницы выбранный локальный файл не сохраняется, его нужно будет выбрать заново.
+          </div> -->
+        </section>
+
+        <section class="card section">
+          <h2>Быстрые параметры</h2>
+          <div class="quick-stats" id="quickStats"></div>
+        </section>
+
+        <section class="card section">
+          <h2>Кратко</h2>
+          <p class="panel-text" id="sidebarSummary"></p>
+        </section>
+      </aside>
+
+      <section class="content">
+        <nav class="tabs card" aria-label="Разделы листа персонажа">
+          <button class="tab-btn is-active" data-tab="profile" type="button">Профиль</button>
+          <button class="tab-btn" data-tab="melee" type="button">Бой</button>
+          <button class="tab-btn" data-tab="spells" type="button">Заклинания</button>
+          <button class="tab-btn" data-tab="inventory" type="button">Инвентарь</button>
+          <button class="tab-btn" data-tab="lore" type="button">Лор</button>
+        </nav>
+
+        <section class="tab-panels">
+          <article class="tab-panel is-active card section" data-panel="profile">
+            <div id="profilePanel"></div>
+          </article>
+
+          <article class="tab-panel card section" data-panel="melee">
+            <div id="meleePanel"></div>
+          </article>
+
+          <article class="tab-panel card section" data-panel="spells">
+            <div id="spellsPanel"></div>
+          </article>
+          
+          <article class="tab-panel card section" data-panel="inventory">
+            <div id="inventoryPanel"></div>
+          </article>
+
+          <article class="tab-panel card section" data-panel="lore">
+            <div id="lorePanel"></div>
+          </article>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="./scripts/app.js"></script>
+</body>
+</html>
