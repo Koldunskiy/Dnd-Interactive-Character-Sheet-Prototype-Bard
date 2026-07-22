@@ -494,7 +494,8 @@ function renderJackOfAllTradesToggle(feature, character) {
     return "";
   }
 
-  const enabled = Boolean(character?.ui?.jackOfAllTradesEnabled);
+  const disabled = Boolean(character?.ui?.rulesOverrides?.disableJackOfAllTrades);
+  const enabled = !disabled;
 
   return `
     <div class="feature-toggle-row">
@@ -541,37 +542,6 @@ function renderClassFeatures(features, character) {
       </div>
     </section>
   `;
-}
-
-function getJackOfAllTradesBonus(character) {
-  const enabled = Boolean(character?.ui?.jackOfAllTradesEnabled);
-  const proficiencyBonus = Number(character?.profile?.proficiencyBonus || 0);
-
-  if (!enabled) {
-    return 0;
-  }
-
-  return Math.floor(proficiencyBonus / 2);
-}
-
-function getSkillValue({ character, skill, abilityMod }) {
-  const proficiencyBonus = Number(character?.profile?.proficiencyBonus || 0);
-  const jackOfAllTradesBonus = getJackOfAllTradesBonus(character);
-
-  if (skill?.expertise) {
-    return abilityMod + proficiencyBonus * 2;
-  }
-
-  if (skill?.proficient) {
-    return abilityMod + proficiencyBonus;
-  }
-
-  return abilityMod + jackOfAllTradesBonus;
-}
-
-function getAbilityCheckValue(character, abilityId, abilityMod) {
-  const jackOfAllTradesBonus = getJackOfAllTradesBonus(character);
-  return abilityMod + jackOfAllTradesBonus;
 }
 
 export function renderProfile(root, character, derived) {
