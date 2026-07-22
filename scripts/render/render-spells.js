@@ -7,6 +7,16 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function formatSigned(value) {
+  const number = Number(value);
+
+  if (Number.isNaN(number)) {
+    return "—";
+  }
+
+  return number >= 0 ? `+${number}` : `${number}`;
+}
+
 function renderSpellMeta(spell) {
   const parts = [];
 
@@ -142,6 +152,16 @@ function sortSpells(spells) {
   });
 }
 
+function renderSlotEntry(slot) {
+  return `
+    <div class="resource-card">
+      <div class="resource-card-label">${escapeHtml(`${slot.level} круг`)}</div>
+      <div class="resource-card-value">${escapeHtml(slot.available)}/${escapeHtml(slot.max)}</div>
+      <div class="resource-card-subtle">потрачено: ${escapeHtml(slot.used)}</div>
+    </div>
+  `;
+}
+
 export function renderSpells(root, character, derived) {
   if (!root) return;
 
@@ -151,20 +171,9 @@ export function renderSpells(root, character, derived) {
 
   const cantrips = sortSpells(spells.filter((spell) => spell.level === 0));
   const leveledSpells = sortSpells(spells.filter((spell) => spell.level > 0));
-
-  const slotEntries = Object.entries(spellcasting.slots ?? {})
-    .sort((a, b) => Number(a[0]) - Number(b[0]))
-    .map(([slotLevel, slotData]) => {
-      const available = Math.max((slotData.max ?? 0) - (slotData.used ?? 0), 0);
-      return `
-        <div class="resource-card">
-          <div class="resource-card-label">${escapeHtml(`${slotLevel} круг`)}</div>
-          <div class="resource-card-value">${available}/${escapeHtml(slotData.max ?? 0)}</div>
-          <div class="resource-card-subtle">потрачено: ${escapeHtml(slotData.used ?? 0)}</div>
-        </div>
-      `;
-    })
-    .join("");
+  const slotEntries = Array.isArray(derived.spellSlots)
+    ? derived.spellSlots.map(renderSlotEntry).join("")
+    : "";
 
   root.innerHTML = `
     <section class="panel-section panel-section--spells">
@@ -174,13 +183,15 @@ export function renderSpells(root, character, derived) {
           <p class="section-subtitle">
             Харизма — базовая характеристика. Сл спасброска: ${escapeHtml(
               derived.spellSaveDc ?? "—"
-            )}, атака заклинанием: ${escapeHtml(derived.spellAttackBonus ?? "—")}.
+            )}, атака заклинанием: ${escapeHtml(
+              formatSigned(derived.spellAttackBonus)
+            )}.
           </p>
         </div>
       </div>
 
       <div class="resource-grid">
-        ${slotEntries}
+        ${slotEntries || `<p class="empty-copy">Нет ячеек заклинаний.</p>`}
       </div>
 
       ${

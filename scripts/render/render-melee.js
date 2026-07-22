@@ -1,3 +1,9 @@
+const EMPTY_COMBAT_CARDS = Object.freeze({
+  weapons: [],
+  features: [],
+  spells: [],
+});
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -7,25 +13,32 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
 function renderPipTrack({ total, active, action, itemData = {} }) {
+  const safeTotal = Math.max(0, Number(total || 0));
+  const safeActive = clamp(Number(active || 0), 0, safeTotal);
+
   return `
     <div class="resource-pip-track">
-      ${Array.from({ length: total }, (_, index) => {
+      ${Array.from({ length: safeTotal }, (_, index) => {
         const pipIndex = index + 1;
-        const isActive = pipIndex <= active;
+        const isActive = pipIndex <= safeActive;
 
         const attrs = Object.entries(itemData)
-          .map(([key, value]) => `data-${key}="${String(value)}"`)
+          .map(([key, value]) => `data-${key}="${escapeHtml(String(value))}"`)
           .join(" ");
 
         return `
           <button
             type="button"
             class="resource-pip ${isActive ? "resource-pip--active" : ""}"
-            data-action="${action}"
+            data-action="${escapeHtml(action)}"
             data-charge-index="${pipIndex}"
             ${attrs}
-            aria-label="Установить значение ${pipIndex} из ${total}"
+            aria-label="Установить значение ${pipIndex} из ${safeTotal}"
             aria-pressed="${isActive ? "true" : "false"}"
           ></button>
         `;
@@ -36,8 +49,8 @@ function renderPipTrack({ total, active, action, itemData = {} }) {
 
 function renderSlotPips(slot) {
   const level = Number(slot?.level || 0);
-  const max = Number(slot?.max || 0);
-  const available = Number(slot?.available || 0);
+  const max = Math.max(0, Number(slot?.max || 0));
+  const available = clamp(Number(slot?.available || 0), 0, max);
 
   return `
     <div class="resource-row">
@@ -69,8 +82,8 @@ function renderSlotPips(slot) {
 }
 
 function renderBardicPips(bardic) {
-  const total = Number(bardic?.max || 0);
-  const current = Number(bardic?.current || 0);
+  const total = Math.max(0, Number(bardic?.max || 0));
+  const current = clamp(Number(bardic?.current || 0), 0, total);
 
   return `
     <div class="resource-row">
@@ -82,22 +95,22 @@ function renderBardicPips(bardic) {
       ${renderPipTrack({
         total,
         active: current,
-        action: "bardic-set-current"
+        action: "bardic-set-current",
       })}
     </div>
   `;
 }
 
 function renderTurnTracker(derived) {
-  const turn = derived.turnTracker ?? {
+  const turn = derived?.turnTracker ?? {
     turnNumber: 1,
-    items: []
+    items: [],
   };
 
   const actionMap = {
     actionUsed: "turn-toggle-action",
     bonusActionUsed: "turn-toggle-bonus-action",
-    reactionUsed: "turn-toggle-reaction"
+    reactionUsed: "turn-toggle-reaction",
   };
 
   const renderTurnPill = (item) => `
@@ -122,7 +135,7 @@ function renderTurnTracker(derived) {
             Отмечай действие, бонусное действие и реакцию прямо во время боя.
           </p>
         </div>
-        <div class="turn-round-indicator">Ход ${Number(turn.turnNumber || 1)}</div>
+        <div class="turn-round-indicator">Ход ${Math.max(1, Number(turn.turnNumber || 1))}</div>
       </div>
 
       <div class="turn-tracker">
@@ -140,14 +153,16 @@ function renderTurnTracker(derived) {
 }
 
 function renderHpCard(state, derived) {
-  const maxHp = Number(derived.maxHitPoints ?? derived.maxHp ?? 0);
-  const currentHp = Number(state.combat?.hp?.current || 0);
-  const tempHp = Number(state.combat?.hp?.temp || 0);
-  const hpAdjustAmount = Number(state.ui?.hpAdjustAmount || 0);
+  const maxHp = Math.max(0, Number(derived?.maxHitPoints ?? derived?.maxHp ?? 0));
+  const currentHp = clamp(Number(state?.combat?.hp?.current || 0), 0, maxHp || 0);
+  const tempHp = Math.max(0, Number(state?.combat?.hp?.temp || 0));
+  const hpAdjustAmount = Math.max(0, Number(state?.ui?.hpAdjustAmount || 0));
 
   const hpPercent = maxHp > 0 ? Math.round((currentHp / maxHp) * 100) : 0;
-  const isCritical = hpPercent <= 25;
-  const isWounded = hpPercent > 25 && hpPercent <= 50;
+  const safeHpPercent = clamp(hpPercent, 0, 100);
+
+  const isCritical = safeHpPercent <= 25;
+  const isWounded = safeHpPercent > 25 && safeHpPercent <= 50;
 
   return `
     <article class="resource-card resource-card--hp ${isCritical ? "resource-card--critical" : ""} ${isWounded ? "resource-card--wounded" : ""}">
@@ -164,7 +179,7 @@ function renderHpCard(state, derived) {
       </div>
 
       <div class="hp-bar" aria-hidden="true">
-        <div class="hp-bar-fill" style="width: ${hpPercent}%"></div>
+        <div class="hp-bar-fill" style="width: ${safeHpPercent}%"></div>
       </div>
 
       <div class="resource-row resource-row--hp-meta">
@@ -213,9 +228,9 @@ function renderHpCard(state, derived) {
 }
 
 function renderCombatResources(state, derived) {
-  const concentration = state.combat?.concentration || "";
-  const slots = Array.isArray(derived.spellSlots) ? derived.spellSlots : [];
-  const bardic = derived.bardicInspiration || null;
+  const concentration = state?.combat?.concentration || "";
+  const slots = Array.isArray(derived?.spellSlots) ? derived.spellSlots : [];
+  const bardic = derived?.bardicInspiration || null;
 
   return `
     <section class="panel-section">
@@ -251,7 +266,7 @@ function renderCombatResources(state, derived) {
               <div class="eyebrow">Класс</div>
               <h3 class="resource-card-title">Бардское вдохновение</h3>
             </div>
-            <div class="resource-card-subtle">${escapeHtml(derived.bardicInspiration?.dice || "")}</div>
+            <div class="resource-card-subtle">${escapeHtml(derived?.bardicInspiration?.dice || "")}</div>
           </div>
 
           <div class="resource-stack">
@@ -304,11 +319,11 @@ function renderCardActions(card) {
       </div>
     `;
   }
-  
+
   if (card.kind === "spell") {
-    const actionType = card.castTime?.toLowerCase().includes("бонусное действие")
-      ? "bonus"
-      : "action";
+    const isBonusAction = String(card.castTime || "")
+      .toLowerCase()
+      .includes("бонусное действие");
 
     const slotLevel = Number(card.level || 0);
     const attrs = [
@@ -316,7 +331,7 @@ function renderCardActions(card) {
       `data-spell-id="${escapeHtml(card.id || "")}"`,
       `data-spell-level="${slotLevel}"`,
       `data-cast-time="${escapeHtml(card.castTime || "")}"`,
-      card.concentration ? `data-sets-concentration="true"` : ""
+      card.concentration ? `data-sets-concentration="true"` : "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -324,13 +339,13 @@ function renderCardActions(card) {
     return `
       <div class="combat-card-actions">
         <button type="button" class="btn btn--utility" ${attrs}>
-          ${actionType === "bonus" ? "Сотворить (бонусное)" : "Сотворить"}
+          ${isBonusAction ? "Сотворить (бонусное)" : "Сотворить"}
         </button>
       </div>
     `;
   }
 
-  if (card.kind === "feature" && (card.title || "").toLowerCase().includes("росчерк")) {
+  if (card.kind === "feature" && String(card.title || "").toLowerCase().includes("росчерк")) {
     return `
       <div class="combat-card-actions">
         <button
@@ -350,12 +365,22 @@ function renderCardActions(card) {
   return "";
 }
 
+function renderTags(tags = []) {
+  if (!tags.length) {
+    return "";
+  }
+
+  return `
+    <div class="skill-badges skill-badges--spaced">
+      ${tags
+        .map((tag) => `<span class="skill-badge skill-badge--base">${escapeHtml(tag)}</span>`)
+        .join("")}
+    </div>
+  `;
+}
+
 function renderCombatActionCard(card) {
-  const tagsMarkup = (card.tags || [])
-    .map(
-      (tag) => `<span class="skill-badge skill-badge--base">${escapeHtml(tag)}</span>`
-    )
-    .join("");
+  const tagsMarkup = renderTags(card.tags || []);
 
   if (card.kind === "weapon") {
     return `
@@ -366,7 +391,7 @@ function renderCombatActionCard(card) {
           Урон: <strong>${escapeHtml(card.damage || "—")}</strong><br>
           Тип урона: ${escapeHtml(card.damageType || "—")}<br>
           ${card.notes ? `${escapeHtml(card.notes)}<br>` : ""}
-          ${tagsMarkup ? `<div class="skill-badges" style="margin-top: 10px;">${tagsMarkup}</div>` : ""}
+          ${tagsMarkup}
         </div>
         ${renderCardActions(card)}
       </div>
@@ -380,7 +405,7 @@ function renderCombatActionCard(card) {
         <div class="info-card-text">
           ${card.cost ? `Стоимость: <strong>${escapeHtml(card.cost)}</strong><br>` : ""}
           ${card.notes ? `${escapeHtml(card.notes)}<br>` : ""}
-          ${tagsMarkup ? `<div class="skill-badges" style="margin-top: 10px;">${tagsMarkup}</div>` : ""}
+          ${tagsMarkup}
         </div>
         ${renderCardActions(card)}
       </div>
@@ -429,152 +454,11 @@ function renderCombatActionCard(card) {
               : ""
         }
         ${card.notes ? `${escapeHtml(card.notes)}<br>` : ""}
-        ${tagsMarkup ? `<div class="skill-badges" style="margin-top: 10px;">${tagsMarkup}</div>` : ""}
+        ${tagsMarkup}
       </div>
       ${renderCardActions(card)}
     </div>
   `;
-}
-
-function formatModifier(value) {
-  const number = Number(value || 0);
-  return number >= 0 ? `+${number}` : String(number);
-}
-
-function capitalizeFirst(value) {
-  const text = String(value || "");
-  return text ? text.charAt(0).toUpperCase() + text.slice(1) : "";
-}
-
-function formatSpellEffectValue(effect, spellcastingModifier) {
-  if (!effect) {
-    return null;
-  }
-
-  const parts = [];
-
-  if (effect.dice) {
-    parts.push(effect.dice);
-  }
-
-  if (effect.modifier === "spellcasting") {
-    parts.push(formatModifier(spellcastingModifier));
-  } else if (typeof effect.modifier === "number") {
-    parts.push(formatModifier(effect.modifier));
-  }
-
-  if (effect.type) {
-    parts.push(effect.type);
-  }
-
-  return parts.join(" ").trim() || null;
-}
-
-function buildCombatCards(state, derived = {}) {
-  const cards = [];
-
-  const weapons = Array.isArray(state.combat?.weapons) ? state.combat.weapons : [];
-  const flourishes = Array.isArray(state.combat?.flourishes) ? state.combat.flourishes : [];
-  const spells = Array.isArray(state.spellcasting?.spells) ? state.spellcasting.spells : [];
-
-  const fightingStyle = state.combat?.fightingStyle ?? null;
-  const spellSaveDc = Number(
-    derived.spellStats?.spellSaveDc ?? derived.spellSaveDc ?? 0
-  );
-  const spellAttackBonusValue = Number(
-    derived.spellStats?.spellAttackBonus ?? derived.spellAttackBonus ?? 0
-  );
-  const spellAttackBonus =
-    spellAttackBonusValue !== 0 ? formatModifier(spellAttackBonusValue) : null;
-
-  const spellcastingModifier = Number(derived.abilityModifiers?.charisma || 0);
-
-  for (const weapon of weapons) {
-    const weaponDamage = weapon.damageDice ?? weapon.damage ?? "—";
-    const normalizedName = String(weapon.name || "").toLowerCase();
-
-    const shouldApplyDuelingBonus =
-      fightingStyle?.name === "Дуэлянт" && normalizedName !== "кинжал";
-
-    const damage = shouldApplyDuelingBonus
-      ? `${weaponDamage} ${derived.formattedWeaponDamageBonus ?? ""}`.trim()
-      : `${weaponDamage}${weapon.attackStat === "dexterity" ? " + Ловк" : ""}`;
-
-    cards.push({
-      id: weapon.id || `weapon-${normalizedName.replaceAll(" ", "-")}`,
-      kind: "weapon",
-      title: weapon.name || "Оружие",
-      attack: derived.formattedWeaponAttackBonus ?? "—",
-      damage,
-      damageType: weapon.damageType || "—",
-      tags: weapon.properties || [],
-      notes: weapon.notes || ""
-    });
-  }
-
-  for (const flourish of flourishes) {
-    cards.push({
-      id: `flourish-${String(flourish.name || "")
-        .toLowerCase()
-        .replaceAll(" ", "-")}`,
-      kind: "feature",
-      title: flourish.name || "Росчерк",
-      cost: flourish.cost || "",
-      notes: flourish.text || "",
-      tags: ["Росчерк клинка"]
-    });
-  }
-
-  for (const spell of spells) {
-    if (spell.locked) {
-      continue;
-    }
-
-    if (!spell.combatRole || spell.combatRole === "utility") {
-      continue;
-    }
-
-    const damage = formatSpellEffectValue(spell.damage, spellcastingModifier);
-    const healing = formatSpellEffectValue(spell.healing, spellcastingModifier);
-
-    const save =
-      spell.save ||
-      (spell.saveAbility && spellSaveDc
-        ? `${capitalizeFirst(spell.saveAbility)} ${spellSaveDc}`
-        : null);
-
-    cards.push({
-      id: `spell-${String(spell.originalName || spell.name || "spell")
-        .toLowerCase()
-        .replaceAll(" ", "-")}`,
-      kind: "spell",
-      title: spell.name || "Заклинание",
-      level: spell.level,
-      attack: spell.attackBonus || spellAttackBonus,
-      save,
-      damage: damage || healing,
-      concentration: Boolean(spell.concentration),
-      castTime: spell.castTime || "",
-      range: spell.range || "",
-      duration: spell.duration || "",
-      tags: [spell.sourceLabel, spell.school, spell.combatRole].filter(Boolean),
-      notes: spell.vibe || spell.description || spell.notes || ""
-    });
-  }
-
-  return {
-    weapons: cards.filter((card) => card.kind === "weapon"),
-    features: cards.filter((card) => card.kind === "feature"),
-    spells: cards.filter((card) => card.kind === "spell")
-  };
-}
-
-function groupCombatActionCards(cards) {
-  return {
-    weapons: cards.filter((card) => card.kind === "weapon"),
-    features: cards.filter((card) => card.kind === "feature"),
-    spells: cards.filter((card) => card.kind === "spell")
-  };
 }
 
 function renderCombatActionGroup(title, cards) {
@@ -592,13 +476,15 @@ function renderCombatActionGroup(title, cards) {
   `;
 }
 
-function renderGroupedCombatActionCards(cards) {
-  const groups = groupCombatActionCards(cards);
+function renderGroupedCombatActionCards(cards = []) {
+  const weapons = cards.filter((card) => card.kind === "weapon");
+  const features = cards.filter((card) => card.kind === "feature");
+  const spells = cards.filter((card) => card.kind === "spell");
 
   const markup = [
-    renderCombatActionGroup("Оружие", groups.weapons),
-    renderCombatActionGroup("Способности", groups.features),
-    renderCombatActionGroup("Заклинания", groups.spells)
+    renderCombatActionGroup("Оружие", weapons),
+    renderCombatActionGroup("Способности", features),
+    renderCombatActionGroup("Заклинания", spells),
   ]
     .filter(Boolean)
     .join("");
@@ -623,11 +509,7 @@ export function renderMeleePanel(state, derived) {
     return;
   }
 
-  const combatCards = derived.combatCards || {
-    weapons: [],
-    features: [],
-    spells: [],
-  };
+  const combatCards = derived?.combatCards ?? EMPTY_COMBAT_CARDS;
 
   meleePanel.innerHTML = `
     ${renderTurnTracker(derived)}
@@ -635,7 +517,7 @@ export function renderMeleePanel(state, derived) {
     ${renderGroupedCombatActionCards([
       ...(combatCards.weapons || []),
       ...(combatCards.features || []),
-      ...(combatCards.spells || [])
+      ...(combatCards.spells || []),
     ])}
   `;
 }
