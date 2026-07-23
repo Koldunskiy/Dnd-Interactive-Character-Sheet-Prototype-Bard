@@ -1,0 +1,196 @@
+.resource-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.info-card .resource-controls {
+  margin-top: 0.15rem;
+}
+
+.panel-section > .info-grid + .feature-list,
+.panel-section > .feature-card + .feature-list,
+.panel-section > .info-grid + .feature-card,
+.panel-section > .feature-card + .info-grid {
+  margin-top: 1.25rem;
+}
+
+.feature-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.feature-toggle-label {
+  color: rgba(242, 232, 225, 0.72);
+  font-size: 0.82rem;
+  line-height: 1.2;
+}
+
+.portrait-stage,
+#portraitStage {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  min-height: 320px;
+  margin-top: 14px;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at 18% 16%, rgba(214, 174, 96, 0.16), transparent 28%),
+    radial-gradient(circle at 84% 12%, rgba(132, 26, 48, 0.24), transparent 34%),
+    linear-gradient(180deg, rgba(37, 23, 28, 0.96), rgba(17, 13, 16, 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 -56px 80px rgba(0, 0, 0, 0.24),
+    0 18px 36px rgba(0, 0, 0, 0.18);
+}
+
+.portrait-stage::before,
+#portraitStage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at center, transparent 52%, rgba(7, 6, 8, 0.18) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 24%);
+}
+
+.portrait-stage::after,
+#portraitStage::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 32%;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(10, 8, 10, 0.62));
+}
+
+.portrait-media,
+.portrait-poster {
+  position: relative;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 18%;
+  filter:
+    saturate(1.03)
+    contrast(1.04)
+    brightness(0.96);
+  transform: scale(1.015);
+}
+
+.portrait-media--video {
+  background: rgba(10, 8, 10, 0.84);
+}
+
+.portrait-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.portrait-controls .btn,
+.portrait-controls .file-btn {
+  min-height: 40px;
+}
+
+.portrait-toggle-btn {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(18, 15, 19, 0.68);
+  color: rgba(248, 246, 242, 0.92);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition:
+    transform 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.portrait-toggle-btn:hover {
+  background: rgba(27, 22, 26, 0.82);
+  border-color: rgba(214, 174, 96, 0.28);
+  color: #ffffff;
+}
+
+.portrait-toggle-btn:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.portrait-toggle-btn:focus-visible {
+  outline: none;
+  border-color: rgba(214, 174, 96, 0.42);
+  box-shadow:
+    0 0 0 3px rgba(214, 174, 96, 0.14),
+    0 10px 24px rgba(0, 0, 0, 0.24);
+}
+
+.portrait-toggle-btn__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  font-size: 0.72rem;
+  line-height: 1;
+  transform: translateX(0);
+}
+
+.portrait-toggle-btn.is-paused .portrait-toggle-btn__icon {
+  font-size: 0.8rem;
+  transform: translateX(1px);
+}
+
+.portrait-toggle-btn.is-disabled,
+.portrait-toggle-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .portrait-stage,
+  #portraitStage {
+    min-height: 280px;
+    border-radius: 18px;
+  }
+
+  .portrait-toggle-btn {
+    right: 10px;
+    bottom: 10px;
+    width: 30px;
+    height: 30px;
+    min-height: 30px;
+  }
+}

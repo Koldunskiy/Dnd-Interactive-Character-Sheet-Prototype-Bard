@@ -30,6 +30,11 @@ export const character = {
       bonusActionUsed: false,
       reactionUsed: false,
       turnNumber: 1
+    },
+    spellLibrary: {
+      selectedLevel: "all",
+      selectionFilter: "all",
+      expandedSpellIds: []
     }
   },
 
@@ -293,225 +298,45 @@ export const character = {
     },
 
     notes:
-      "На 3 уровне бард знает 2 заговора и 6 заклинаний 1–2 круга. Часть магии Аурелии также приходит от наследия Гласии.",
+      "Модель ориентирована на Bard 2024: заговоры выбираются отдельно, заклинания 1+ круга готовятся из библиотеки.",
 
-    spells: [
-      {
-        name: "Звёздный огонёк",
-        originalName: "Dancing Lights",
-        source: "class",
-        sourceLabel: "Классовое",
-        level: 0,
-        school: "Воплощение",
-        castTime: "1 действие",
-        range: "18 м",
-        duration: "До 1 минуты",
-        concentration: true,
-        save: null,
-        attackBonus: null,
-        damage: null,
-        combatRole: "utility",
-        description:
-          "Создаёт до четырёх парящих огоньков, которыми можно подсветить сцену, отвлечь внимание или создать мистический визуальный акцент."
-      },
-      {
-        name: "Язвительная насмешка",
-        originalName: "Vicious Mockery",
-        source: "class",
-        sourceLabel: "Классовое",
-        level: 0,
-        school: "Очарование",
-        castTime: "1 действие",
-        range: "18 м",
-        duration: "Мгновенно",
-        concentration: false,
-        saveAbility: "wisdom",
-        damage: {
-          dice: "1d4",
-          type: "психический",
-          modifier: null
-        },
-        combatRole: "offense",
-        description: "Психический выпад, наносящий урон и накладывающий помеху на следующую атаку цели."
-      },
-      {
-        name: "Малая иллюзия",
-        originalName: "Minor Illusion",
+    cantripIds: [
+      "dancing-lights",
+      "vicious-mockery",
+      "minor-illusion"
+    ],
+
+    preparedSpellIds: [
+      "tashas-hideous-laughter",
+      "dissonant-whispers",
+      "cure-wounds",
+      "healing-word",
+      "speak-with-animals",
+      "mirror-image"
+    ],
+
+    grantedSpellIds: [
+      "minor-illusion",
+      "disguise-self"
+    ],
+
+    spellOverrides: {
+      "minor-illusion": {
         source: "racial",
         sourceLabel: "Расовое",
-        level: 0,
-        school: "Иллюзия",
-        castTime: "1 действие",
-        range: "9 м",
-        duration: "1 минута",
-        concentration: false,
-        save: null,
-        attackBonus: null,
-        damage: null,
-        combatRole: "utility",
-        description:
-          "Создаёт небольшой звук или статичный образ для отвлечения, ложного следа или театральной постановки.",
-        notes:
-          "Получено через наследие Малболга (Гласия). Базовая характеристика — Харизма."
+        notes: "Получено через наследие Малболга (Гласия). Базовая характеристика — Харизма."
       },
-      {
-        name: "Безудержный смех Таши",
-        originalName: "Tasha’s Hideous Laughter",
-        source: "class",
-        sourceLabel: "Классовое",
-        level: 1,
-        school: "Очарование",
-        castTime: "1 действие",
-        range: "9 м",
-        duration: "До 1 минуты",
-        concentration: true,
-        saveAbility: "wisdom",
-        combatRole: "control",
-        description: "Существо валится в приступе неудержимого смеха, теряя контроль над собой, если проваливает спасбросок."
-      },
-      {
-        name: "Диссонирующий шёпот",
-        originalName: "Dissonant Whispers",
-        source: "class",
-        sourceLabel: "Классовое",
-        level: 1,
-        school: "Очарование",
-        castTime: "1 действие",
-        range: "18 м",
-        duration: "Мгновенно",
-        concentration: false,
-        saveAbility: "wisdom",
-        damage: {
-          dice: "3d6",
-          type: "психический",
-          modifier: null
-        },
-        combatRole: "offense",
-        description: "Психический шёпот причиняет урон и заставляет цель в ужасе отступить реакцией.",
-        vibe: "Фирменная ментальная атака Аурелии."
-      },
-      {
-        name: "Исцеление ран",
-        originalName: "Cure Wounds",
-        source: "class",
-        sourceLabel: "Классовое",
-        level: 1,
-        school: "Вызов",
-        castTime: "1 действие",
-        range: "Касание",
-        duration: "Мгновенно",
-        concentration: false,
-        healing: {
-          dice: "1d8",
-          modifier: "spellcasting"
-        },
-        combatRole: "support",
-        description: "Восстанавливает хиты существу прикосновением."
-      },
-      {
-        name: "Исцеляющее слово",
-        originalName: "Healing Word",
-        source: "class",
-        sourceLabel: "Классовое",
-        level: 1,
-        school: "Вызов",
-        castTime: "1 бонусное действие",
-        range: "18 м",
-        duration: "Мгновенно",
-        concentration: false,
-        healing: {
-          dice: "1d4",
-          modifier: "spellcasting"
-        },
-        combatRole: "support",
-        description: "Короткая словесная формула быстро возвращает союзника в строй."
-      },
-      {
-        name: "Разговор с животными",
-        originalName: "Speak with Animals",
-        source: "class",
-        sourceLabel: "Классовое",
-        level: 1,
-        school: "Прорицание",
-        castTime: "1 действие",
-        range: "На себя",
-        duration: "10 минут",
-        concentration: false,
-        save: null,
-        attackBonus: null,
-        damage: null,
-        ritual: true,
-        combatRole: "utility",
-        description:
-          "Позволяет понимать и общаться с животными, что хорошо ложится на наблюдательную и сценическую натуру Аурелии."
-      },
-      {
-        name: "Маскировка",
-        originalName: "Disguise Self",
+      "disguise-self": {
         source: "racial",
         sourceLabel: "Расовое",
-        level: 1,
-        school: "Иллюзия",
-        castTime: "1 действие",
-        range: "На себя",
-        duration: "1 час",
-        concentration: false,
-        save: null,
-        attackBonus: null,
-        damage: null,
-        combatRole: "utility",
-        description:
-          "Меняет внешний облик Аурелии, позволяя скрыть рога, хвост и приметные черты либо принять иной образ.",
-        notes:
-          "Получено через наследие Малболга (Гласия), доступно с 3 уровня, 1 раз за продолжительный отдых.",
         availableFromLevel: 3,
         uses: {
           max: 1,
           current: 1,
           refresh: "Долгий отдых"
         }
-      },
-      {
-        name: "Зеркальное отражение",
-        originalName: "Mirror Image",
-        source: "class",
-        sourceLabel: "Классовое",
-        level: 2,
-        school: "Иллюзия",
-        castTime: "1 действие",
-        range: "На себя",
-        duration: "1 минута",
-        concentration: false,
-        combatRole: "defense",
-        description: "Создаёт иллюзорные копии Аурелии, превращая бой в спектакль отражений и затрудняя попадание по ней."
-      },
-      // {
-      //   name: "Невидимость",
-      //   originalName: "Invisibility",
-      //   source: "racial",
-      //   sourceLabel: "Расовое",
-      //   level: 2,
-      //   school: "Иллюзия",
-      //   castTime: "1 действие",
-      //   range: "Касание",
-      //   duration: "До 1 часа",
-      //   concentration: true,
-      //   save: null,
-      //   attackBonus: null,
-      //   damage: null,
-      //   description:
-      //     "Делает существо невидимым, пока эффект не прервётся действием, атакой или потерей концентрации.",
-      //   notes:
-      //     "Получено через наследие Малболга (Гласия), станет доступно с 5 уровня, 1 раз за продолжительный отдых.",
-      //   availableFromLevel: 5,
-      //   locked: true,
-      //   uses: {
-      //     max: 1,
-      //     current: 1,
-      //     refresh: "Долгий отдых"
-      //   }
-      // }
-    ]
+      }
+    }
   },
 
   skills: [

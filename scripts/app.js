@@ -10,6 +10,7 @@ import { renderMeleePanel } from "./render/render-melee.js";
 import { renderSpells } from "./render/render-spells.js";
 import { renderLorePanel } from "./render/render-lore.js";
 import { renderInventoryPanel } from "./render/render-inventory.js";
+import { renderSpellLibrary } from "./render/render-spell-library.js";
 
 import { createActionHandlers, STATELESS_ACTIONS } from "./actions.js";
 import {
@@ -166,11 +167,86 @@ function bindInventoryFields(root = document) {
   });
 }
 
+function bindSpellLibraryControls(root = document) {
+  root.querySelectorAll("[data-spell-library-level]").forEach((element) => {
+    if (element.dataset.bound === "true") {
+      return;
+    }
+
+    element.addEventListener("click", (event) => {
+      const target = event.currentTarget;
+      const handler = actionHandlers["spell-library-set-level"];
+
+      updateState((draft) => {
+        handler(draft, target);
+        return draft;
+      });
+    });
+
+    element.dataset.bound = "true";
+  });
+
+  root.querySelectorAll("[data-spell-library-selection]").forEach((element) => {
+    if (element.dataset.bound === "true") {
+      return;
+    }
+
+    element.addEventListener("click", (event) => {
+      const target = event.currentTarget;
+      const handler = actionHandlers["spell-library-set-selection-filter"];
+
+      updateState((draft) => {
+        handler(draft, target);
+        return draft;
+      });
+    });
+
+    element.dataset.bound = "true";
+  });
+
+  root.querySelectorAll("[data-spell-library-toggle]").forEach((element) => {
+    if (element.dataset.bound === "true") {
+      return;
+    }
+
+    element.addEventListener("click", (event) => {
+      const target = event.currentTarget;
+      const handler = actionHandlers["spell-library-toggle-expand"];
+
+      updateState((draft) => {
+        handler(draft, target);
+        return draft;
+      });
+    });
+
+    element.dataset.bound = "true";
+  });
+
+  root.querySelectorAll("[data-spell-library-select]").forEach((element) => {
+    if (element.dataset.bound === "true") {
+      return;
+    }
+
+    element.addEventListener("click", (event) => {
+      const target = event.currentTarget;
+      const handler = actionHandlers["spell-library-toggle-select"];
+
+      updateState((draft) => {
+        handler(draft, target);
+        return draft;
+      });
+    });
+
+    element.dataset.bound = "true";
+  });
+}
+
 function bindUi(root = document) {
   bindEditableFields(root);
   bindActionButtons(root);
   bindInventoryFields(root);
   bindEffectFields(root);
+  bindSpellLibraryControls(root);
 }
 
 function renderApp() {
@@ -179,6 +255,7 @@ function renderApp() {
 
   const profilePanel = document.getElementById("profilePanel");
   const spellsPanel = document.getElementById("spellsPanel");
+  const spellLibraryPanel = document.getElementById("spellLibraryPanel");
 
   renderHeader(state);
   renderPortraitMedia(state);
@@ -188,6 +265,7 @@ function renderApp() {
   renderProfile(profilePanel, state, derived);
   renderMeleePanel(state, derived);
   renderSpells(spellsPanel, state, derived);
+  renderSpellLibrary(spellLibraryPanel, state);
   renderInventoryPanel(state);
   renderLorePanel(state);
 

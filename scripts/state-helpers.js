@@ -7,6 +7,17 @@ export function ensureUiState(draft) {
     draft.ui = {};
   }
 
+  if (!draft.ui.spellLibrary || typeof draft.ui.spellLibrary !== "object") {
+    draft.ui.spellLibrary = {
+      selectedLevel: "all",
+      expandedSpellIds: [],
+    };
+  }
+
+  if (typeof draft.ui.hpAdjustAmount !== "number") {
+    draft.ui.hpAdjustAmount = 0;
+  }
+
   return draft.ui;
 }
 
@@ -71,6 +82,22 @@ export function ensureSpellcastingState(draft) {
 
   if (!draft.spellcasting.slotsUsed || typeof draft.spellcasting.slotsUsed !== "object") {
     draft.spellcasting.slotsUsed = {};
+  }
+
+  if (!Array.isArray(draft.spellcasting.cantripIds)) {
+    draft.spellcasting.cantripIds = [];
+  }
+
+  if (!Array.isArray(draft.spellcasting.preparedSpellIds)) {
+    draft.spellcasting.preparedSpellIds = [];
+  }
+
+  if (!Array.isArray(draft.spellcasting.grantedSpellIds)) {
+    draft.spellcasting.grantedSpellIds = [];
+  }
+
+  if (!draft.spellcasting.spellOverrides || typeof draft.spellcasting.spellOverrides !== "object") {
+    draft.spellcasting.spellOverrides = {};
   }
 
   return draft.spellcasting;

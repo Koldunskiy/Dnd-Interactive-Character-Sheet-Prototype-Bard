@@ -1,0 +1,62 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Inter", system-ui, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top center, rgba(132, 20, 42, 0.28), transparent 24%),
+    radial-gradient(circle at 82% 8%, rgba(214, 174, 96, 0.08), transparent 16%),
+    radial-gradient(circle at 18% 22%, rgba(92, 20, 32, 0.2), transparent 22%),
+    linear-gradient(180deg, #140a0d 0%, #090607 42%, #050304 100%);
+  background-attachment: fixed;
+}
+
+img,
+video,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  line-height: 1.05;
+  font-family: "Cormorant Garamond", serif;
+}
+
+h1 {
+  font-size: clamp(2.2rem, 4vw, 4.5rem);
+}
+
+h2 {
+  font-size: clamp(1.45rem, 2vw, 2.2rem);
+  margin-bottom: 12px;
+}
+
+p {
+  margin: 0;
+}

@@ -1,0 +1,94 @@
+.spell-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.spell-stat-label,
+.info-label,
+.hero-stat-label {
+  display: block;
+  margin-bottom: 4px;
+  opacity: 0.68;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(226, 213, 205, 0.58);
+}
+
+.spell-stat-value,
+.info-value,
+.hero-stat-value,
+.skill-value,
+.resource-card-value {
+  font-weight: 600;
+}
+
+.spell-stat-value,
+.spell-fact-value {
+  color: #fff9f4;
+}
+
+.spell-card-heading {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.spell-card-summary {
+  margin: 0;
+  color: rgba(242, 232, 225, 0.8);
+  font-size: 0.95rem;
+  line-height: 1.35;
+  font-style: italic;
+}
+
+.spell-facts {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.spell-fact {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 245, 239, 0.04), rgba(255, 245, 239, 0.02));
+  border: 1px solid rgba(214, 171, 146, 0.06);
+}
+
+.spell-fact-label {
+  margin: 0;
+  color: rgba(226, 213, 205, 0.58);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.spell-fact-value {
+  margin: 0;
+  font-size: 0.96rem;
+  line-height: 1.35;
+}
+
+.spell-body {
+  display: grid;
+  gap: 10px;
+}
+
+.spell-card-footer {
+  padding-top: 6px;
+  border-top: 1px solid rgba(214, 171, 146, 0.08);
+}
+
+.spell-card-link {
+  color: #f0d39a;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.spell-card-link:hover {
+  color: #fff4da;
+}

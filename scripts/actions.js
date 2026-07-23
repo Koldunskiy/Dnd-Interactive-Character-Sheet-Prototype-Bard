@@ -9,6 +9,17 @@ import {
   ensureTurnState,
   ensureUiState,
 } from "./state-helpers.js";
+import {
+  isCantripSelected,
+  isPreparedSpellSelected,
+  isGrantedSpell,
+} from "./selectors/spellcasting.js";
+import {
+  getBardCantripLimit,
+  getBardPreparedSpellLimit,
+} from "./rules.js";
+import { buildCharacterSpellCollections, BARD_SPELL_LIBRARY_BY_ID } from "./selectors/spellcasting.js";
+
 
 export const STATELESS_ACTIONS = new Set(["print-sheet", "reset-runtime"]);
 
@@ -30,10 +41,7 @@ function getMaxHp(derived) {
 }
 
 function findSpellByActionId(spells, spellId) {
-  return spells.find((entry) => {
-    const id = `spell-${toRuntimeSlug(entry.originalName || entry.name || "spell")}`;
-    return id === spellId;
-  });
+  return spells.find((entry) => String(entry.id) === String(spellId));
 }
 
 function spendSpellSlotIfAvailable(draft, spellLevel) {
@@ -120,8 +128,8 @@ function handleLongRest(draft) {
   turn.reactionUsed = false;
   turn.turnNumber = 1;
 
-  if (Array.isArray(draft.spellcasting?.spells)) {
-    draft.spellcasting.spells.forEach((spell) => {
+  if (draft.spellcasting?.spellOverrides && typeof draft.spellcasting.spellOverrides === "object") {
+    Object.values(draft.spellcasting.spellOverrides).forEach((spell) => {
       if (spell?.uses?.max != null) {
         spell.uses.current = Number(spell.uses.max || 0);
       }
@@ -390,18 +398,42 @@ function handleSpellCast(draft, target) {
   const castTime = String(target.dataset.castTime || "").toLowerCase();
   const setsConcentration = target.dataset.setsConcentration === "true";
 
-  const spells = Array.isArray(draft.spellcasting?.spells) ? draft.spellcasting.spells : [];
-  const spell = findSpellByActionId(spells, spellId);
+  if (!spellId) {
+    return;
+  }
+
+  const collections = buildCharacterSpellCollections(draft);
+  const allAvailableSpells = [
+    ...collections.cantrips,
+    ...collections.preparedSpells,
+    ...collections.grantedSpells,
+  ];
+
+  const spell = findSpellByActionId(allAvailableSpells, spellId);
 
   if (!spell) {
     return;
   }
 
-  if (spell.source === "racial" && spell.uses) {
+  if (spell.uses?.max != null) {
     const currentUses = Number(spell.uses.current || 0);
 
     if (currentUses > 0) {
-      spell.uses.current = currentUses - 1;
+      const spellcasting = ensureSpellcastingState(draft);
+      if (!spellcasting.spellOverrides || typeof spellcasting.spellOverrides !== "object") {
+        spellcasting.spellOverrides = {};
+      }
+
+      const currentOverride = spellcasting.spellOverrides[spell.id] ?? {};
+      spellcasting.spellOverrides[spell.id] = {
+        ...currentOverride,
+        uses: {
+          ...(currentOverride.uses ?? spell.uses),
+          current: currentUses - 1,
+          max: Number(spell.uses.max || 0),
+          refresh: spell.uses.refresh,
+        },
+      };
     } else if (!spendSpellSlotIfAvailable(draft, spellLevel)) {
       return;
     }
@@ -472,6 +504,154 @@ function handleLevelAdjust(draft, target) {
   normalizeLevelDependentState(draft);
 }
 
+function handleSpellLibrarySetLevel(draft, target) {
+  const levelValue = target.dataset.spellLibraryLevel;
+  const ui = ensureUiState(draft);
+
+  if (!ui.spellLibrary || typeof ui.spellLibrary !== "object") {
+    ui.spellLibrary = {
+      selectedLevel: "all",
+      expandedSpellIds: [],
+    };
+  }
+
+  if (!ui.spellLibrary.selectionFilter) {
+    ui.spellLibrary.selectionFilter = "all";
+  }
+
+  ui.spellLibrary.selectedLevel = levelValue ?? "all";
+}
+
+function handleSpellLibraryToggleExpand(draft, target) {
+  const spellId = target.dataset.spellLibraryToggle;
+  const ui = ensureUiState(draft);
+
+  if (!spellId) {
+    return;
+  }
+
+  if (!ui.spellLibrary || typeof ui.spellLibrary !== "object") {
+    ui.spellLibrary = {
+      selectedLevel: "all",
+      expandedSpellIds: [],
+    };
+  }
+
+  const expandedSpellIds = Array.isArray(ui.spellLibrary.expandedSpellIds)
+    ? ui.spellLibrary.expandedSpellIds
+    : [];
+
+  const alreadyExpanded = expandedSpellIds.includes(spellId);
+
+  ui.spellLibrary.expandedSpellIds = alreadyExpanded
+    ? expandedSpellIds.filter((id) => id !== spellId)
+    : [...expandedSpellIds, spellId];
+}
+
+function handleSpellLibraryToggleSelect(draft, target) {
+  const spellId = target.dataset.spellLibrarySelect;
+  const mode = target.dataset.spellLibraryMode;
+  const level = Number(draft.profile?.level ?? 1);
+  const spellcasting = ensureSpellcastingState(draft);
+
+  if (!spellId || !mode) {
+    return;
+  }
+
+  const spell = BARD_SPELL_LIBRARY_BY_ID[spellId];
+  if (!spell) {
+    return;
+  }
+
+  if (spell.availableFromLevel && Number(spell.availableFromLevel) > level) {
+    return;
+  }
+
+  if (isGrantedSpell(draft, spellId)) {
+    return;
+  }
+
+  if (!Array.isArray(spellcasting.cantripIds)) {
+    spellcasting.cantripIds = [];
+  }
+
+  if (!Array.isArray(spellcasting.preparedSpellIds)) {
+    spellcasting.preparedSpellIds = [];
+  }
+
+  const cantripIds = [...new Set(spellcasting.cantripIds.filter(Boolean))];
+  const preparedSpellIds = [...new Set(spellcasting.preparedSpellIds.filter(Boolean))];
+
+  if (mode === "cantrip") {
+    const grantedSpellIdSet = new Set(
+      Array.isArray(spellcasting.grantedSpellIds)
+        ? spellcasting.grantedSpellIds.filter(Boolean)
+        : [],
+    );
+
+    const selected = isCantripSelected(draft, spellId);
+
+    const cantripIds = [...new Set(spellcasting.cantripIds.filter(Boolean))];
+
+    const classCantripIds = cantripIds.filter(
+      (id) => !grantedSpellIdSet.has(id),
+    );
+
+    if (grantedSpellIdSet.has(spellId)) {
+      return;
+    }
+
+    if (selected) {
+      spellcasting.cantripIds = cantripIds.filter((id) => id !== spellId);
+      return;
+    }
+
+    const limit = getBardCantripLimit(level);
+
+    if (classCantripIds.length >= limit) {
+      return;
+    }
+
+    spellcasting.cantripIds = [...cantripIds, spellId];
+    return;
+  }
+
+  if (mode === "prepared") {
+    const selected = isPreparedSpellSelected(draft, spellId);
+
+    if (selected) {
+      spellcasting.preparedSpellIds = preparedSpellIds.filter((id) => id !== spellId);
+      return;
+    }
+
+    const limit = getBardPreparedSpellLimit(level);
+    if (preparedSpellIds.length >= limit) {
+      return;
+    }
+
+    spellcasting.preparedSpellIds = [...preparedSpellIds, spellId];
+  }
+}
+
+function handleSpellLibrarySetSelectionFilter(draft, target) {
+  const selectionValue = target.dataset.spellLibrarySelection;
+  const ui = ensureUiState(draft);
+
+  if (!ui.spellLibrary || typeof ui.spellLibrary !== "object") {
+    ui.spellLibrary = {
+      selectedLevel: "all",
+      selectionFilter: "all",
+      expandedSpellIds: [],
+    };
+  }
+
+  const currentValue = ui.spellLibrary.selectionFilter ?? "all";
+  const nextValue = selectionValue ?? "all";
+
+  ui.spellLibrary.selectionFilter =
+    currentValue === nextValue ? "all" : nextValue;
+}
+
 export function createActionHandlers({ resetState }) {
   return {
     "hp-change": handleHpChange,
@@ -502,5 +682,9 @@ export function createActionHandlers({ resetState }) {
     "spell-cast": handleSpellCast,
     "toggle-jack-of-all-trades": handleToggleJackOfAllTrades,
     "level-adjust": handleLevelAdjust,
+    "spell-library-set-level": handleSpellLibrarySetLevel,
+    "spell-library-set-selection-filter": handleSpellLibrarySetSelectionFilter,
+    "spell-library-toggle-expand": handleSpellLibraryToggleExpand,
+    "spell-library-toggle-select": handleSpellLibraryToggleSelect,
   };
 }

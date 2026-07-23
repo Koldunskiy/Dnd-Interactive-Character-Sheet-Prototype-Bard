@@ -1,0 +1,57 @@
+:root {
+  --bg: #090607;
+  --bg-elevated: #120b0d;
+  --bg-deep: #050304;
+
+  --text: #f6efe8;
+  --text-strong: #fff7f1;
+  --muted: rgba(226, 213, 205, 0.72);
+  --muted-2: rgba(203, 186, 178, 0.54);
+
+  --surface: rgba(66, 20, 28, 0.34);
+  --surface-2: rgba(26, 11, 14, 0.82);
+  --surface-3: rgba(84, 26, 35, 0.18);
+  --surface-soft: rgba(255, 245, 239, 0.035);
+
+  --line: rgba(213, 171, 146, 0.12);
+  --line-strong: rgba(190, 79, 95, 0.28);
+  --line-gold: rgba(214, 174, 96, 0.3);
+
+  --accent: #d6ae60;
+  --accent-strong: #f0c97b;
+  --accent-wine: #8a2436;
+  --accent-wine-2: #5f1523;
+  --accent-blood: #b53a4f;
+
+  --success: #4ea978;
+  --warning: #d6995c;
+
+  --radius-sm: 14px;
+  --radius: 20px;
+  --radius-lg: 28px;
+  --radius-pill: 999px;
+
+  --shadow-sm:
+    inset 0 1px 0 rgba(255, 244, 238, 0.04),
+    0 10px 24px rgba(0, 0, 0, 0.22);
+
+  --shadow:
+    inset 0 1px 0 rgba(255, 244, 238, 0.045),
+    0 18px 40px rgba(0, 0, 0, 0.34),
+    0 4px 18px rgba(79, 14, 26, 0.18);
+
+  --shadow-lg:
+    inset 0 1px 0 rgba(255, 244, 238, 0.05),
+    0 24px 60px rgba(0, 0, 0, 0.42),
+    0 8px 28px rgba(107, 19, 34, 0.22);
+
+  --panel-glow:
+    radial-gradient(circle at top right, rgba(214, 174, 96, 0.08), transparent 26%),
+    radial-gradient(circle at top left, rgba(140, 26, 49, 0.16), transparent 34%);
+
+  --color-border: rgba(213, 171, 146, 0.14);
+  --color-text: #f6efe8;
+  --color-text-muted: rgba(226, 213, 205, 0.78);
+  --color-surface: rgba(255, 245, 239, 0.045);
+  --color-accent: #8a2436;
+}

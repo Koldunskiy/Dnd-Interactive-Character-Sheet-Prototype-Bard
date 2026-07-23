@@ -54,16 +54,52 @@ function setToggleButtonState(hasVideo, paused = false) {
   const toggleBtn = document.getElementById("togglePortraitMotionBtn");
   if (!toggleBtn) return;
 
+  let icon = toggleBtn.querySelector(".portrait-toggle-btn__icon");
+  if (!icon) {
+    icon = document.createElement("span");
+    icon.className = "portrait-toggle-btn__icon";
+    toggleBtn.innerHTML = "";
+    toggleBtn.appendChild(icon);
+  }
+
   toggleBtn.disabled = !hasVideo;
-  toggleBtn.textContent = hasVideo ? (paused ? "▶" : "❚❚") : "•";
+  toggleBtn.classList.toggle("is-paused", hasVideo && paused);
+  toggleBtn.classList.toggle("is-disabled", !hasVideo);
+  toggleBtn.setAttribute("aria-pressed", hasVideo ? String(paused) : "false");
+
+  if (!hasVideo) {
+    icon.textContent = "▶";
+    toggleBtn.setAttribute("aria-label", "Анимация недоступна");
+    toggleBtn.setAttribute("title", "Анимация недоступна");
+    return;
+  }
+
+  icon.textContent = paused ? "▶" : "❚❚";
   toggleBtn.setAttribute(
     "aria-label",
-    hasVideo
-      ? paused
-        ? "Запустить анимацию"
-        : "Пауза анимации"
-      : "Видео недоступно"
+    paused ? "Запустить анимацию" : "Пауза анимации"
   );
+  toggleBtn.setAttribute(
+    "title",
+    paused ? "Воспроизвести" : "Пауза"
+  );
+}
+
+function bindPortraitVideoState(video) {
+  if (!video || video.dataset.stateBound === "true") {
+    return;
+  }
+
+  const sync = () => {
+    setToggleButtonState(true, video.paused);
+  };
+
+  video.addEventListener("play", sync);
+  video.addEventListener("pause", sync);
+  video.addEventListener("ended", sync);
+
+  video.dataset.stateBound = "true";
+  sync();
 }
 
 function renderPortraitMarkup(media) {
@@ -97,7 +133,7 @@ function renderPortraitMarkup(media) {
 
     mediaMarkup = `
       <video
-        class="portrait-media"
+        class="portrait-media portrait-media--video"
         id="portraitVideo"
         autoplay
         muted
@@ -121,9 +157,7 @@ function renderPortraitMarkup(media) {
     `;
   }
 
-  portraitStage.innerHTML = `
-    ${mediaMarkup}
-  `;
+  portraitStage.innerHTML = mediaMarkup;
 
   if (toggleBtn) {
     portraitStage.appendChild(toggleBtn);
@@ -133,16 +167,21 @@ function renderPortraitMarkup(media) {
     const video = document.getElementById("portraitVideo");
     if (video) {
       video.muted = true;
+      bindPortraitVideoState(video);
+
       const playPromise = video.play();
       if (playPromise && typeof playPromise.catch === "function") {
         playPromise.catch(() => {
           console.warn("Автовоспроизведение портрета было заблокировано браузером");
+          setToggleButtonState(true, true);
         });
       }
+    } else {
+      setToggleButtonState(true, true);
     }
+  } else {
+    setToggleButtonState(false, true);
   }
-
-  setToggleButtonState(hasVideo, false);
 }
 
 export function renderPortraitMedia(state) {
@@ -161,11 +200,14 @@ export function initPortraitControls() {
       if (!video) return;
 
       if (video.paused) {
-        video.play();
-        setToggleButtonState(true, false);
+        const playPromise = video.play();
+        if (playPromise && typeof playPromise.catch === "function") {
+          playPromise.catch(() => {
+            setToggleButtonState(true, true);
+          });
+        }
       } else {
         video.pause();
-        setToggleButtonState(true, true);
       }
     });
 
@@ -180,18 +222,19 @@ export function initPortraitControls() {
       cleanupObjectUrl();
       currentObjectUrl = URL.createObjectURL(file);
 
-      lastRenderedMediaKey = null;
-      renderPortraitMarkup(defaultMediaConfig);
-
       const mediaKind = getMediaKindFromFile(file);
 
       const localMedia = {
         type: mediaKind,
         src: currentObjectUrl,
-        poster: mediaKind === "video" ? (defaultMediaConfig?.poster || "./assets/portrait.png") : "",
+        poster:
+          mediaKind === "video"
+            ? (defaultMediaConfig?.poster || "./assets/portrait.png")
+            : "",
         alt: `Локальный файл: ${file.name}`
       };
 
+      lastRenderedMediaKey = null;
       renderPortraitMarkup(localMedia);
     });
 
@@ -202,10 +245,11 @@ export function initPortraitControls() {
     resetBtn.addEventListener("click", () => {
       cleanupObjectUrl();
       lastRenderedMediaKey = null;
-      renderPortraitMarkup(defaultMediaConfig);
+
       if (fileInput) {
         fileInput.value = "";
       }
+
       renderPortraitMarkup(defaultMediaConfig);
     });
 

@@ -1,0 +1,385 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 42px;
+  padding: 10px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 245, 239, 0.05), rgba(255, 245, 239, 0.02));
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--line-gold);
+  color: var(--text-strong);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 238, 0.04),
+    0 10px 22px rgba(0, 0, 0, 0.16);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn--utility {
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 0.92rem;
+  background: rgba(255, 245, 239, 0.04);
+}
+
+.file-input-hidden {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.file-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sheet-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: rgba(255, 245, 239, 0.04);
+  color: inherit;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.sheet-action-btn:hover {
+  background: rgba(255, 245, 239, 0.08);
+  border-color: rgba(214, 171, 146, 0.24);
+  transform: translateY(-1px);
+}
+
+.field-label,
+.currency-field,
+.inventory-equip-toggle {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.field-label {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: rgba(246, 239, 232, 0.94);
+}
+
+.input,
+.inventory-input,
+.inventory-textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid rgba(213, 171, 146, 0.12);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 245, 239, 0.045);
+  color: var(--text);
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.input::placeholder,
+.inventory-input::placeholder,
+.inventory-textarea::placeholder {
+  color: rgba(226, 213, 205, 0.44);
+}
+
+.input:focus,
+.inventory-input:focus,
+.inventory-textarea:focus {
+  border-color: rgba(214, 174, 96, 0.42);
+  background: rgba(255, 245, 239, 0.07);
+  box-shadow: 0 0 0 4px rgba(214, 174, 96, 0.10);
+}
+
+.input--compact {
+  width: 96px;
+  min-width: 96px;
+  max-width: 96px;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  text-align: center;
+  font-weight: 700;
+}
+
+.inventory-textarea {
+  resize: vertical;
+  min-height: 88px;
+  line-height: 1.55;
+}
+
+.inventory-textarea--large {
+  min-height: 220px;
+}
+
+.inventory-input--name {
+  flex: 1 1 auto;
+}
+
+.inventory-input--qty {
+  width: 110px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.spell-card,
+.feature-card,
+.info-card,
+.resource-card,
+.hero-stat-card,
+.ability-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border-radius: var(--radius);
+  background:
+    radial-gradient(circle at top right, rgba(214, 174, 96, 0.07), transparent 28%),
+    linear-gradient(180deg, rgba(255, 245, 239, 0.045), rgba(255, 245, 239, 0.02));
+  border: 1px solid rgba(213, 171, 146, 0.09);
+  box-shadow: var(--shadow-sm);
+}
+
+.spell-card--locked {
+  opacity: 0.65;
+  filter: grayscale(0.12);
+}
+
+.info-card-title,
+.feature-title,
+.resource-card-title,
+.info-value,
+.feature-text,
+.resource-row-title,
+.resource-card-value {
+  color: var(--text-strong);
+}
+
+.info-card-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(240, 221, 197, 0.92);
+}
+
+.info-card-text {
+  display: grid;
+  gap: 0.9rem;
+  color: rgba(236, 228, 221, 0.92);
+  line-height: 1.6;
+}
+
+.info-card strong,
+.resource-card strong {
+  color: var(--text-strong);
+  font-weight: 700;
+}
+
+.spell-card-header,
+.profile-name-row,
+.feature-topline,
+.skill-row,
+.skill-row-main,
+.skill-row-side,
+.profile-tag-row,
+.spell-badges,
+.spell-meta-row,
+.resource-row-main {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.spell-card-header,
+.skill-row,
+.feature-topline,
+.resource-row-main {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.spell-badge,
+.feature-badge,
+.skill-badge,
+.profile-tag,
+.spell-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  line-height: 1.2;
+  border: 1px solid rgba(213, 171, 146, 0.1);
+  background: rgba(255, 245, 239, 0.05);
+  color: rgba(242, 232, 225, 0.88);
+}
+
+.spell-badge--racial {
+  background: rgba(138, 36, 54, 0.18);
+  border-color: rgba(181, 58, 79, 0.28);
+}
+
+.spell-badge--class {
+  background: rgba(214, 174, 96, 0.14);
+  border-color: rgba(214, 174, 96, 0.26);
+}
+
+.spell-badge--locked {
+  background: rgba(214, 153, 92, 0.12);
+  border-color: rgba(214, 153, 92, 0.24);
+}
+
+.skill-badges,
+.skill-toggle-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.skill-badge {
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.skill-badge--expertise {
+  background: rgba(214, 174, 96, 0.16);
+  border-color: rgba(214, 174, 96, 0.28);
+  color: #f8e6bd;
+}
+
+.skill-badge--proficient {
+  background: rgba(181, 58, 79, 0.14);
+  border-color: rgba(181, 58, 79, 0.24);
+  color: #f0c9d1;
+}
+
+.skill-badge--base {
+  background: rgba(255, 245, 239, 0.03);
+  color: rgba(242, 232, 225, 0.68);
+}
+
+.ability-adjust-btn,
+.skill-toggle-btn,
+.save-toggle-btn,
+.feature-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(213, 171, 146, 0.1);
+  background: rgba(255, 245, 239, 0.04);
+  color: rgba(236, 228, 221, 0.88);
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.ability-adjust-btn {
+  width: 2rem;
+  height: 2rem;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.skill-toggle-btn {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.skill-toggle-btn--compact {
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.save-toggle-btn {
+  padding: 0.32rem 0.62rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.feature-toggle-btn {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.ability-adjust-btn:hover,
+.skill-toggle-btn:hover,
+.save-toggle-btn:hover,
+.feature-toggle-btn:hover {
+  background: rgba(255, 245, 239, 0.08);
+  border-color: rgba(214, 174, 96, 0.18);
+  color: var(--text-strong);
+}
+
+.ability-adjust-btn:active,
+.skill-toggle-btn:active,
+.save-toggle-btn:active,
+.feature-toggle-btn:active {
+  transform: translateY(1px);
+}
+
+.skill-toggle-btn--active,
+.save-toggle-btn--active,
+.feature-toggle-btn--active {
+  background: linear-gradient(180deg, rgba(136, 26, 46, 0.28), rgba(61, 18, 27, 0.92));
+  border-color: rgba(214, 174, 96, 0.34);
+  color: #fff4e1;
+}
+
+.skill-toggle-btn--expertise.skill-toggle-btn--active {
+  background: linear-gradient(180deg, rgba(214, 174, 96, 0.26), rgba(138, 36, 54, 0.26));
+  border-color: rgba(214, 174, 96, 0.4);
+  color: #fff2d0;
+}

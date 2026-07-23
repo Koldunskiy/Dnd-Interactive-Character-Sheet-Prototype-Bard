@@ -9,11 +9,18 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="./styles/variables.css" />
-  <link rel="stylesheet" href="./styles/base.css" />
-  <link rel="stylesheet" href="./styles/layout.css" />
-  <link rel="stylesheet" href="./styles/tabs.css" />
-  <link rel="stylesheet" href="./styles/cards.css" />
+  <link rel="stylesheet" href="./styles/tokens.css">
+  <link rel="stylesheet" href="./styles/reset.css">
+  <link rel="stylesheet" href="./styles/layout.css">
+  <link rel="stylesheet" href="./styles/components.css">
+  <link rel="stylesheet" href="./styles/tabs.css">
+  <link rel="stylesheet" href="./styles/profile.css">
+  <link rel="stylesheet" href="./styles/melee.css">
+  <link rel="stylesheet" href="./styles/spells.css">
+  <link rel="stylesheet" href="./styles/spell-library.css">
+  <link rel="stylesheet" href="./styles/inventory.css">
+  <link rel="stylesheet" href="./styles/utilities.css">
+  <link rel="stylesheet" href="./styles/responsive.css">
 </head>
 <body>
   <div class="page">
@@ -85,6 +92,7 @@
           <button class="tab-btn" data-tab="spells" type="button">Заклинания</button>
           <button class="tab-btn" data-tab="inventory" type="button">Инвентарь</button>
           <button class="tab-btn" data-tab="lore" type="button">Лор</button>
+          <button class="tab-btn" data-tab="spell-library" type="button">Библиотека заклинаний</button>
         </nav>
 
         <section class="tab-panels">
@@ -106,6 +114,10 @@
 
           <article class="tab-panel card section" data-panel="lore">
             <div id="lorePanel"></div>
+          </article>
+
+          <article class="tab-panel card section" data-panel="spell-library">
+            <div id="spellLibraryPanel"></div>
           </article>
         </section>
       </section>
