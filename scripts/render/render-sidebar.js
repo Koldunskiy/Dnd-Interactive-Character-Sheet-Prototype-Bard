@@ -1,42 +1,72 @@
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatSigned(value) {
+  const number = Number(value);
+
+  if (Number.isNaN(number)) {
+    return "—";
+  }
+
+  return number >= 0 ? `+${number}` : `${number}`;
+}
+
+function formatValue(value) {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+
+  return String(value);
+}
+
 export function renderQuickStats(state, derived) {
   const quickStats = document.getElementById("quickStats");
   if (!quickStats) {
     return;
   }
 
+  const currentHp = derived.currentHitPoints ?? derived.currentHp ?? "—";
+  const maxHp = derived.maxHitPoints ?? derived.maxHp ?? "—";
+
   const items = [
     {
       label: "Класс брони",
-      value: derived.armorClass
+      value: formatValue(derived.armorClass),
     },
     {
       label: "Инициатива",
-      value: derived.formattedInitiative
+      value: formatValue(derived.formattedInitiative),
     },
     {
       label: "Хиты",
-      value: `${derived.currentHitPoints} / ${derived.maxHitPoints}`
+      value: `${currentHp} / ${maxHp}`,
     },
     {
       label: "СЛ заклинаний",
-      value: derived.spellSaveDc
+      value: formatValue(derived.spellSaveDc),
     },
     {
       label: "Атака заклинанием",
-      value: derived.formattedSpellAttackBonus
+      value: formatValue(derived.formattedSpellAttackBonus),
     },
     {
       label: "Бонус мастерства",
-      value: `+${state.profile.proficiencyBonus}`
-    }
+      value: formatSigned(derived.proficiencyBonus),
+    },
   ];
 
   quickStats.innerHTML = items
     .map((item) => {
       return `
         <div class="quick-stat">
-          <span>${item.label}</span>
-          <strong>${item.value}</strong>
+          <span>${escapeHtml(item.label)}</span>
+          <strong>${escapeHtml(item.value)}</strong>
         </div>
       `;
     })
@@ -49,5 +79,5 @@ export function renderSidebarSummary(state) {
     return;
   }
 
-  sidebarSummary.textContent = state.profile.summary;
+  sidebarSummary.textContent = state.profile?.summary ?? "";
 }

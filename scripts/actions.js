@@ -130,7 +130,10 @@ function handleLongRest(draft) {
 
   combat.hp.current = getMaxHp(derived);
   combat.hp.temp = 0;
-  combat.bardicInspiration.current = Number(derived.bardicInspiration?.max || 0);
+  const bardic = combat.bardicInspiration;
+  if (bardic) {
+    bardic.current = Number(derived.bardicInspiration?.max || 0);
+    }
   combat.concentration = "";
 
   const nextSlotsUsed = {};
@@ -425,6 +428,50 @@ function handlePrintSheet() {
   window.print();
 }
 
+function normalizeLevelDependentState(draft) {
+  const derived = getDerivedStats(draft);
+  const combat = ensureCombatState(draft);
+  const spellcasting = ensureSpellcastingState(draft);
+
+  combat.hp.current = clamp(Number(combat.hp.current || 0), 0, getMaxHp(derived));
+
+  const normalizedSlotsUsed = {};
+  for (const slot of derived.spellSlots || []) {
+    const max = Number(slot.max || 0);
+    const used = Number(spellcasting.slotsUsed?.[slot.level] || 0);
+    normalizedSlotsUsed[slot.level] = clamp(used, 0, max);
+  }
+  spellcasting.slotsUsed = normalizedSlotsUsed;
+
+  const bardic = combat.bardicInspiration;
+  if (bardic) {
+    const maxBardic = Number(derived.bardicInspiration?.max || 0);
+    bardic.current = clamp(Number(bardic.current || 0), 0, maxBardic);
+  }
+}
+
+function handleLevelAdjust(draft, target) {
+  const delta = Number(target.dataset.delta || 0);
+
+  if (!Number.isFinite(delta) || delta === 0) {
+    return;
+  }
+
+  if (!draft.profile || typeof draft.profile !== "object") {
+    draft.profile = {};
+  }
+
+  const currentLevel = Math.max(1, Number(draft.profile.level || 1));
+  const nextLevel = clamp(currentLevel + delta, 1, 20);
+
+  if (nextLevel === currentLevel) {
+    return;
+  }
+
+  draft.profile.level = nextLevel;
+  normalizeLevelDependentState(draft);
+}
+
 export function createActionHandlers({ resetState }) {
   return {
     "hp-change": handleHpChange,
@@ -454,5 +501,6 @@ export function createActionHandlers({ resetState }) {
     "weapon-attack": handleWeaponAttack,
     "spell-cast": handleSpellCast,
     "toggle-jack-of-all-trades": handleToggleJackOfAllTrades,
+    "level-adjust": handleLevelAdjust,
   };
 }

@@ -1563,3 +1563,67 @@ p {
     justify-content: center;
   }
 }
+
+.hero-stat-card--level-control {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.hero-stat-card--level-control .hero-stat-label {
+  text-align: left;
+}
+
+.level-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.level-stat-row__value {
+  font-size: 1.45rem;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.level-stat-row__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.level-inline-btn {
+  width: 22px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.65rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.level-inline-btn:hover {
+  background: var(--color-surface, rgba(255, 255, 255, 0.06));
+}
+
+.level-inline-btn:active {
+  transform: translateY(1px);
+}
+
+.level-inline-btn:focus-visible {
+  outline: 2px solid var(--color-accent, #8b5cf6);
+  outline-offset: 1px;
+}

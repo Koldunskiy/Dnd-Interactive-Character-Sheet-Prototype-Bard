@@ -216,13 +216,12 @@ function debugDerived(character) {
   console.groupEnd();
 }
 
-if (window.location.hostname === "localhost") {
-  window.__debug = {
-    getState,
-    getDerivedStats,
-    debugDerived,
-  };
-}
+window.debug = {
+  getState: () => getState(),
+  getDerivedStats: (state) => getDerivedStats(state),
+  debugDerived: (state) => debugDerived(state),
+  subscribe: (listener) => subscribe(listener),
+};
 
 subscribe(() => {
   renderApp();

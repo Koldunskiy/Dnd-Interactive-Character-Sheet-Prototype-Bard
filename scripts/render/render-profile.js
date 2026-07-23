@@ -544,6 +544,46 @@ function renderClassFeatures(features, character) {
   `;
 }
 
+function renderLevelControl(level) {
+  const safeLevel = Math.max(1, Number(level ?? 1));
+
+  return `
+    <div class="hero-stat-card hero-stat-card--level-control">
+      <div class="hero-stat-label">Уровень</div>
+
+      <div class="level-stat-row" aria-label="Управление уровнем персонажа">
+        <div class="hero-stat-value level-stat-row__value">
+          ${escapeHtml(safeLevel)}
+        </div>
+
+        <div class="level-stat-row__controls">
+          <button
+            type="button"
+            class="level-inline-btn"
+            data-action="level-adjust"
+            data-delta="1"
+            aria-label="Повысить уровень"
+            title="Повысить уровень"
+          >
+            ▴
+          </button>
+
+          <button
+            type="button"
+            class="level-inline-btn"
+            data-action="level-adjust"
+            data-delta="-1"
+            aria-label="Понизить уровень"
+            title="Понизить уровень"
+          >
+            ▾
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 export function renderProfile(root, character, derived) {
   if (!root) return;
 
@@ -563,7 +603,6 @@ export function renderProfile(root, character, derived) {
             ${profile.subrace ? renderTag(profile.subrace) : ""}
             ${renderTag(profile.className ?? "—")}
             ${profile.subclass ? renderTag(profile.subclass) : ""}
-            ${renderTag(`Уровень ${profile.level ?? "—"}`)}
             ${profile.background ? renderTag(profile.background) : ""}
           </div>
 
@@ -571,6 +610,8 @@ export function renderProfile(root, character, derived) {
         </div>
 
         <div class="profile-hero-stats">
+          ${renderLevelControl(profile.level)}
+
           <div class="hero-stat-card">
             <div class="hero-stat-label">КД</div>
             <div class="hero-stat-value">${escapeHtml(derived.armorClass ?? "—")}</div>
@@ -578,6 +619,10 @@ export function renderProfile(root, character, derived) {
           <div class="hero-stat-card">
             <div class="hero-stat-label">Хиты</div>
             <div class="hero-stat-value">${escapeHtml(derived.maxHitPoints ?? "—")}</div>
+          </div>
+          <div class="hero-stat-card">
+            <div class="hero-stat-label">Бонус мастерства</div>
+            <div class="hero-stat-value">${escapeHtml(formatSigned(derived.proficiencyBonus))}</div>
           </div>
           <div class="hero-stat-card">
             <div class="hero-stat-label">Инициатива</div>
