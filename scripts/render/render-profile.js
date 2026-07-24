@@ -167,76 +167,79 @@ function getAbilityCardsData(character, derived) {
 function renderAbilityCard(card) {
   return `
     <article class="ability-card ability-card--detailed${card.editable ? " stat-card--editable" : ""}">
-      <div class="ability-card-head">
-        <div class="ability-card-title-block">
-          <span class="ability-card-label">${escapeHtml(card.label)}</span>
-          <span class="ability-card-abbr">${escapeHtml(card.short)}</span>
-        </div>
-
-        <div class="ability-card-mod" aria-label="Модификатор ${escapeHtml(card.label)}">
-          ${escapeHtml(formatSigned(card.mod))}
-        </div>
-
-        <div class="ability-card-score-wrap">
-          <button
-            type="button"
-            class="ability-adjust-btn"
-            data-action="ability-adjust"
-            data-ability-id="${escapeHtml(card.id)}"
-            data-delta="-1"
-            aria-label="Уменьшить ${escapeHtml(card.label)}"
-          >
-            −
-          </button>
-
-          <div class="ability-card-score" aria-label="Значение ${escapeHtml(card.label)}">
-            ${escapeHtml(card.score)}
+      <div class="ability-card-top">
+        <div class="ability-card-head">
+          <div class="ability-card-title-block">
+            <span class="ability-card-label">${escapeHtml(card.label)}</span>
+            <span class="ability-card-abbr">${escapeHtml(card.short)}</span>
           </div>
 
-          <button
-            type="button"
-            class="ability-adjust-btn"
-            data-action="ability-adjust"
-            data-ability-id="${escapeHtml(card.id)}"
-            data-delta="1"
-            aria-label="Увеличить ${escapeHtml(card.label)}"
-          >
-            +
-          </button>
-        </div>
-      </div>
-
-      <div class="ability-card-stats">
-        <div class="ability-card-stat-row">
-          <span class="ability-card-stat-label">Проверка</span>
-          <strong class="ability-card-stat-value">${escapeHtml(formatSigned(card.checkValue))}</strong>
+          <div class="ability-card-mod-block">
+            <div class="ability-card-mod" aria-label="Модификатор ${escapeHtml(card.label)}">
+              ${escapeHtml(formatSigned(card.mod))}
+            </div>
+          </div>
         </div>
 
-        <div class="ability-card-stat-row ability-card-stat-row--save">
-          <span class="ability-card-stat-label">Спасбросок</span>
+        <div class="ability-card-summary-row">
+          <div class="ability-card-score-inline">
+            <button
+              type="button"
+              class="ability-adjust-btn"
+              data-action="ability-adjust"
+              data-ability-id="${escapeHtml(card.id)}"
+              data-delta="-1"
+              aria-label="Уменьшить ${escapeHtml(card.label)}"
+            >
+              −
+            </button>
 
-          <strong class="ability-card-stat-value">
-            ${escapeHtml(formatSigned(card.saveValue))}
-          </strong>
+            <div class="ability-card-score" aria-label="Значение ${escapeHtml(card.label)}">
+              ${escapeHtml(card.score)}
+            </div>
 
-          <button
-            type="button"
-            class="save-toggle-btn ${card.saveProficient ? "save-toggle-btn--active" : ""}"
-            data-action="saving-throw-toggle"
-            data-ability-id="${escapeHtml(card.id)}"
-            aria-pressed="${card.saveProficient ? "true" : "false"}"
-          >
-            В
-          </button>
+            <button
+              type="button"
+              class="ability-adjust-btn"
+              data-action="ability-adjust"
+              data-ability-id="${escapeHtml(card.id)}"
+              data-delta="1"
+              aria-label="Увеличить ${escapeHtml(card.label)}"
+            >
+              +
+            </button>
+          </div>
         </div>
+        <div class="ability-card-stat-inline">
+            <span class="ability-card-stat-label">Проверка</span>
+            <strong class="ability-card-stat-value">${escapeHtml(formatSigned(card.checkValue))}</strong>
+          </div>
+
+          <div class="ability-card-stat-inline ability-card-stat-inline--save">
+            <span class="ability-card-stat-label">Спасбросок</span>
+            <strong class="ability-card-stat-value">${escapeHtml(formatSigned(card.saveValue))}</strong>
+            <button
+              type="button"
+              class="save-toggle-btn ${card.saveProficient ? "save-toggle-btn--active" : ""}"
+              data-action="saving-throw-toggle"
+              data-ability-id="${escapeHtml(card.id)}"
+              aria-pressed="${card.saveProficient ? "true" : "false"}"
+              aria-label="Владение спасброском ${escapeHtml(card.label)}"
+              title="Владение спасброском"
+            >
+              В
+            </button>
+          </div>
       </div>
 
       <div class="ability-card-skills">
-        ${
-          card.linkedSkills.length
-            ? `<div class="ability-skill-list">${card.linkedSkills.map(renderAbilitySkillRow).join("")}</div>`
-            : `<p class="empty-copy">Нет связанных навыков.</p>`
-        }
+        <div class="ability-card-skills-inner">
+          ${
+            card.linkedSkills.length
+              ? `<div class="ability-skill-list">${card.linkedSkills.map(renderAbilitySkillRow).join("")}</div>`
+              : `<p class="empty-copy ability-card-empty">Нет связанных навыков.</p>`
+          }
+        </div>
       </div>
     </article>
   `;
@@ -584,11 +587,31 @@ function renderLevelControl(level) {
   `;
 }
 
+function renderHeroStat(label, value) {
+  return `
+    <div class="hero-stat-card">
+      <div class="hero-stat-label">${escapeHtml(label)}</div>
+      <div class="hero-stat-value">${escapeHtml(value ?? "—")}</div>
+    </div>
+  `;
+}
+
 export function renderProfile(root, character, derived) {
   if (!root) return;
 
   const profile = character.profile ?? {};
   const abilityCards = getAbilityCardsData(character, derived);
+
+  const heroStats = [
+    renderLevelControl(profile.level),
+    renderHeroStat("КД", derived.armorClass ?? "—"),
+    renderHeroStat("Хиты", derived.maxHitPoints ?? "—"),
+    renderHeroStat("Бонус мастерства", formatSigned(derived.proficiencyBonus)),
+    renderHeroStat("Инициатива", derived.formattedInitiative ?? "—"),
+    renderHeroStat("Пассивная внимательность", derived.passivePerception ?? "—"),
+    renderHeroStat("Сл заклинаний", derived.spellSaveDc ?? "—"),
+    renderHeroStat("Атака заклинанием", derived.formattedSpellAttackBonus ?? "—"),
+  ];
 
   root.innerHTML = `
     <section class="panel-section panel-section--hero">
@@ -607,38 +630,9 @@ export function renderProfile(root, character, derived) {
           </div>
 
           ${profile.summary ? `<p class="profile-summary">${escapeHtml(profile.summary)}</p>` : ""}
-        </div>
 
-        <div class="profile-hero-stats">
-          ${renderLevelControl(profile.level)}
-
-          <div class="hero-stat-card">
-            <div class="hero-stat-label">КД</div>
-            <div class="hero-stat-value">${escapeHtml(derived.armorClass ?? "—")}</div>
-          </div>
-          <div class="hero-stat-card">
-            <div class="hero-stat-label">Хиты</div>
-            <div class="hero-stat-value">${escapeHtml(derived.maxHitPoints ?? "—")}</div>
-          </div>
-          <div class="hero-stat-card">
-            <div class="hero-stat-label">Бонус мастерства</div>
-            <div class="hero-stat-value">${escapeHtml(formatSigned(derived.proficiencyBonus))}</div>
-          </div>
-          <div class="hero-stat-card">
-            <div class="hero-stat-label">Инициатива</div>
-            <div class="hero-stat-value">${escapeHtml(derived.formattedInitiative ?? "—")}</div>
-          </div>
-          <div class="hero-stat-card">
-            <div class="hero-stat-label">Пассивная внимательность</div>
-            <div class="hero-stat-value">${escapeHtml(derived.passivePerception ?? "—")}</div>
-          </div>
-          <div class="hero-stat-card">
-            <div class="hero-stat-label">Сл заклинаний</div>
-            <div class="hero-stat-value">${escapeHtml(derived.spellSaveDc ?? "—")}</div>
-          </div>
-          <div class="hero-stat-card">
-            <div class="hero-stat-label">Атака заклинанием</div>
-            <div class="hero-stat-value">${escapeHtml(derived.formattedSpellAttackBonus ?? "—")}</div>
+          <div class="profile-hero-stats">
+            ${heroStats.join("")}
           </div>
         </div>
       </div>
