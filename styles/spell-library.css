@@ -387,3 +387,56 @@
     align-items: flex-start;
   }
 }
+
+.spell-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 14px;
+}
+
+.spell-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(214, 171, 146, 0.10);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 245, 239, 0.04),
+    rgba(255, 245, 239, 0.02)
+  );
+  min-width: 0;
+}
+
+.spell-fact-label {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(233, 222, 215, 0.58);
+}
+
+.spell-fact-value {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  font-weight: 600;
+  color: var(--color-text, #f5f7fb);
+  word-break: break-word;
+}
+
+.spell-facts--meta {
+  margin-top: 14px;
+}
+
+.spell-facts--combat .spell-fact {
+  border-color: rgba(214, 174, 96, 0.14);
+  background: linear-gradient(
+    180deg,
+    rgba(136, 26, 46, 0.08),
+    rgba(255, 245, 239, 0.02)
+  );
+}

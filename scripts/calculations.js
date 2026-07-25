@@ -79,24 +79,8 @@ function getSavingThrows(character, abilityModifiers, proficiencyBonus) {
   }, {});
 }
 
-function normalizeSkillAbility(skill) {
-  if (skill?.id && SKILL_ID_META[skill.id]?.ability) {
-    return SKILL_ID_META[skill.id].ability;
-  }
-
-  if (skill?.ability) {
-    return ABILITY_SHORT_MAP[skill.ability] ?? skill.ability;
-  }
-
-  if (skill?.name) {
-    return SKILL_ABILITY_MAP[skill.name] ?? null;
-  }
-
-  return null;
-}
-
 function getSkillValue(skill, abilityModifiers, proficiencyBonus, hasJoat) {
-  const abilityKey = normalizeSkillAbility(skill);
+  const abilityKey = skill?.ability ?? null;
   const abilityMod = abilityKey ? abilityModifiers[abilityKey] ?? 0 : 0;
 
   if (skill?.expertise) {
@@ -112,35 +96,22 @@ function getSkillValue(skill, abilityModifiers, proficiencyBonus, hasJoat) {
 
 function getSkills(character, abilityModifiers, proficiencyBonus, hasJoat) {
   const skills = Array.isArray(character.skills) ? character.skills : [];
-
-  const findSkillById = (skillId, meta) =>
-    skills.find((skill) => {
-      if (skill?.id === skillId) {
-        return true;
-      }
-
-      if (skill?.name === meta.label || skill?.name === skillId) {
-        return true;
-      }
-
-      return normalizeSkillAbility(skill) === meta.ability &&
-        (skill?.name === meta.label || skill?.id === skillId);
-    });
+  const byId = new Map(skills.filter((skill) => skill?.id).map((skill) => [skill.id, skill]));
 
   return Object.entries(SKILL_ID_META).reduce((acc, [skillId, meta]) => {
-    const sourceSkill = findSkillById(skillId, meta) ?? {
+    const sourceSkill = byId.get(skillId) ?? {
       id: skillId,
       name: meta.label,
       ability: meta.ability,
       proficient: false,
-      expertise: false
+      expertise: false,
+      source: null,
     };
 
     const value = getSkillValue(sourceSkill, abilityModifiers, proficiencyBonus, hasJoat);
 
     acc[skillId] = value;
     acc[meta.label] = value;
-
     return acc;
   }, {});
 }
@@ -268,7 +239,7 @@ function getSpellStats(character, abilityModifiers, proficiencyBonus) {
   };
 }
 
-function formatSpellSave(spell, spellSaveDc) {
+export function formatSpellSave(spell, spellSaveDc) {
   if (spell?.save) {
     return spell.save;
   }
@@ -283,23 +254,17 @@ function formatSpellSave(spell, spellSaveDc) {
     constitution: "Телосложение",
     intelligence: "Интеллект",
     wisdom: "Мудрость",
-    charisma: "Харизма"
+    charisma: "Харизма",
   };
+
+  if (spellSaveDc == null) {
+    return map[spell.saveAbility] ?? spell.saveAbility;
+  }
 
   return `${map[spell.saveAbility] ?? spell.saveAbility} ${spellSaveDc}`;
 }
 
-function formatDiceWithModifier(dice, modifier) {
-  const numericModifier = Number(modifier ?? 0);
-
-  if (!numericModifier) {
-    return dice;
-  }
-
-  return `${dice} ${formatSigned(numericModifier)}`;
-}
-
-function formatSpellDamage(spell, spellcastingModifier) {
+export function formatSpellDamage(spell, spellcastingModifier) {
   if (!spell?.damage) {
     return null;
   }
@@ -319,7 +284,7 @@ function formatSpellDamage(spell, spellcastingModifier) {
   return `${spell.damage.dice}${modifierPart} ${spell.damage.type}`.trim();
 }
 
-function formatHealing(spell, spellcastingModifier) {
+export function formatHealing(spell, spellcastingModifier) {
   if (!spell?.healing) {
     return null;
   }
@@ -333,6 +298,16 @@ function formatHealing(spell, spellcastingModifier) {
     modifier === 0 ? "" : ` ${formatSigned(modifier)}`;
 
   return `${spell.healing.dice}${modifierPart} лечение`.trim();
+}
+
+function formatDiceWithModifier(dice, modifier) {
+  const numericModifier = Number(modifier ?? 0);
+
+  if (!numericModifier) {
+    return dice;
+  }
+
+  return `${dice} ${formatSigned(numericModifier)}`;
 }
 
 function isSpellAvailable(character, spell) {

@@ -54,28 +54,31 @@ function normalizeSkills(skills) {
       continue;
     }
 
-    let canonicalId = raw.id;
+    let canonicalId = raw.id ?? null;
 
-    if (!canonicalId) {
-      canonicalId = Object.entries(SKILL_LABELS).find(([, label]) => label === raw.name)?.[0] ?? null;
+    if (!canonicalId && raw.name) {
+      canonicalId =
+        Object.entries(SKILL_LABELS).find(([, label]) => label === raw.name)?.[0] ??
+        null;
     }
 
-    if (!canonicalId) {
+    if (!canonicalId || !SKILL_LABELS[canonicalId]) {
       continue;
     }
 
+    const proficient = Boolean(raw.proficient);
+    const expertise = Boolean(raw.expertise);
+
     const normalized = {
-      ...raw,
       id: canonicalId,
-      name: SKILL_LABELS[canonicalId] ?? raw.name ?? canonicalId,
-      ability: SKILL_TO_ABILITY[canonicalId] ?? raw.ability ?? "",
-      proficient: Boolean(raw.proficient),
-      expertise: Boolean(raw.expertise),
-      source: raw.source ?? null
+      name: SKILL_LABELS[canonicalId],
+      ability: SKILL_TO_ABILITY[canonicalId],
+      proficient: proficient || expertise,
+      expertise,
+      source: raw.source ?? null,
     };
 
     const existing = byId.get(canonicalId);
-
     if (!existing) {
       byId.set(canonicalId, normalized);
       continue;
@@ -86,7 +89,7 @@ function normalizeSkills(skills) {
       ...normalized,
       proficient: Boolean(existing.proficient || normalized.proficient),
       expertise: Boolean(existing.expertise || normalized.expertise),
-      source: existing.source ?? normalized.source ?? null
+      source: existing.source ?? normalized.source ?? null,
     });
   }
 

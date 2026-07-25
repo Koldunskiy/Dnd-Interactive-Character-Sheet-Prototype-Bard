@@ -4,7 +4,7 @@ const ABILITY_META = {
   constitution: { key: "con", short: "CON", label: "Телосложение" },
   intelligence: { key: "int", short: "INT", label: "Интеллект" },
   wisdom: { key: "wis", short: "WIS", label: "Мудрость" },
-  charisma: { key: "cha", short: "CHA", label: "Харизма" }
+  charisma: { key: "cha", short: "CHA", label: "Харизма" },
 };
 
 const SKILL_LABELS = {
@@ -25,28 +25,24 @@ const SKILL_LABELS = {
   deception: "Обман",
   intimidation: "Запугивание",
   performance: "Выступление",
-  persuasion: "Убеждение"
+  persuasion: "Убеждение",
 };
 
 const SKILL_TO_ABILITY = {
   athletics: "str",
-
   acrobatics: "dex",
   sleightOfHand: "dex",
   stealth: "dex",
-
   arcana: "int",
   history: "int",
   investigation: "int",
   nature: "int",
   religion: "int",
-
   animalHandling: "wis",
   insight: "wis",
   medicine: "wis",
   perception: "wis",
   survival: "wis",
-
   deception: "cha",
   intimidation: "cha",
   performance: "cha",
@@ -116,16 +112,16 @@ function getAbilityCardsData(character, derived) {
   const skillsById = new Map(
     characterSkills
       .filter((skill) => skill?.id)
-      .map((skill) => [skill.id, skill])
+      .map((skill) => [skill.id, skill]),
   );
 
   return Object.entries(ABILITY_META).map(([abilityId, meta]) => {
     const score = character.abilities?.[abilityId] ?? null;
     const mod =
-      derived.abilityModifiers?.[abilityId] ??
-      derived.abilityMods?.[abilityId] ??
+      derived?.abilityModifiers?.[abilityId] ??
+      derived?.abilityMods?.[abilityId] ??
       null;
-    const save = derived.savingThrows?.[abilityId] ?? null;
+    const save = derived?.savingThrows?.[abilityId] ?? null;
 
     const linkedSkills = Object.entries(SKILL_TO_ABILITY)
       .filter(([, abilityKey]) => abilityKey === meta.key)
@@ -155,13 +151,53 @@ function getAbilityCardsData(character, derived) {
       label: meta.label,
       score,
       mod,
-      checkValue: derived.abilityChecks?.[abilityId] ?? mod,
+      checkValue: derived?.abilityChecks?.[abilityId] ?? mod,
       saveValue: save,
       saveProficient: Boolean(character.savingThrows?.[abilityId]?.proficient),
       editable: Boolean(character.ui?.abilitiesEditable),
       linkedSkills,
     };
   });
+}
+
+function renderAbilitySkillRow(skill) {
+  return `
+    <div class="ability-skill-row">
+      <div class="ability-skill-main">
+        <span class="ability-skill-name">${escapeHtml(skill.name)}</span>
+
+        <div class="skill-toggle-group" aria-label="Уровень владения навыком ${escapeHtml(skill.name)}">
+          <button
+            type="button"
+            class="skill-toggle-btn skill-toggle-btn--compact ${skill.proficient ? "skill-toggle-btn--active" : ""}"
+            data-action="skill-toggle"
+            data-skill-id="${escapeHtml(skill.id)}"
+            data-toggle="proficient"
+            aria-pressed="${skill.proficient ? "true" : "false"}"
+            aria-label="Владение: ${escapeHtml(skill.name)}"
+            title="Владение"
+          >
+            В
+          </button>
+
+          <button
+            type="button"
+            class="skill-toggle-btn skill-toggle-btn--compact skill-toggle-btn--expertise ${skill.expertise ? "skill-toggle-btn--active" : ""}"
+            data-action="skill-toggle"
+            data-skill-id="${escapeHtml(skill.id)}"
+            data-toggle="expertise"
+            aria-pressed="${skill.expertise ? "true" : "false"}"
+            aria-label="Экспертиза: ${escapeHtml(skill.name)}"
+            title="Экспертиза"
+          >
+            Э
+          </button>
+        </div>
+      </div>
+
+      <span class="ability-skill-value">${escapeHtml(formatSigned(skill.value))}</span>
+    </div>
+  `;
 }
 
 function renderAbilityCard(card) {
@@ -210,26 +246,27 @@ function renderAbilityCard(card) {
             </button>
           </div>
         </div>
-        <div class="ability-card-stat-inline">
-            <span class="ability-card-stat-label">Проверка</span>
-            <strong class="ability-card-stat-value">${escapeHtml(formatSigned(card.checkValue))}</strong>
-          </div>
 
-          <div class="ability-card-stat-inline ability-card-stat-inline--save">
-            <span class="ability-card-stat-label">Спасбросок</span>
-            <strong class="ability-card-stat-value">${escapeHtml(formatSigned(card.saveValue))}</strong>
-            <button
-              type="button"
-              class="save-toggle-btn ${card.saveProficient ? "save-toggle-btn--active" : ""}"
-              data-action="saving-throw-toggle"
-              data-ability-id="${escapeHtml(card.id)}"
-              aria-pressed="${card.saveProficient ? "true" : "false"}"
-              aria-label="Владение спасброском ${escapeHtml(card.label)}"
-              title="Владение спасброском"
-            >
-              В
-            </button>
-          </div>
+        <div class="ability-card-stat-inline">
+          <span class="ability-card-stat-label">Проверка</span>
+          <strong class="ability-card-stat-value">${escapeHtml(formatSigned(card.checkValue))}</strong>
+        </div>
+
+        <div class="ability-card-stat-inline ability-card-stat-inline--save">
+          <span class="ability-card-stat-label">Спасбросок</span>
+          <strong class="ability-card-stat-value">${escapeHtml(formatSigned(card.saveValue))}</strong>
+          <button
+            type="button"
+            class="save-toggle-btn ${card.saveProficient ? "save-toggle-btn--active" : ""}"
+            data-action="saving-throw-toggle"
+            data-ability-id="${escapeHtml(card.id)}"
+            aria-pressed="${card.saveProficient ? "true" : "false"}"
+            aria-label="Владение спасброском ${escapeHtml(card.label)}"
+            title="Владение спасброском"
+          >
+            В
+          </button>
+        </div>
       </div>
 
       <div class="ability-card-skills">
@@ -245,46 +282,6 @@ function renderAbilityCard(card) {
   `;
 }
 
-function renderAbilitySkillRow(skill) {
-  return `
-    <div class="ability-skill-row">
-      <div class="ability-skill-main">
-        <span class="ability-skill-name">${escapeHtml(skill.name)}</span>
-
-        <div class="skill-toggle-group" aria-label="Уровень владения навыком ${escapeHtml(skill.name)}">
-          <button
-            type="button"
-            class="skill-toggle-btn skill-toggle-btn--compact ${skill.proficient ? "skill-toggle-btn--active" : ""}"
-            data-action="skill-toggle"
-            data-skill-id="${escapeHtml(skill.id)}"
-            data-toggle="proficient"
-            aria-pressed="${skill.proficient ? "true" : "false"}"
-            aria-label="Владение: ${escapeHtml(skill.name)}"
-            title="Владение"
-          >
-            В
-          </button>
-
-          <button
-            type="button"
-            class="skill-toggle-btn skill-toggle-btn--compact skill-toggle-btn--expertise ${skill.expertise ? "skill-toggle-btn--active" : ""}"
-            data-action="skill-toggle"
-            data-skill-id="${escapeHtml(skill.id)}"
-            data-toggle="expertise"
-            aria-pressed="${skill.expertise ? "true" : "false"}"
-            aria-label="Экспертиза: ${escapeHtml(skill.name)}"
-            title="Экспертиза"
-          >
-            Э
-          </button>
-        </div>
-      </div>
-
-      <span class="ability-skill-value">${escapeHtml(formatSigned(skill.value))}</span>
-    </div>
-  `;
-}
-
 function renderAbilitiesSection(character, derived) {
   const cards = getAbilityCardsData(character, derived);
 
@@ -292,7 +289,7 @@ function renderAbilitiesSection(character, derived) {
     <section class="panel-section">
       <div class="section-heading-row">
         <div>
-          <h3 class="section-title">Характеристики</h3>
+          <h2 class="section-title">Характеристики</h2>
           <p class="section-subtitle">Базовые значения, спасброски и связанные навыки.</p>
         </div>
       </div>
@@ -301,43 +298,6 @@ function renderAbilitiesSection(character, derived) {
         ${cards.map(renderAbilityCard).join("")}
       </div>
     </section>
-  `;
-}
-
-function renderSkills(skills, derivedSkillMap) {
-  if (!Array.isArray(skills) || !skills.length) {
-    return `<p class="empty-copy">Навыки не заданы.</p>`;
-  }
-
-  const sorted = [...skills].sort((a, b) =>
-    String(SKILL_LABELS[a.id] ?? a.id).localeCompare(String(SKILL_LABELS[b.id] ?? b.id), "ru")
-  );
-
-  return `
-    <div class="skill-list">
-      ${sorted
-        .map((skill) => {
-          const skillLabel = SKILL_LABELS[skill.id] ?? skill.id;
-          const value =
-            derivedSkillMap?.[skill.id] ??
-            derivedSkillMap?.[skillLabel] ??
-            "—";
-
-          return `
-            <div class="skill-row">
-              <div class="skill-row-main">
-                <span class="skill-name">${escapeHtml(skillLabel)}</span>
-                <span class="skill-ability">${escapeHtml(skill.ability)}</span>
-              </div>
-              <div class="skill-row-side">
-                ${renderSkillBadges(skill)}
-                <span class="skill-value">${escapeHtml(formatSigned(value))}</span>
-              </div>
-            </div>
-          `;
-        })
-        .join("")}
-    </div>
   `;
 }
 
@@ -361,7 +321,7 @@ function renderRaceDetails(raceDetails) {
   }
 
   const uniqueTraits = (Array.isArray(raceDetails.traits) ? raceDetails.traits : []).filter(
-    (trait) => !summaryTraitNames.has(trait?.name)
+    (trait) => !summaryTraitNames.has(trait?.name),
   );
 
   return `
@@ -389,11 +349,13 @@ function renderRaceDetails(raceDetails) {
         </div>
         <div class="info-card">
           <div class="info-label">Тёмное зрение</div>
-          <div class="info-value">${escapeHtml(
-            raceDetails.darkvision?.rangeMeters
-              ? `${raceDetails.darkvision.rangeMeters} м`
-              : "—"
-          )}</div>
+          <div class="info-value">${
+            escapeHtml(
+              raceDetails.darkvision?.rangeMeters
+                ? `${raceDetails.darkvision.rangeMeters} м`
+                : "—",
+            )
+          }</div>
         </div>
         <div class="info-card">
           <div class="info-label">Сопротивления</div>
@@ -412,7 +374,7 @@ function renderRaceDetails(raceDetails) {
                       <h3 class="feature-title">${escapeHtml(trait.name)}</h3>
                       <p class="feature-text">${escapeHtml(trait.text)}</p>
                     </article>
-                  `
+                  `,
                 )
                 .join("")}
             </div>
@@ -436,12 +398,12 @@ function renderBackgroundDetails(backgroundDetails) {
         <h3 class="feature-title">${escapeHtml(backgroundDetails.name)}</h3>
         <p class="feature-text">
           Владение навыками: ${escapeHtml(
-            (backgroundDetails.proficiencies?.skills ?? []).join(", ") || "—"
+            (backgroundDetails.proficiencies?.skills ?? []).join(", ") || "—",
           )}.
         </p>
         <p class="feature-text">
           Владение инструментами: ${escapeHtml(
-            (backgroundDetails.proficiencies?.tools ?? []).join(", ") || "—"
+            (backgroundDetails.proficiencies?.tools ?? []).join(", ") || "—",
           )}.
         </p>
         ${
@@ -463,7 +425,7 @@ function renderBackgroundDetails(backgroundDetails) {
               <article class="feature-card">
                 <h3 class="feature-title">Амплуа</h3>
                 <p class="feature-text">${escapeHtml(
-                  (backgroundDetails.persona.routine ?? []).join(", ") || "—"
+                  (backgroundDetails.persona.routine ?? []).join(", ") || "—",
                 )}</p>
               </article>
               <article class="feature-card">
@@ -539,7 +501,7 @@ function renderClassFeatures(features, character) {
                 <p class="feature-text">${escapeHtml(feature.text)}</p>
                 ${renderJackOfAllTradesToggle(feature, character)}
               </article>
-            `
+            `,
           )
           .join("")}
       </div>
@@ -604,13 +566,16 @@ export function renderProfile(root, character, derived) {
 
   const heroStats = [
     renderLevelControl(profile.level),
-    renderHeroStat("КД", derived.armorClass ?? "—"),
-    renderHeroStat("Хиты", derived.maxHitPoints ?? "—"),
-    renderHeroStat("Бонус мастерства", formatSigned(derived.proficiencyBonus)),
-    renderHeroStat("Инициатива", derived.formattedInitiative ?? "—"),
-    renderHeroStat("Пассивная внимательность", derived.passivePerception ?? "—"),
-    renderHeroStat("Сл заклинаний", derived.spellSaveDc ?? "—"),
-    renderHeroStat("Атака заклинанием", derived.formattedSpellAttackBonus ?? "—"),
+    renderHeroStat("КД", derived?.armorClass ?? "—"),
+    renderHeroStat("Хиты", derived?.maxHitPoints ?? "—"),
+    renderHeroStat("Бонус мастерства", formatSigned(derived?.proficiencyBonus)),
+    renderHeroStat("Инициатива", derived?.formattedInitiative ?? "—"),
+    renderHeroStat("Пассивная внимательность", derived?.passivePerception ?? "—"),
+    renderHeroStat("Сл заклинаний", derived?.spellSaveDc ?? derived?.spellStats?.spellSaveDc ?? "—"),
+    renderHeroStat(
+      "Атака заклинанием",
+      derived?.formattedSpellAttackBonus ?? derived?.spellStats?.spellAttackBonus ?? "—",
+    ),
   ];
 
   root.innerHTML = `
@@ -627,6 +592,7 @@ export function renderProfile(root, character, derived) {
             ${renderTag(profile.className ?? "—")}
             ${profile.subclass ? renderTag(profile.subclass) : ""}
             ${profile.background ? renderTag(profile.background) : ""}
+            ${profile.alignment ? renderTag(profile.alignment) : ""}
           </div>
 
           ${profile.summary ? `<p class="profile-summary">${escapeHtml(profile.summary)}</p>` : ""}

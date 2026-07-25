@@ -17,6 +17,7 @@ import {
 import {
   getBardCantripLimit,
   getBardPreparedSpellLimit,
+  SKILL_ID_META,
 } from "./rules.js";
 import { buildCharacterSpellCollections, BARD_SPELL_LIBRARY_BY_ID } from "./selectors/spellcasting.js";
 
@@ -214,8 +215,12 @@ function handleAbilityAdjust(draft, target) {
 }
 
 function handleSkillToggle(draft, target) {
-  const skillId = target.dataset.skillId;
-  const toggle = target.dataset.toggle;
+  const skillId = String(target.dataset.skillId ?? "");
+  const toggle = String(target.dataset.toggle ?? "");
+
+  if (!skillId || !toggle) {
+    return;
+  }
 
   if (!Array.isArray(draft.skills)) {
     draft.skills = [];
@@ -224,10 +229,15 @@ function handleSkillToggle(draft, target) {
   let skill = draft.skills.find((entry) => entry.id === skillId);
 
   if (!skill) {
+    const meta = SKILL_ID_META[skillId];
+    if (!meta) {
+      return;
+    }
+
     skill = {
       id: skillId,
-      name: skillId,
-      ability: "",
+      name: meta.label,
+      ability: meta.ability,
       proficient: false,
       expertise: false,
       source: null,
@@ -256,14 +266,23 @@ function handleSkillToggle(draft, target) {
 }
 
 function handleSavingThrowToggle(draft, target) {
-  const abilityId = target.dataset.abilityId;
+  const abilityId = String(target.dataset.abilityId ?? "");
+
+  if (!abilityId) {
+    return;
+  }
 
   if (!draft.savingThrows || typeof draft.savingThrows !== "object") {
     draft.savingThrows = {};
   }
 
-  if (!draft.savingThrows[abilityId] || typeof draft.savingThrows[abilityId] !== "object") {
-    draft.savingThrows[abilityId] = { proficient: false };
+  if (
+    !draft.savingThrows[abilityId] ||
+    typeof draft.savingThrows[abilityId] !== "object"
+  ) {
+    draft.savingThrows[abilityId] = {
+      proficient: false,
+    };
   }
 
   draft.savingThrows[abilityId].proficient = !Boolean(

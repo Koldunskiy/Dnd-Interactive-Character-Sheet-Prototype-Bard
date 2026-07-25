@@ -1,3 +1,9 @@
+import {
+  formatSpellSave,
+  formatSpellDamage,
+  formatHealing
+} from '../../calculations.js';
+
 export function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -96,4 +102,51 @@ export function renderSpellSummaryLine(spell) {
       ${escapeHtml(formatSpellSchoolLine(spell.level, spell.school))}
     </p>
   `;
+}
+
+export function renderSpellMetaFacts(items, extraClassName = "") {
+  const rows = items.filter((item) => item?.label && item?.value);
+
+  if (!rows.length) {
+    return "";
+  }
+
+  const className = ["spell-facts", extraClassName].filter(Boolean).join(" ");
+
+  return `
+    <dl class="${className}">
+      ${rows
+        .map(
+          (item) => `
+            <div class="spell-fact">
+              <dt class="spell-fact-label">${escapeHtml(item.label)}</dt>
+              <dd class="spell-fact-value">${escapeHtml(item.value)}</dd>
+            </div>
+          `,
+        )
+        .join("")}
+    </dl>
+  `;
+}
+
+export function renderSpellCombatStats(spell, spellStats = null) {
+  const items = [];
+
+  const damage = formatSpellDamage(spell, spellStats?.spellcastingModifier);
+  const healing = formatHealing(spell, spellStats?.spellcastingModifier);
+  const save = formatSpellSave(spell, spellStats?.spellSaveDc);
+
+  if (damage) {
+    items.push({ label: "Урон", value: damage });
+  }
+
+  if (healing) {
+    items.push({ label: "Лечение", value: healing });
+  }
+
+  if (save) {
+    items.push({ label: "Спасбросок", value: save });
+  }
+
+  return renderSpellMetaFacts(items, "spell-facts--meta spell-facts--combat");
 }

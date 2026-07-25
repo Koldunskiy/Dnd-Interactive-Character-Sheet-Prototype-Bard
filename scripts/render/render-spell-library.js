@@ -6,6 +6,7 @@ import {
   getBaseSpellFactItems,
   renderSpellCardHeader,
   renderSpellSummaryLine,
+  renderSpellCombatStats,
 } from "./shared/spell-card.js";
 import { BARD_SPELL_LIBRARY } from "../../data/bard-spells.js";
 import {
@@ -15,18 +16,22 @@ import {
   buildCharacterSpellCollections,
 } from "../selectors/spellcasting.js";
 
+
 function sortSpells(spells) {
   return [...spells].sort((left, right) => {
     if (left.level !== right.level) {
       return left.level - right.level;
     }
 
+
     return String(left.name).localeCompare(String(right.name), "ru");
   });
 }
 
+
 function getSpellFactItems(spell) {
   const items = [...getBaseSpellFactItems(spell)];
+
 
   if (spell.classes) {
     items.push({
@@ -35,8 +40,10 @@ function getSpellFactItems(spell) {
     });
   }
 
+
   return items;
 }
+
 
 function renderLibraryBadges(spell, state) {
   const badges = [
@@ -45,19 +52,23 @@ function renderLibraryBadges(spell, state) {
     )}</span>`,
   ];
 
+
   if (state.isGranted) {
     badges.push(`<span class="spell-badge spell-badge--granted">Даровано</span>`);
   } else if (state.isSelected) {
     badges.push(`<span class="spell-badge spell-badge--selected">Выбрано</span>`);
   }
 
+
   if (spell.ritual) {
     badges.push(`<span class="spell-badge">Ритуал</span>`);
   }
 
+
   if (spell.concentration) {
     badges.push(`<span class="spell-badge">Концентрация</span>`);
   }
+
 
   if (!state.isAvailable) {
     badges.push(
@@ -67,8 +78,10 @@ function renderLibraryBadges(spell, state) {
     );
   }
 
+
   return badges;
 }
+
 
 function getSpellSelectionState(character, spell) {
   const level = character?.profile?.level ?? 1;
@@ -76,6 +89,7 @@ function getSpellSelectionState(character, spell) {
   const cantripSelected = Number(spell.level) === 0 && isCantripSelected(character, spell.id);
   const preparedSelected =
     Number(spell.level) > 0 && isPreparedSpellSelected(character, spell.id);
+
 
   return {
     isGranted: granted,
@@ -87,6 +101,7 @@ function getSpellSelectionState(character, spell) {
   };
 }
 
+
 function renderSelectionStatus(spell, state) {
   if (!state.isAvailable) {
     return `<span class="spell-library-status spell-library-status--locked">Недоступно до ${escapeHtml(
@@ -94,33 +109,41 @@ function renderSelectionStatus(spell, state) {
     )}</span>`;
   }
 
+
   if (state.isGranted) {
     return `<span class="spell-library-status spell-library-status--granted">Получено от происхождения, наследия или особенности</span>`;
   }
+
 
   if (state.isCantrip && state.isSelected) {
     return `<span class="spell-library-status spell-library-status--selected">Выбран как заговор</span>`;
   }
 
+
   if (state.isPrepared && state.isSelected) {
     return `<span class="spell-library-status spell-library-status--selected">Подготовлено</span>`;
   }
+
 
   if (state.isCantrip) {
     return `<span class="spell-library-status">Доступен для выбора как заговор</span>`;
   }
 
+
   return `<span class="spell-library-status">Доступно для подготовки</span>`;
 }
+
 
 function renderSelectionAction(spell, state) {
   if (!state.isAvailable) {
     return "";
   }
 
+
   if (state.isGranted) {
     return "";
   }
+
 
   const buttonLabel = state.isCantrip
     ? state.isSelected
@@ -130,7 +153,9 @@ function renderSelectionAction(spell, state) {
       ? "Убрать из подготовленных"
       : "Подготовить";
 
+
   const mode = state.isCantrip ? "cantrip" : "prepared";
+
 
   return `
     <button
@@ -145,7 +170,7 @@ function renderSelectionAction(spell, state) {
   `;
 }
 
-function renderSpellCard(spell, character, expandedSpellIds) {
+function renderSpellCard(spell, character, expandedSpellIds, spellStats) {
   const state = getSpellSelectionState(character, spell);
   const isExpanded = expandedSpellIds.includes(spell.id);
   const contentId = `spell-library-content-${String(spell.id)}`;
@@ -195,6 +220,7 @@ function renderSpellCard(spell, character, expandedSpellIds) {
           isExpanded
             ? `
               ${renderSpellFacts(getSpellFactItems(spell))}
+              ${renderSpellCombatStats(spell, spellStats)}
 
               ${renderSpellBody(
                 renderTextParagraph("spell-description", spell.description ?? spell.summary),
@@ -229,6 +255,7 @@ function renderSpellCard(spell, character, expandedSpellIds) {
 function renderToolbar(character) {
   const collections = buildCharacterSpellCollections(character);
 
+
   return `
     <div class="section-heading-row">
       <div>
@@ -245,6 +272,7 @@ function renderToolbar(character) {
   `;
 }
 
+
 function renderLevelFilter(levels, selectedLevel, selectionFilter) {
   const options = [
     {
@@ -256,6 +284,7 @@ function renderLevelFilter(levels, selectedLevel, selectionFilter) {
       label: Number(level) === 0 ? "Заговоры" : `${level} круг`,
     })),
   ];
+
 
   return `
     <div class="spell-library-toolbar">
@@ -276,6 +305,7 @@ function renderLevelFilter(levels, selectedLevel, selectionFilter) {
           .join("")}
       </div>
 
+
       <div class="spell-library-selection-filters">
         <button
           type="button"
@@ -290,10 +320,18 @@ function renderLevelFilter(levels, selectedLevel, selectionFilter) {
   `;
 }
 
-export function renderSpellLibrary(root, character) {
+
+export function renderSpellLibrary(root, character, derived = null) {
   if (!root) {
     return;
   }
+
+
+  const sharedSpellStats = {
+    spellSaveDc: derived?.spellSaveDc ?? null,
+    spellcastingModifier: derived?.spellcastingModifier ?? null,
+  };
+
 
   const selectedLevel = character?.ui?.spellLibrary?.selectedLevel ?? "all";
   const selectionFilter = character.ui?.spellLibrary?.selectionFilter ?? "all";
@@ -301,17 +339,21 @@ export function renderSpellLibrary(root, character) {
     ? character.ui.spellLibrary.expandedSpellIds
     : [];
 
+
   const allSpells = sortSpells(BARD_SPELL_LIBRARY);
   const levels = [...new Set(allSpells.map((spell) => spell.level))].sort((a, b) => a - b);
+
 
   const filteredSpells = allSpells.filter((spell) => {
     const matchesLevel =
       selectedLevel === "all" ||
       String(spell.level) === String(selectedLevel);
 
+
     if (!matchesLevel) {
       return false;
     }
+
 
     if (selectionFilter === "selected") {
       return (
@@ -320,13 +362,16 @@ export function renderSpellLibrary(root, character) {
       );
     }
 
+
     return true;
   });
+
 
   root.innerHTML = `
     <section class="panel-section">
       ${renderToolbar(character)}
       ${renderLevelFilter(levels, selectedLevel, selectionFilter)}
+
 
       <div class="spell-grid spell-grid--library">
         ${

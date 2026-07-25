@@ -7,8 +7,15 @@ import {
   getBaseSpellFactItems,
   renderSpellCardHeader,
   renderSpellSummaryLine,
+  renderSpellCombatStats,
 } from "./shared/spell-card.js";
 import { buildCharacterSpellCollections } from "../selectors/spellcasting.js";
+import {
+  formatSpellSave,
+  formatSpellDamage,
+  formatHealing,
+} from "../calculations.js";
+
 
 function formatSigned(value) {
   const number = Number(value);
@@ -20,47 +27,39 @@ function formatSigned(value) {
   return number >= 0 ? `+${number}` : `${number}`;
 }
 
-function renderSpellStats(spell) {
-  const rows = [];
+function renderSpellStats(spell, spellStats = null) {
+  const items = [];
 
-  if (spell.save) {
-    rows.push(
-      `<div class="spell-stat"><span class="spell-stat-label">Спасбросок</span><span class="spell-stat-value">${escapeHtml(spell.save)}</span></div>`,
-    );
+  const save = formatSpellSave(spell, spellStats?.spellSaveDc);
+  const damage = formatSpellDamage(spell, spellStats?.spellcastingModifier);
+  const healing = formatHealing(spell, spellStats?.spellcastingModifier);
+
+  if (save && !spell.saveAbility) {
+    items.push({ label: "Эффект", value: save });
   }
 
   if (spell.attackBonus) {
-    rows.push(
-      `<div class="spell-stat"><span class="spell-stat-label">Атака</span><span class="spell-stat-value">${escapeHtml(spell.attackBonus)}</span></div>`,
-    );
-  }
-
-  if (spell.damage) {
-    rows.push(
-      `<div class="spell-stat"><span class="spell-stat-label">Эффект</span><span class="spell-stat-value">${escapeHtml(spell.damage)}</span></div>`,
-    );
+    items.push({ label: "Атака", value: spell.attackBonus });
   }
 
   if (spell.upcast) {
-    rows.push(
-      `<div class="spell-stat"><span class="spell-stat-label">Апкаст</span><span class="spell-stat-value">${escapeHtml(spell.upcast)}</span></div>`,
-    );
+    items.push({ label: "Апкаст", value: spell.upcast });
   }
 
   if (spell.uses?.max) {
-    rows.push(
-      `<div class="spell-stat"><span class="spell-stat-label">Использования</span><span class="spell-stat-value">${escapeHtml(
-        `${spell.uses.current}/${spell.uses.max}${spell.uses.refresh ? ` · ${spell.uses.refresh}` : ""}`,
-      )}</span></div>`,
-    );
+    items.push({
+      label: "Использования",
+      value: `${spell.uses.current}/${spell.uses.max}${spell.uses.refresh ? ` · ${spell.uses.refresh}` : ""}`,
+    });
   }
 
-  if (!rows.length) {
+  if (!items.length) {
     return "";
   }
 
-  return `<div class="spell-stats-grid">${rows.join("")}</div>`;
+  return renderSpellFacts(items);
 }
+
 
 function renderSourceBadge(spell) {
   const source = spell.source ?? "class";
@@ -120,8 +119,9 @@ function getSpellFactItems(spell) {
   return items;
 }
 
-function renderSpellCard(spell, options = {}) {
+function renderSpellCard(spell, spellStats, options = {}) {
   const badges = buildSpellBadges(spell, options);
+  const combatStatsHtml = renderSpellCombatStats(spell, spellStats);
 
   return `
     <article class="spell-card ${options.isGranted ? "spell-card--granted" : ""}">
@@ -136,6 +136,7 @@ function renderSpellCard(spell, options = {}) {
       ${renderSpellFacts(getSpellFactItems(spell))}
 
       ${renderSpellStats(spell)}
+      ${combatStatsHtml}
 
       ${renderSpellBody(
         renderTextParagraph("spell-description", spell.description ?? spell.summary),
@@ -157,6 +158,9 @@ function renderSlotEntry(slot) {
 }
 
 function renderSpellSection(title, spells, emptyText, options = {}) {
+  const cardOptions = options.cardOptions ?? {};
+  const spellStats = cardOptions.spellStats ?? null;
+
   return `
     <section class="panel-section">
       <div class="section-heading-row">
@@ -173,7 +177,9 @@ function renderSpellSection(title, spells, emptyText, options = {}) {
       <div class="spell-grid">
         ${
           spells.length
-            ? spells.map((spell) => renderSpellCard(spell, options.cardOptions)).join("")
+            ? spells
+                .map((spell) => renderSpellCard(spell, spellStats, cardOptions))
+                .join("")
             : `<p class="empty-copy">${escapeHtml(emptyText)}</p>`
         }
       </div>
@@ -182,18 +188,31 @@ function renderSpellSection(title, spells, emptyText, options = {}) {
 }
 
 export function renderSpells(root, character, derived) {
-  if (!root) {
-    return;
-  }
+  if (!root) return;
 
   const spellcasting = character.spellcasting ?? {};
   const level = character.profile?.level ?? 1;
-
   const spellCollections = buildCharacterSpellCollections(character);
 
-  const cantrips = spellCollections.cantrips;
-  const preparedSpells = spellCollections.preparedSpells;
-  const grantedSpells = spellCollections.grantedSpells;
+  const {
+    cantrips,
+    preparedSpells,
+    grantedSpells,
+    counts,
+    limits,
+  } = spellCollections;
+
+  const sharedSpellStats = {
+    spellSaveDc: derived?.spellStats?.spellSaveDc ?? derived?.spellSaveDc ?? null,
+    spellcastingModifier:
+      derived?.spellStats?.spellcastingModifier ?? null,
+    spellAttackBonus:
+      derived?.spellStats?.spellAttackBonus ?? derived?.spellAttackBonus ?? null,
+    formattedSpellAttackBonus:
+      derived?.spellStats?.formattedSpellAttackBonus ??
+      derived?.formattedSpellAttackBonus ??
+      null,
+  };
 
   const slotEntries = Array.isArray(derived.spellSlots)
     ? derived.spellSlots.map(renderSlotEntry).join("")
@@ -205,20 +224,13 @@ export function renderSpells(root, character, derived) {
         <div>
           <h2 class="section-title">Заклинания</h2>
           <p class="section-subtitle">
-            Харизма — базовая характеристика. Сл спасброска: ${escapeHtml(
-              derived.spellSaveDc ?? "—",
-            )}, атака заклинанием: ${escapeHtml(
-              formatSigned(derived.spellAttackBonus),
-            )}.
+            Сл спасброска: ${escapeHtml(derived?.spellSaveDc ?? "—")},
+            атака заклинанием: ${escapeHtml(formatSigned(derived?.spellAttackBonus ?? 0))}
           </p>
           <p class="section-subtitle">
-            Заговоры: ${escapeHtml(spellCollections.counts.cantrips)}/${escapeHtml(
-              spellCollections.limits.cantrips,
-            )}, подготовленные: ${escapeHtml(
-              spellCollections.counts.preparedSpells,
-            )}/${escapeHtml(spellCollections.limits.preparedSpells)}, дарованные: ${escapeHtml(
-              spellCollections.counts.grantedSpells,
-            )}.
+            Заговоры: ${escapeHtml(counts.cantrips)}/${escapeHtml(limits.cantrips)},
+            подготовлено: ${escapeHtml(counts.preparedSpells)}/${escapeHtml(limits.preparedSpells)},
+            даровано: ${escapeHtml(counts.grantedSpells)}
           </p>
         </div>
       </div>
@@ -229,10 +241,9 @@ export function renderSpells(root, character, derived) {
 
       ${
         spellcasting.focus
-          ? `<p class="section-copy"><strong>Фокусировка:</strong> ${escapeHtml(spellcasting.focus)}</p>`
+          ? `<p class="section-copy"><strong>Фокус:</strong> ${escapeHtml(spellcasting.focus)}</p>`
           : ""
       }
-
       ${
         spellcasting.notes
           ? `<p class="section-copy">${escapeHtml(spellcasting.notes)}</p>`
@@ -240,49 +251,37 @@ export function renderSpells(root, character, derived) {
       }
     </section>
 
-    ${renderSpellSection(
-      "Заговоры",
-      cantrips,
-      "Нет выбранных заговоров.",
-      {
-        subtitle: `Выбрано ${spellCollections.counts.cantrips} из ${spellCollections.limits.cantrips}`,
-        cardOptions: {
-          characterLevel: level,
-          showSource: true,
-          isGranted: false,
-        },
+    ${renderSpellSection("Заговоры", cantrips, "Заговоры не выбраны.", {
+      subtitle: `${counts.cantrips}/${limits.cantrips}`,
+      cardOptions: {
+        characterLevel: level,
+        showSource: true,
+        isGranted: false,
+        spellStats: sharedSpellStats,
       },
-    )}
+    })}
 
-    ${renderSpellSection(
-      "Подготовленные заклинания",
-      preparedSpells,
-      "Нет подготовленных заклинаний.",
-      {
-        subtitle: `Подготовлено ${spellCollections.counts.preparedSpells} из ${spellCollections.limits.preparedSpells}`,
-        cardOptions: {
-          characterLevel: level,
-          showSource: true,
-          isGranted: false,
-        },
+    ${renderSpellSection("Подготовленные заклинания", preparedSpells, "Подготовленные заклинания отсутствуют.", {
+      subtitle: `${counts.preparedSpells}/${limits.preparedSpells}`,
+      cardOptions: {
+        characterLevel: level,
+        showSource: true,
+        isGranted: false,
+        spellStats: sharedSpellStats,
       },
-    )}
+    })}
 
     ${
       grantedSpells.length
-        ? renderSpellSection(
-            "Дарованные заклинания",
-            grantedSpells,
-            "Нет дарованных заклинаний.",
-            {
-              subtitle: "Получены от происхождения, наследия, черт или других особенностей и не расходуют лимит подготовленных заклинаний.",
-              cardOptions: {
-                characterLevel: level,
-                showSource: true,
-                isGranted: true,
-              },
+        ? renderSpellSection("Дарованные заклинания", grantedSpells, "Дарованные заклинания отсутствуют.", {
+            subtitle: `${counts.grantedSpells}`,
+            cardOptions: {
+              characterLevel: level,
+              showSource: true,
+              isGranted: true,
+              spellStats: sharedSpellStats,
             },
-          )
+          })
         : ""
     }
   `;
