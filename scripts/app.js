@@ -241,12 +241,50 @@ function bindSpellLibraryControls(root = document) {
   });
 }
 
+function bindSpellsControls(root = document) {
+  root.querySelectorAll("[data-spells-toggle]").forEach((element) => {
+    if (element.dataset.bound === "true") return;
+
+    element.addEventListener("click", (event) => {
+      const target = event.currentTarget;
+      const handler = actionHandlers["spells-toggle-expand"];
+
+      updateState((draft) => {
+        handler(draft, target);
+        return draft;
+      });
+    });
+
+    element.dataset.bound = "true";
+  });
+}
+
+function bindMeleeControls(root = document) {
+  root.querySelectorAll("[data-melee-toggle]").forEach((element) => {
+    if (element.dataset.bound === "true") return;
+
+    element.addEventListener("click", (event) => {
+      const target = event.currentTarget;
+      const handler = actionHandlers["melee-toggle-expand"];
+
+      updateState((draft) => {
+        handler(draft, target);
+        return draft;
+      });
+    });
+
+    element.dataset.bound = "true";
+  });
+}
+
 function bindUi(root = document) {
   bindEditableFields(root);
   bindActionButtons(root);
   bindInventoryFields(root);
   bindEffectFields(root);
   bindSpellLibraryControls(root);
+  bindSpellsControls(root);
+  bindMeleeControls(root);
 }
 
 function renderApp() {
@@ -265,7 +303,7 @@ function renderApp() {
   renderProfile(profilePanel, state, derived);
   renderMeleePanel(state, derived);
   renderSpells(spellsPanel, state, derived);
-  renderSpellLibrary(spellLibraryPanel, state);
+  renderSpellLibrary(spellLibraryPanel, state, derived);
   renderInventoryPanel(state);
   renderLorePanel(state);
 

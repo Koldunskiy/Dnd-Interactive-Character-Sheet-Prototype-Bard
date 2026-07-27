@@ -32,6 +32,7 @@ export function renderLorePanel(state) {
 
   lorePanel.innerHTML = `
     <h2>Лор</h2>
+
     <div class="cards-grid">
       <div class="info-card">
         <div class="info-card-title">Внешний вид</div>
@@ -54,6 +55,18 @@ export function renderLorePanel(state) {
       </div>
 
       ${extraCards}
+    </div>
+
+    <div style="height: 18px;"></div>
+
+    <div class="info-card">
+      <div class="info-card-title">Заметки</div>
+      <textarea
+        class="lore-notes-textarea"
+        rows="10"
+        data-bind="lore.notes"
+        placeholder="Любые дополнительные заметки: связи, сцены из прошлого, манеры речи, секреты, отношение к союзникам, планы, зацепки для отыгрыша..."
+      >${escapeHtml(lore.notes || "")}</textarea>
     </div>
   `;
 }

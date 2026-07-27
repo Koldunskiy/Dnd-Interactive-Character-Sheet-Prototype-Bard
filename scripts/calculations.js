@@ -7,6 +7,7 @@ import {
   BARD_PROGRESSION,
   TURN_TRACKER_META
 } from "./rules.js";
+import { buildCharacterSpellCollections } from "./selectors/spellcasting.js";
 
 function getAbilityModifier(score = 10) {
   return Math.floor((Number(score) - 10) / 2);
@@ -367,37 +368,47 @@ function inferCombatRole(spell) {
 }
 
 function getCombatSpells(character, spellStats) {
-  const spells = Array.isArray(character.spellcasting?.spells)
-    ? character.spellcasting.spells
-    : [];
+  const collections = buildCharacterSpellCollections(character);
+  const spells = [
+    ...(collections.cantrips || []),
+    ...(collections.preparedSpells || []),
+    ...(collections.grantedSpells || []),
+  ];
 
   return spells
     .filter((spell) => isSpellAvailable(character, spell))
     .filter((spell) => inferCombatRole(spell) !== "utility")
     .map((spell) => ({
-      id: `spell-${String(spell.originalName || spell.name || "spell")
+      id: `spell-${String(spell.originalName ?? spell.name ?? "")
         .toLowerCase()
         .replaceAll(" ", "-")}`,
+      spellId: spell.id ?? null,
       kind: "spell",
-      title: spell.name || "Заклинание",
+      title: spell.name ?? "",
+      originalName: spell.originalName ?? null,
       level: Number(spell.level ?? 0),
-      attack:
-        spell.attackBonus ??
-        (spell.attackType ? spellStats.formattedSpellAttackBonus : null),
+      school: spell.school ?? null,
+      attack: spell.attackBonus ?? (spell.attackType ? spellStats.formattedSpellAttackBonus : null),
       save: formatSpellSave(spell, spellStats.spellSaveDc),
       damage:
         formatSpellDamage(spell, spellStats.spellcastingModifier) ??
         formatHealing(spell, spellStats.spellcastingModifier),
       concentration: Boolean(spell.concentration),
-      castTime: spell.castTime || "",
-      range: spell.range || "",
-      duration: spell.duration || "",
-      tags: [
-        spell.sourceLabel,
-        spell.school,
-        spell.combatRole || inferCombatRole(spell),
-      ].filter(Boolean),
-      notes: spell.vibe || spell.description || spell.notes || "",
+      castTime: spell.castTime ?? spell.castingTime ?? "",
+      range: spell.range ?? "",
+      rangeFeet:
+        spell.rangeFeet !== null && spell.rangeFeet !== undefined
+          ? Number(spell.rangeFeet)
+          : null,
+      areaShape: spell.areaShape ?? null,
+      areaSizeFeet:
+        spell.areaSizeFeet !== null && spell.areaSizeFeet !== undefined
+          ? Number(spell.areaSizeFeet)
+          : null,
+      areaType: spell.areaType ?? null,
+      duration: spell.duration ?? "",
+      tags: [spell.sourceLabel, spell.school, spell.combatRole ?? inferCombatRole(spell)].filter(Boolean),
+      notes: spell.vibe ?? spell.description ?? spell.notes ?? "",
     }));
 }
 

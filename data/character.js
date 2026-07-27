@@ -35,7 +35,13 @@ export const character = {
       selectedLevel: "all",
       selectionFilter: "all",
       expandedSpellIds: []
-    }
+    },
+    spells: {
+      expandedSpellIds: [],
+    },
+    melee: {
+      expandedCardIds: [],
+    },
   },
 
   abilities: {

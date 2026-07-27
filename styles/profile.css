@@ -523,7 +523,7 @@
 .ability-skill-name {
   min-width: 0;
   color: #fff;
-  font-size: 0.95rem;
+  font-size: 0.8rem;
   font-weight: 600;
   line-height: 1.2;
 }
@@ -630,4 +630,51 @@
   .ability-skill-value {
     justify-self: start;
   }
+}
+
+.app-layout {
+  display: grid;
+  grid-template-columns: clamp(306px, 30vw, 378px) minmax(0, 1fr);
+  gap: 24px;
+}
+
+.portrait-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  min-height: 396px;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.portrait-media {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.lore-notes-textarea {
+  width: 100%;
+  min-height: 220px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.lore-notes-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.profile-hero-main {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: none;
 }

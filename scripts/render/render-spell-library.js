@@ -7,6 +7,7 @@ import {
   renderSpellCardHeader,
   renderSpellSummaryLine,
   renderSpellCombatStats,
+  getSpellGeometryFactItem,
 } from "./shared/spell-card.js";
 import { BARD_SPELL_LIBRARY } from "../../data/bard-spells.js";
 import {
@@ -32,6 +33,16 @@ function sortSpells(spells) {
 function getSpellFactItems(spell) {
   const items = [...getBaseSpellFactItems(spell)];
 
+  const geometryItem = getSpellGeometryFactItem(spell);
+  if (geometryItem) {
+    const hasBaseRange = items.some((item) => item?.label === "Дистанция");
+    if (hasBaseRange) {
+      const index = items.findIndex((item) => item?.label === "Дистанция");
+      items[index] = geometryItem;
+    } else {
+      items.push(geometryItem);
+    }
+  }
 
   if (spell.classes) {
     items.push({
@@ -39,7 +50,6 @@ function getSpellFactItems(spell) {
       value: Array.isArray(spell.classes) ? spell.classes.join(", ") : spell.classes,
     });
   }
-
 
   return items;
 }
@@ -328,8 +338,15 @@ export function renderSpellLibrary(root, character, derived = null) {
 
 
   const sharedSpellStats = {
-    spellSaveDc: derived?.spellSaveDc ?? null,
-    spellcastingModifier: derived?.spellcastingModifier ?? null,
+    spellSaveDc: derived?.spellStats?.spellSaveDc ?? derived?.spellSaveDc ?? null,
+    spellcastingModifier:
+      derived?.spellStats?.spellcastingModifier ?? null,
+    spellAttackBonus:
+      derived?.spellStats?.spellAttackBonus ?? derived?.spellAttackBonus ?? null,
+    formattedSpellAttackBonus:
+      derived?.spellStats?.formattedSpellAttackBonus ??
+      derived?.formattedSpellAttackBonus ??
+      null,
   };
 
 
@@ -377,7 +394,7 @@ export function renderSpellLibrary(root, character, derived = null) {
         ${
           filteredSpells.length
             ? filteredSpells
-                .map((spell) => renderSpellCard(spell, character, expandedSpellIds))
+                .map((spell) => renderSpellCard(spell, character, expandedSpellIds, sharedSpellStats))
                 .join("")
             : `<p class="empty-copy">${
                   selectionFilter === "selected"

@@ -150,3 +150,69 @@ export function renderSpellCombatStats(spell, spellStats = null) {
 
   return renderSpellMetaFacts(items, "spell-facts--meta spell-facts--combat");
 }
+
+export function formatSpellGeometry(spell) {
+  if (!spell) {
+    return null;
+  }
+
+  const parts = [];
+
+  const hasRangeFeet =
+    spell.rangeFeet !== null &&
+    spell.rangeFeet !== undefined &&
+    Number.isFinite(Number(spell.rangeFeet));
+
+  if (hasRangeFeet) {
+    const rangeFeet = Number(spell.rangeFeet);
+
+    if (rangeFeet === 0) {
+      parts.push("На себя");
+    } else {
+      parts.push(`${rangeFeet} футов`);
+    }
+  } else if (spell.range) {
+    parts.push(String(spell.range));
+  }
+
+  const hasArea =
+    spell.areaShape &&
+    spell.areaSizeFeet !== null &&
+    spell.areaSizeFeet !== undefined &&
+    Number.isFinite(Number(spell.areaSizeFeet));
+
+  if (hasArea) {
+    const areaSizeFeet = Number(spell.areaSizeFeet);
+
+    const shapeMap = {
+      radius: "радиус",
+      cube: "куб",
+      cone: "конус",
+      sphere: "сфера",
+      line: "линия",
+      cylinder: "цилиндр",
+    };
+
+    const shapeLabel = shapeMap[spell.areaShape] ?? spell.areaShape;
+    parts.push(`${shapeLabel} ${areaSizeFeet} футов`);
+  }
+
+  if (!parts.length) {
+    return null;
+  }
+
+  return parts.join(" • ");
+}
+
+export function getSpellGeometryFactItem(spell) {
+  const geometry = formatSpellGeometry(spell);
+
+  if (!geometry) {
+    return null;
+  }
+
+  return {
+    label: "Дистанция / зона",
+    value: geometry,
+  };
+}

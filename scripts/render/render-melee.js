@@ -1,17 +1,19 @@
+import {
+  escapeHtml,
+  formatSpellLevel,
+  renderSpellFacts,
+  renderTextParagraph,
+  renderSpellBody,
+  renderSpellCardHeader,
+  renderSpellSummaryLine,
+  getSpellGeometryFactItem,
+} from "./shared/spell-card.js";
+
 const EMPTY_COMBAT_CARDS = Object.freeze({
   weapons: [],
   features: [],
   spells: [],
 });
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -328,7 +330,7 @@ function renderCardActions(card) {
     const slotLevel = Number(card.level || 0);
     const attrs = [
       `data-action="spell-cast"`,
-      `data-spell-id="${escapeHtml(card.id || "")}"`,
+      `data-spell-id="${escapeHtml(card.spellId || "")}"`,
       `data-spell-level="${slotLevel}"`,
       `data-cast-time="${escapeHtml(card.castTime || "")}"`,
       card.concentration ? `data-sets-concentration="true"` : "",
@@ -379,89 +381,187 @@ function renderTags(tags = []) {
   `;
 }
 
-function renderCombatActionCard(card) {
-  const tagsMarkup = renderTags(card.tags || []);
+function renderMeleeSpellStats(card) {
+  const items = [];
 
-  if (card.kind === "weapon") {
-    return `
-      <div class="info-card">
-        <div class="info-card-title">${escapeHtml(card.title || "Оружие")}</div>
-        <div class="info-card-text">
-          Атака: <strong>${escapeHtml(card.attack || "—")}</strong><br>
-          Урон: <strong>${escapeHtml(card.damage || "—")}</strong><br>
-          Тип урона: ${escapeHtml(card.damageType || "—")}<br>
-          ${card.notes ? `${escapeHtml(card.notes)}<br>` : ""}
-          ${tagsMarkup}
-        </div>
-        ${renderCardActions(card)}
-      </div>
-    `;
+  if (card.attack) {
+    items.push({ label: "Атака", value: card.attack });
   }
 
-  if (card.kind === "feature") {
-    return `
-      <div class="info-card">
-        <div class="info-card-title">${escapeHtml(card.title || "Способность")}</div>
-        <div class="info-card-text">
-          ${card.cost ? `Стоимость: <strong>${escapeHtml(card.cost)}</strong><br>` : ""}
-          ${card.notes ? `${escapeHtml(card.notes)}<br>` : ""}
-          ${tagsMarkup}
-        </div>
-        ${renderCardActions(card)}
-      </div>
-    `;
+  if (card.save) {
+    items.push({ label: "Спасбросок", value: card.save });
   }
+
+  if (card.damage) {
+    items.push({ label: "Урон / эффект", value: card.damage });
+  }
+
+  if (!items.length) {
+    return "";
+  }
+
+  return renderSpellFacts(items);
+}
+
+function renderCombatSpellCard(card, expandedCardIds = []) {
+  const badges = [
+    `<span class="spell-badge spell-badge--level">${escapeHtml(formatSpellLevel(card.level))}</span>`,
+  ];
+
+  if (card.concentration) {
+    badges.push(`<span class="spell-badge">Концентрация</span>`);
+  }
+
+  if (Array.isArray(card.tags)) {
+    for (const tag of card.tags.filter(Boolean)) {
+      badges.push(`<span class="spell-badge">${escapeHtml(tag)}</span>`);
+    }
+  }
+
+  const geometryItem = getSpellGeometryFactItem(card);
+
+  const factItems = [
+    card.castTime ? { label: "Накладывание", value: card.castTime } : null,
+    geometryItem ?? (card.range ? { label: "Дистанция", value: card.range } : null),
+    card.duration
+      ? {
+          label: "Длительность",
+          value: `${card.duration}${card.concentration ? " (конц.)" : ""}`,
+        }
+      : card.concentration
+        ? { label: "Длительность", value: "Концентрация" }
+        : null,
+  ].filter(Boolean);
+
+  return renderExpandableCombatCard(
+    {
+      card,
+      title: escapeHtml(card.title || "Заклинание"),
+      summary: escapeHtml(card.summary || ""),
+      badges: badges.join(""),
+      details: `
+        ${renderSpellSummaryLine({
+          level: card.level,
+          school: card.school,
+        })}
+        ${factItems.length ? renderSpellFacts(factItems) : ""}
+        ${renderMeleeSpellStats(card)}
+        ${renderSpellBody(
+          renderTextParagraph("spell-description", card.description || card.summary),
+          renderTextParagraph("spell-notes", card.notes),
+          renderTextParagraph("spell-vibe", card.vibe),
+        )}
+      `,
+      actions: renderCardActions(card),
+    },
+    expandedCardIds,
+  );
+}
+
+function getCombatCardRuntimeId(card) {
+  const kind = String(card?.kind || "card");
+  const baseId =
+    card?.id ||
+    card?.spellId ||
+    card?.title ||
+    Math.random().toString(16).slice(2);
+
+  return `${kind}:${String(baseId)}`;
+}
+
+function renderExpandableCombatCard({ card, title, summary = "", badges = "", details = "", actions = "" }, expandedCardIds = []) {
+  const cardId = getCombatCardRuntimeId(card);
+  const isExpanded = expandedCardIds.includes(cardId);
+  const contentId = `melee-card-content-${escapeHtml(cardId)}`;
+  const toggleLabel = isExpanded ? "Свернуть" : "Подробнее";
 
   return `
-    <div class="info-card">
-      <div class="info-card-title">${escapeHtml(card.title || "Заклинание")}</div>
-      <div class="info-card-text">
-        ${
-          card.level != null
-            ? `Круг: <strong>${card.level === 0 ? "Заговор" : escapeHtml(String(card.level))}</strong><br>`
-            : ""
-        }
-        ${
-          card.attack
-            ? `Атака заклинанием: <strong>${escapeHtml(card.attack)}</strong><br>`
-            : ""
-        }
-        ${
-          card.save
-            ? `Спасбросок: <strong>${escapeHtml(card.save)}</strong><br>`
-            : ""
-        }
-        ${
-          card.damage
-            ? `Урон/эффект: <strong>${escapeHtml(card.damage)}</strong><br>`
-            : ""
-        }
-        ${
-          card.castTime
-            ? `Время накладывания: ${escapeHtml(card.castTime)}<br>`
-            : ""
-        }
-        ${
-          card.range
-            ? `Дистанция: ${escapeHtml(card.range)}<br>`
-            : ""
-        }
-        ${
-          card.duration
-            ? `Длительность: ${escapeHtml(card.duration)}${card.concentration ? " (концентрация)" : ""}<br>`
-            : card.concentration
-              ? `Требует концентрации<br>`
-              : ""
-        }
-        ${card.notes ? `${escapeHtml(card.notes)}<br>` : ""}
-        ${tagsMarkup}
+    <article class="combat-expandable-card ${isExpanded ? "combat-expandable-card--expanded" : "combat-expandable-card--collapsed"}">
+      <div class="combat-expandable-card__header">
+        <div class="combat-expandable-card__title-wrap">
+          <div class="combat-expandable-card__title">${title}</div>
+          ${summary ? `<div class="combat-expandable-card__summary">${summary}</div>` : ""}
+        </div>
+        ${badges ? `<div class="combat-expandable-card__badges">${badges}</div>` : ""}
       </div>
-      ${renderCardActions(card)}
-    </div>
+
+      <div class="combat-card-footer">
+        <div class="combat-card-footer-actions">
+          <button
+            type="button"
+            class="combat-card-toggle"
+            data-melee-toggle="${escapeHtml(cardId)}"
+            aria-expanded="${isExpanded ? "true" : "false"}"
+            aria-controls="${contentId}"
+          >
+            ${toggleLabel}
+          </button>
+        </div>
+      </div>
+
+      <div
+        id="${contentId}"
+        class="combat-card-expandable"
+        ${isExpanded ? "" : "hidden"}
+      >
+        ${isExpanded ? `${details}${actions}` : ""}
+      </div>
+    </article>
   `;
 }
 
-function renderCombatActionGroup(title, cards) {
+function renderCombatActionCard(card, expandedCardIds = []) {
+  if (card.kind === "spell") {
+    return renderCombatSpellCard(card, expandedCardIds);
+  }
+
+  const tagsMarkup = renderTags(card.tags || []);
+  const actions = renderCardActions(card);
+
+  if (card.kind === "weapon") {
+    return renderExpandableCombatCard(
+      {
+        card,
+        title: escapeHtml(card.title || "Оружие"),
+        summary: `Атака: ${escapeHtml(card.attack || "—")} · Урон: ${escapeHtml(card.damage || "—")}`,
+        details: `
+          <div class="info-card-text">
+            Атака: <strong>${escapeHtml(card.attack || "—")}</strong><br>
+            Урон: <strong>${escapeHtml(card.damage || "—")}</strong><br>
+            Тип урона: ${escapeHtml(card.damageType || "—")}<br>
+            ${card.notes ? `${escapeHtml(card.notes)}<br>` : ""}
+            ${tagsMarkup}
+          </div>
+        `,
+        actions,
+      },
+      expandedCardIds,
+    );
+  }
+
+  if (card.kind === "feature") {
+    return renderExpandableCombatCard(
+      {
+        card,
+        title: escapeHtml(card.title || "Способность"),
+        summary: card.cost ? `Стоимость: ${escapeHtml(card.cost)}` : "",
+        details: `
+          <div class="info-card-text">
+            ${card.cost ? `Стоимость: <strong>${escapeHtml(card.cost)}</strong><br>` : ""}
+            ${card.notes ? `${escapeHtml(card.notes)}<br>` : ""}
+            ${tagsMarkup}
+          </div>
+        `,
+        actions,
+      },
+      expandedCardIds,
+    );
+  }
+
+  return "";
+}
+
+function renderCombatActionGroup(title, cards, expandedCardIds = []) {
   if (!cards.length) {
     return "";
   }
@@ -470,21 +570,21 @@ function renderCombatActionGroup(title, cards) {
     <div class="combat-card-group">
       <div class="combat-card-group-title">${escapeHtml(title)}</div>
       <div class="cards-grid">
-        ${cards.map(renderCombatActionCard).join("")}
+        ${cards.map((card) => renderCombatActionCard(card, expandedCardIds)).join("")}
       </div>
     </div>
   `;
 }
 
-function renderGroupedCombatActionCards(cards = []) {
+function renderGroupedCombatActionCards(cards = [], expandedCardIds = []) {
   const weapons = cards.filter((card) => card.kind === "weapon");
   const features = cards.filter((card) => card.kind === "feature");
   const spells = cards.filter((card) => card.kind === "spell");
 
   const markup = [
-    renderCombatActionGroup("Оружие", weapons),
-    renderCombatActionGroup("Способности", features),
-    renderCombatActionGroup("Заклинания", spells),
+    renderCombatActionGroup("Оружие", weapons, expandedCardIds),
+    renderCombatActionGroup("Способности", features, expandedCardIds),
+    renderCombatActionGroup("Заклинания", spells, expandedCardIds),
   ]
     .filter(Boolean)
     .join("");
@@ -510,14 +610,20 @@ export function renderMeleePanel(state, derived) {
   }
 
   const combatCards = derived?.combatCards ?? EMPTY_COMBAT_CARDS;
+  const expandedCardIds = Array.isArray(state?.ui?.melee?.expandedCardIds)
+    ? state.ui.melee.expandedCardIds
+    : [];
 
   meleePanel.innerHTML = `
     ${renderTurnTracker(derived)}
     ${renderCombatResources(state, derived)}
-    ${renderGroupedCombatActionCards([
-      ...(combatCards.weapons || []),
-      ...(combatCards.features || []),
-      ...(combatCards.spells || []),
-    ])}
+    ${renderGroupedCombatActionCards(
+      [
+        ...(combatCards.weapons || []),
+        ...(combatCards.features || []),
+        ...(combatCards.spells || []),
+      ],
+      expandedCardIds,
+    )}
   `;
 }

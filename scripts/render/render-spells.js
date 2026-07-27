@@ -8,6 +8,7 @@ import {
   renderSpellCardHeader,
   renderSpellSummaryLine,
   renderSpellCombatStats,
+  getSpellGeometryFactItem,
 } from "./shared/spell-card.js";
 import { buildCharacterSpellCollections } from "../selectors/spellcasting.js";
 import {
@@ -34,8 +35,8 @@ function renderSpellStats(spell, spellStats = null) {
   const damage = formatSpellDamage(spell, spellStats?.spellcastingModifier);
   const healing = formatHealing(spell, spellStats?.spellcastingModifier);
 
-  if (save && !spell.saveAbility) {
-    items.push({ label: "Эффект", value: save });
+  if (save) {
+    items.push({ label: "Спасбросок", value: save });
   }
 
   if (spell.attackBonus) {
@@ -109,6 +110,17 @@ function buildSpellBadges(spell, options = {}) {
 function getSpellFactItems(spell) {
   const items = [...getBaseSpellFactItems(spell)];
 
+  const geometryItem = getSpellGeometryFactItem(spell);
+  if (geometryItem) {
+    const hasBaseRange = items.some((item) => item?.label === "Дистанция");
+    if (hasBaseRange) {
+      const index = items.findIndex((item) => item?.label === "Дистанция");
+      items[index] = geometryItem;
+    } else {
+      items.push(geometryItem);
+    }
+  }
+
   if (spell.classes) {
     items.push({
       label: "Классы",
@@ -122,9 +134,16 @@ function getSpellFactItems(spell) {
 function renderSpellCard(spell, spellStats, options = {}) {
   const badges = buildSpellBadges(spell, options);
   const combatStatsHtml = renderSpellCombatStats(spell, spellStats);
+  const expandedSpellIds = Array.isArray(options.expandedSpellIds)
+    ? options.expandedSpellIds
+    : [];
+
+  const isExpanded = expandedSpellIds.includes(spell.id);
+  const contentId = `spells-content-${String(spell.id)}`;
+  const toggleLabel = isExpanded ? "Свернуть" : "Подробнее";
 
   return `
-    <article class="spell-card ${options.isGranted ? "spell-card--granted" : ""}">
+    <article class="spell-card ${options.isGranted ? "spell-card--granted" : ""} ${isExpanded ? "spell-card--expanded" : "spell-card--collapsed"}">
       ${renderSpellCardHeader({
         name: spell.name,
         originalName: spell.originalName,
@@ -133,16 +152,40 @@ function renderSpellCard(spell, spellStats, options = {}) {
 
       ${renderSpellSummaryLine(spell)}
 
-      ${renderSpellFacts(getSpellFactItems(spell))}
+      <div class="spell-card-footer">
+        <div class="spell-card-footer-actions">
+          <button
+            type="button"
+            class="spell-card-toggle"
+            data-spells-toggle="${escapeHtml(spell.id)}"
+            aria-expanded="${isExpanded ? "true" : "false"}"
+            aria-controls="${contentId}"
+          >
+            ${toggleLabel}
+          </button>
+        </div>
+      </div>
 
-      ${renderSpellStats(spell)}
-      ${combatStatsHtml}
-
-      ${renderSpellBody(
-        renderTextParagraph("spell-description", spell.description ?? spell.summary),
-        renderTextParagraph("spell-notes", spell.notes),
-        renderTextParagraph("spell-vibe", spell.vibe),
-      )}
+      <div
+        id="${contentId}"
+        class="spell-card-expandable"
+        ${isExpanded ? "" : "hidden"}
+      >
+        ${
+          isExpanded
+            ? `
+              ${renderSpellFacts(getSpellFactItems(spell))}
+              ${renderSpellStats(spell, spellStats)}
+              ${combatStatsHtml}
+              ${renderSpellBody(
+                renderTextParagraph("spell-description", spell.description ?? spell.summary),
+                renderTextParagraph("spell-notes", spell.notes),
+                renderTextParagraph("spell-vibe", spell.vibe),
+              )}
+            `
+            : ""
+        }
+      </div>
     </article>
   `;
 }
@@ -194,6 +237,10 @@ export function renderSpells(root, character, derived) {
   const level = character.profile?.level ?? 1;
   const spellCollections = buildCharacterSpellCollections(character);
 
+  const expandedSpellIds = Array.isArray(character?.ui?.spells?.expandedSpellIds)
+    ? character.ui.spells.expandedSpellIds
+    : [];
+
   const {
     cantrips,
     preparedSpells,
@@ -204,10 +251,8 @@ export function renderSpells(root, character, derived) {
 
   const sharedSpellStats = {
     spellSaveDc: derived?.spellStats?.spellSaveDc ?? derived?.spellSaveDc ?? null,
-    spellcastingModifier:
-      derived?.spellStats?.spellcastingModifier ?? null,
-    spellAttackBonus:
-      derived?.spellStats?.spellAttackBonus ?? derived?.spellAttackBonus ?? null,
+    spellcastingModifier: derived?.spellStats?.spellcastingModifier ?? null,
+    spellAttackBonus: derived?.spellStats?.spellAttackBonus ?? derived?.spellAttackBonus ?? null,
     formattedSpellAttackBonus:
       derived?.spellStats?.formattedSpellAttackBonus ??
       derived?.formattedSpellAttackBonus ??
@@ -258,6 +303,7 @@ export function renderSpells(root, character, derived) {
         showSource: true,
         isGranted: false,
         spellStats: sharedSpellStats,
+        expandedSpellIds,
       },
     })}
 
@@ -268,6 +314,7 @@ export function renderSpells(root, character, derived) {
         showSource: true,
         isGranted: false,
         spellStats: sharedSpellStats,
+        expandedSpellIds,
       },
     })}
 
@@ -280,6 +327,7 @@ export function renderSpells(root, character, derived) {
               showSource: true,
               isGranted: true,
               spellStats: sharedSpellStats,
+              expandedSpellIds,
             },
           })
         : ""

@@ -122,3 +122,35 @@ export function ensureRulesOverridesState(draft) {
 
   return ui.rulesOverrides;
 }
+
+export function ensureSpellsUiState(draft) {
+  const ui = ensureUiState(draft);
+
+  if (!ui.spells || typeof ui.spells !== "object") {
+    ui.spells = {
+      expandedSpellIds: [],
+    };
+  }
+
+  if (!Array.isArray(ui.spells.expandedSpellIds)) {
+    ui.spells.expandedSpellIds = [];
+  }
+
+  return ui.spells;
+}
+
+export function ensureMeleeUiState(draft) {
+  const ui = ensureUiState(draft);
+
+  if (!ui.melee || typeof ui.melee !== "object") {
+    ui.melee = {
+      expandedCardIds: [],
+    };
+  }
+
+  if (!Array.isArray(ui.melee.expandedCardIds)) {
+    ui.melee.expandedCardIds = [];
+  }
+
+  return ui.melee;
+}

@@ -261,3 +261,298 @@
 .combat-card-actions .btn--utility {
   min-height: 38px;
 }
+
+#meleePanel {
+  display: grid;
+  gap: 1.25rem;
+}
+
+#meleePanel .panel-section {
+  margin-bottom: 0;
+}
+
+.combat-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.combat-card-group {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.combat-card-group:last-child {
+  margin-bottom: 0;
+}
+
+/* Главное: отдельная компактная сетка именно для melee-card list */
+.combat-card-group .cards-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+/* Компактные карточки в melee */
+.combat-card-group .info-card,
+.combat-card-group .spell-card--combat {
+  min-width: 0;
+  height: 100%;
+  padding: 0.85rem;
+  border-radius: 14px;
+}
+
+/* Чуть компактнее spell-card внутри melee */
+.combat-card-group .spell-card--combat .spell-card-header {
+  margin-bottom: 0.55rem;
+}
+
+.combat-card-group .spell-card--combat .spell-card-title,
+.combat-card-group .info-card-title {
+  font-size: 1rem;
+  line-height: 1.15;
+}
+
+.combat-card-group .spell-card--combat .spell-card-subtitle {
+  font-size: 0.8rem;
+}
+
+.combat-card-group .spell-card--combat .spell-card-summary {
+  font-size: 0.82rem;
+  line-height: 1.3;
+  margin-bottom: 0.55rem;
+}
+
+.combat-card-group .spell-card--combat .spell-facts {
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+}
+
+.combat-card-group .spell-card--combat .spell-fact {
+  gap: 0.2rem;
+}
+
+.combat-card-group .spell-card--combat .spell-fact-label,
+.combat-card-group .spell-card--combat .spell-fact-value,
+.combat-card-group .info-card-text {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.combat-card-group .spell-card--combat .spell-badges,
+.combat-card-group .skill-badges--spaced {
+  gap: 0.35rem;
+}
+
+.combat-card-group .spell-card--combat .spell-badge,
+.combat-card-group .skill-badge {
+  font-size: 0.72rem;
+  padding: 0.18rem 0.45rem;
+}
+
+.combat-card-group .spell-card--combat .spell-description,
+.combat-card-group .spell-card--combat .spell-notes,
+.combat-card-group .spell-card--combat .spell-vibe {
+  font-size: 0.83rem;
+  line-height: 1.4;
+}
+
+.combat-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid rgba(213, 171, 146, 0.08);
+}
+
+.combat-card-actions .btn--utility {
+  min-height: 34px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+/* Дополнительно ужмём resource/turn секции */
+.resource-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.resource-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.resource-row {
+  display: grid;
+  gap: 6px;
+}
+
+.resource-stack > .resource-row,
+.resource-card--hp .resource-row--hp-meta,
+.hp-adjust-field {
+  padding: 8px 10px;
+  border-radius: 12px;
+}
+
+.resource-row-meta,
+.combat-card-group-title,
+.hp-adjust-label {
+  font-size: 0.82rem;
+}
+
+.turn-tracker {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.turn-pill,
+.turn-end-btn {
+  min-height: 72px;
+  padding: 0.8rem;
+  border-radius: 14px;
+}
+
+.turn-pill-label {
+  font-size: 0.86rem;
+}
+
+.turn-pill-state {
+  font-size: 0.74rem;
+}
+
+/* Адаптивность */
+@media (max-width: 1400px) {
+  .combat-card-group .cards-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .combat-resource-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  .combat-card-group .cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .turn-tracker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .combat-card-group .cards-grid,
+  .combat-resource-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.combat-expandable-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  height: 100%;
+  padding: 0.85rem;
+  border-radius: 14px;
+  border: 1px solid rgba(213, 171, 146, 0.09);
+  background:
+    radial-gradient(circle at top right, rgba(214, 174, 96, 0.07), transparent 28%),
+    linear-gradient(180deg, rgba(255, 245, 239, 0.045), rgba(255, 245, 239, 0.02));
+  box-shadow: var(--shadow-sm);
+}
+
+.combat-expandable-card--expanded {
+  border-color: rgba(139, 92, 246, 0.28);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+.combat-expandable-card__header {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.combat-expandable-card__title {
+  font-size: 1rem;
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.combat-expandable-card__summary {
+  font-size: 0.82rem;
+  line-height: 1.3;
+  color: rgba(242, 232, 225, 0.8);
+}
+
+.combat-expandable-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.combat-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid rgba(213, 171, 146, 0.08);
+}
+
+.combat-card-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.combat-card-toggle {
+  min-height: 34px;
+  padding: 0.45rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid rgba(213, 171, 146, 0.14);
+  background: transparent;
+  color: rgba(245, 240, 232, 0.82);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 120ms ease;
+}
+
+.combat-card-toggle:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  border-color: rgba(214, 174, 96, 0.24);
+}
+
+.combat-card-toggle:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.08),
+    0 0 0 4px rgba(125, 92, 255, 0.35);
+}
+
+.combat-card-expandable[hidden] {
+  display: none;
+}
+
+.combat-card-expandable {
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid rgba(213, 171, 146, 0.08);
+}

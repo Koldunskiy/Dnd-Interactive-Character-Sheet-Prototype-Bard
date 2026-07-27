@@ -8,6 +8,8 @@ import {
   ensureSpellcastingState,
   ensureTurnState,
   ensureUiState,
+  ensureSpellsUiState,
+  ensureMeleeUiState,
 } from "./state-helpers.js";
 import {
   isCantripSelected,
@@ -671,6 +673,38 @@ function handleSpellLibrarySetSelectionFilter(draft, target) {
     currentValue === nextValue ? "all" : nextValue;
 }
 
+function handleSpellsToggleExpand(draft, target) {
+  const spellId = target.dataset.spellsToggle;
+  if (!spellId) return;
+
+  const spellsUi = ensureSpellsUiState(draft);
+  const expandedSpellIds = Array.isArray(spellsUi.expandedSpellIds)
+    ? spellsUi.expandedSpellIds
+    : [];
+
+  const alreadyExpanded = expandedSpellIds.includes(spellId);
+
+  spellsUi.expandedSpellIds = alreadyExpanded
+    ? expandedSpellIds.filter((id) => id !== spellId)
+    : [...expandedSpellIds, spellId];
+}
+
+function handleMeleeToggleExpand(draft, target) {
+  const cardId = target.dataset.meleeToggle;
+  if (!cardId) return;
+
+  const meleeUi = ensureMeleeUiState(draft);
+  const expandedCardIds = Array.isArray(meleeUi.expandedCardIds)
+    ? meleeUi.expandedCardIds
+    : [];
+
+  const alreadyExpanded = expandedCardIds.includes(cardId);
+
+  meleeUi.expandedCardIds = alreadyExpanded
+    ? expandedCardIds.filter((id) => id !== cardId)
+    : [...expandedCardIds, cardId];
+}
+
 export function createActionHandlers({ resetState }) {
   return {
     "hp-change": handleHpChange,
@@ -705,5 +739,7 @@ export function createActionHandlers({ resetState }) {
     "spell-library-set-selection-filter": handleSpellLibrarySetSelectionFilter,
     "spell-library-toggle-expand": handleSpellLibraryToggleExpand,
     "spell-library-toggle-select": handleSpellLibraryToggleSelect,
+    "spells-toggle-expand": handleSpellsToggleExpand,
+    "melee-toggle-expand": handleMeleeToggleExpand,
   };
 }
