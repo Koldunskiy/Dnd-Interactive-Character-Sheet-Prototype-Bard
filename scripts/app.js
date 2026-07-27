@@ -18,7 +18,7 @@ import {
   ensureInventoryState,
 } from "./state-helpers.js";
 
-const actionHandlers = createActionHandlers({ resetState });
+const actionHandlers = createActionHandlers(resetState);
 
 function parseInputValue(input) {
   if (input.type === "number") {
@@ -311,9 +311,23 @@ function renderApp() {
   initPortraitControls();
 }
 
+function initTelegramWebApp() {
+  const tg = window.Telegram?.WebApp;
+  if (!tg) {
+    return;
+  }
+
+  tg.ready();
+  tg.expand();
+
+  document.documentElement.style.setProperty("--tg-bg-color", tg.themeParams.bg_color || "");
+  document.documentElement.style.setProperty("--tg-text-color", tg.themeParams.text_color || "");
+}
+
 function initApp() {
   initTabs();
   renderApp();
+  initTelegramWebApp();
 }
 
 function debugDerived(character) {
