@@ -16,7 +16,47 @@ import {
   formatSpellDamage,
   formatHealing,
 } from "../calculations.js";
+import { renderSpellSlotPips } from "./shared/resource-pips.js";
 
+
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function renderSlotEntry(slot) {
+  const level = Number(slot?.level || 0);
+  const max = Math.max(0, Number(slot?.max || 0));
+  const available = clamp(Number(slot?.available || 0), 0, max);
+
+  return `
+    <div class="resource-row">
+      <div class="resource-row-main">
+        <span class="resource-row-title">${escapeHtml(`${level} круг`)}</span>
+        <span class="resource-row-meta">${escapeHtml(String(available))}/${escapeHtml(String(max))} доступно</span>
+      </div>
+
+      <div class="resource-pip-track">
+        ${Array.from({ length: max }, (_, index) => {
+          const pipIndex = index + 1;
+          const isActive = pipIndex <= available;
+
+          return `
+            <button
+              type="button"
+              class="resource-pip ${isActive ? "resource-pip--active" : ""}"
+              data-action="slot-set-used"
+              data-slot-level="${escapeHtml(String(level))}"
+              data-slot-index="${escapeHtml(String(pipIndex))}"
+              aria-label="Установить доступные ячейки ${escapeHtml(String(pipIndex))} из ${escapeHtml(String(max))} для ${escapeHtml(String(level))} круга"
+              aria-pressed="${isActive ? "true" : "false"}"
+            ></button>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
 
 function formatSigned(value) {
   const number = Number(value);
@@ -190,16 +230,6 @@ function renderSpellCard(spell, spellStats, options = {}) {
   `;
 }
 
-function renderSlotEntry(slot) {
-  return `
-    <div class="resource-card">
-      <div class="resource-card-label">${escapeHtml(`${slot.level} круг`)}</div>
-      <div class="resource-card-value">${escapeHtml(slot.available)}/${escapeHtml(slot.max)}</div>
-      <div class="resource-card-subtle">потрачено: ${escapeHtml(slot.used)}</div>
-    </div>
-  `;
-}
-
 function renderSpellSection(title, spells, emptyText, options = {}) {
   const cardOptions = options.cardOptions ?? {};
   const spellStats = cardOptions.spellStats ?? null;
@@ -260,7 +290,7 @@ export function renderSpells(root, character, derived) {
   };
 
   const slotEntries = Array.isArray(derived.spellSlots)
-    ? derived.spellSlots.map(renderSlotEntry).join("")
+    ? derived.spellSlots.map(renderSpellSlotPips).join("")
     : "";
 
   root.innerHTML = `
@@ -280,20 +310,9 @@ export function renderSpells(root, character, derived) {
         </div>
       </div>
 
-      <div class="resource-grid">
+      <div class="resource-stack">
         ${slotEntries || `<p class="empty-copy">Нет ячеек заклинаний.</p>`}
       </div>
-
-      ${
-        spellcasting.focus
-          ? `<p class="section-copy"><strong>Фокус:</strong> ${escapeHtml(spellcasting.focus)}</p>`
-          : ""
-      }
-      ${
-        spellcasting.notes
-          ? `<p class="section-copy">${escapeHtml(spellcasting.notes)}</p>`
-          : ""
-      }
     </section>
 
     ${renderSpellSection("Заговоры", cantrips, "Заговоры не выбраны.", {

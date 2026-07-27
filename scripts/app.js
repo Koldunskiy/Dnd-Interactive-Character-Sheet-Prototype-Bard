@@ -311,23 +311,42 @@ function renderApp() {
   initPortraitControls();
 }
 
+function getTelegramWebApp() {
+  return window.Telegram?.WebApp ?? null;
+}
+
 function initTelegramWebApp() {
-  const tg = window.Telegram?.WebApp;
+  const tg = getTelegramWebApp();
+
   if (!tg) {
-    return;
+    console.warn("Telegram WebApp SDK is unavailable");
+    return null;
   }
 
-  tg.ready();
-  tg.expand();
+  try {
+    tg.ready();
+    tg.expand();
 
-  document.documentElement.style.setProperty("--tg-bg-color", tg.themeParams.bg_color || "");
-  document.documentElement.style.setProperty("--tg-text-color", tg.themeParams.text_color || "");
+    document.documentElement.style.setProperty(
+      "--tg-bg-color",
+      tg.themeParams?.bg_color || "",
+    );
+    document.documentElement.style.setProperty(
+      "--tg-text-color",
+      tg.themeParams?.text_color || "",
+    );
+  } catch (error) {
+    console.error("Failed to initialize Telegram WebApp", error);
+    return null;
+  }
+
+  return tg;
 }
 
 function initApp() {
+  initTelegramWebApp();
   initTabs();
   renderApp();
-  initTelegramWebApp();
 }
 
 function debugDerived(character) {

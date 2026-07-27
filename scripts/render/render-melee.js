@@ -8,6 +8,7 @@ import {
   renderSpellSummaryLine,
   getSpellGeometryFactItem,
 } from "./shared/spell-card.js";
+import { renderSpellSlotPips } from "./shared/resource-pips.js";
 
 const EMPTY_COMBAT_CARDS = Object.freeze({
   weapons: [],
@@ -45,40 +46,6 @@ function renderPipTrack({ total, active, action, itemData = {} }) {
           ></button>
         `;
       }).join("")}
-    </div>
-  `;
-}
-
-function renderSlotPips(slot) {
-  const level = Number(slot?.level || 0);
-  const max = Math.max(0, Number(slot?.max || 0));
-  const available = clamp(Number(slot?.available || 0), 0, max);
-
-  return `
-    <div class="resource-row">
-      <div class="resource-row-main">
-        <span class="resource-row-title">${level} круг</span>
-        <span class="resource-row-meta">${available}/${max} доступно</span>
-      </div>
-
-      <div class="resource-pip-track">
-        ${Array.from({ length: max }, (_, index) => {
-          const pipIndex = index + 1;
-          const isActive = pipIndex <= available;
-
-          return `
-            <button
-              type="button"
-              class="resource-pip ${isActive ? "resource-pip--active" : ""}"
-              data-action="slot-set-used"
-              data-slot-level="${level}"
-              data-slot-index="${pipIndex}"
-              aria-label="Установить доступные ячейки ${pipIndex} из ${max} для ${level} круга"
-              aria-pressed="${isActive ? "true" : "false"}"
-            ></button>
-          `;
-        }).join("")}
-      </div>
     </div>
   `;
 }
@@ -210,7 +177,6 @@ function renderHpCard(state, derived) {
             type="number"
             min="0"
             data-bind="ui.hpAdjustAmount"
-            data-bind-immediate="true"
             value="${escapeHtml(String(hpAdjustAmount))}"
           />
         </label>
@@ -233,6 +199,10 @@ function renderCombatResources(state, derived) {
   const concentration = state?.combat?.concentration || "";
   const slots = Array.isArray(derived?.spellSlots) ? derived.spellSlots : [];
   const bardic = derived?.bardicInspiration || null;
+
+  const slotEntries = Array.isArray(derived.spellSlots)
+    ? derived.spellSlots.map(renderSpellSlotPips).join("")
+    : "";
 
   return `
     <section class="panel-section">
@@ -258,7 +228,7 @@ function renderCombatResources(state, derived) {
           </div>
 
           <div class="resource-stack">
-            ${slots.map((slot) => renderSlotPips(slot)).join("")}
+            ${slotEntries || `<p class="empty-copy">Нет ячеек заклинаний.</p>`}
           </div>
         </article>
 
