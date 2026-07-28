@@ -634,7 +634,7 @@
 
 .app-layout {
   display: grid;
-  grid-template-columns: clamp(306px, 30vw, 378px) minmax(0, 1fr);
+  grid-template-columns: clamp(276px, 30vw, 340px) minmax(0, 1fr);
   gap: 24px;
 }
 
@@ -642,7 +642,7 @@
   position: relative;
   width: 100%;
   aspect-ratio: 3 / 4;
-  min-height: 396px;
+  min-height: 356px;
   border-radius: 18px;
   overflow: hidden;
 }

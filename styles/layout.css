@@ -207,3 +207,21 @@
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
 }
+
+.content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px;
+  gap: 20px;
+  align-items: start;
+}
+
+.content > .tab-panels {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.content > .tabs {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+}

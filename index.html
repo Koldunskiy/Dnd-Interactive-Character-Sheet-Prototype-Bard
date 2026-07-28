@@ -90,12 +90,105 @@
 
       <section class="content">
         <nav class="tabs card" aria-label="Разделы листа персонажа">
-          <button class="tab-btn is-active" data-tab="profile" type="button">Профиль</button>
-          <button class="tab-btn" data-tab="melee" type="button">Бой</button>
-          <button class="tab-btn" data-tab="spells" type="button">Заклинания</button>
-          <button class="tab-btn" data-tab="inventory" type="button">Инвентарь</button>
-          <button class="tab-btn" data-tab="lore" type="button">Лор</button>
-          <button class="tab-btn" data-tab="spell-library" type="button">Библиотека заклинаний</button>
+          <button
+            class="tab-btn is-active"
+            data-tab="profile"
+            type="button"
+            aria-label="Профиль"
+            data-tooltip="Профиль"
+          >
+            <span class="tab-btn__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3l7 3v5c0 4.5-2.8 7.6-7 10-4.2-2.4-7-5.5-7-10V6l7-3Z"></path>
+                <path d="M12 10a2.2 2.2 0 1 0 0-4.4A2.2 2.2 0 0 0 12 10Z"></path>
+                <path d="M8.7 16.2c.7-1.8 2-2.7 3.3-2.7s2.6.9 3.3 2.7"></path>
+              </svg>
+            </span>
+          </button>
+
+          <button
+            class="tab-btn"
+            data-tab="melee"
+            type="button"
+            aria-label="Бой"
+            data-tooltip="Бой"
+          >
+            <span class="tab-btn__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 18L18 6"></path>
+                <path d="M8 6l2 2"></path>
+                <path d="M14 14l4 4"></path>
+                <path d="M15 5l4 4"></path>
+                <path d="M5 15l4 4"></path>
+              </svg>
+            </span>
+          </button>
+
+          <button
+            class="tab-btn"
+            data-tab="spells"
+            type="button"
+            aria-label="Заклинания"
+            data-tooltip="Заклинания"
+          >
+            <span class="tab-btn__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3l1.9 4.6L18.5 9l-4.6 1.4L12 15l-1.9-4.6L5.5 9l4.6-1.4L12 3Z"></path>
+                <path d="M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9L18 15Z"></path>
+              </svg>
+            </span>
+          </button>
+
+          <button
+            class="tab-btn"
+            data-tab="inventory"
+            type="button"
+            aria-label="Инвентарь"
+            data-tooltip="Инвентарь"
+          >
+            <span class="tab-btn__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 8.5V7a4 4 0 0 1 8 0v1.5"></path>
+                <path d="M6.5 8.5h11l-1 10a2 2 0 0 1-2 1.8h-5a2 2 0 0 1-2-1.8l-1-10Z"></path>
+                <path d="M10 12h4"></path>
+              </svg>
+            </span>
+          </button>
+
+          <button
+            class="tab-btn"
+            data-tab="lore"
+            type="button"
+            aria-label="Лор"
+            data-tooltip="Лор"
+          >
+            <span class="tab-btn__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 5.5h8a2 2 0 0 1 2 2V19a2.5 2.5 0 0 0-2.5-2.5H7z"></path>
+                <path d="M7 5.5A2.5 2.5 0 0 0 4.5 8V18A2.5 2.5 0 0 1 7 15.5h9"></path>
+                <path d="M9 9h5"></path>
+                <path d="M9 12h4"></path>
+              </svg>
+            </span>
+          </button>
+
+          <button
+            class="tab-btn"
+            data-tab="spell-library"
+            type="button"
+            aria-label="Библиотека заклинаний"
+            data-tooltip="Библиотека заклинаний"
+          >
+            <span class="tab-btn__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6.5 5.5h7a2.5 2.5 0 0 1 2.5 2.5v10.5h-7A2.5 2.5 0 0 0 6.5 21V5.5Z"></path>
+                <path d="M17.5 7.5h1a1 1 0 0 1 1 1v10h-8"></path>
+                <path d="M9 9.5h4"></path>
+                <path d="M9 12.5h5"></path>
+                <path d="M9 15.5h3"></path>
+              </svg>
+            </span>
+          </button>
         </nav>
 
         <section class="tab-panels">
