@@ -1,11 +1,9 @@
 import {
   ABILITY_KEYS,
-  ABILITY_SHORT_MAP,
   SKILL_ID_META,
-  SKILL_ABILITY_MAP,
   PROFICIENCY_BY_LEVEL,
   BARD_PROGRESSION,
-  TURN_TRACKER_META
+  TURN_TRACKER_META,
 } from "./rules.js";
 import { buildCharacterSpellCollections } from "./selectors/spellcasting.js";
 
@@ -43,13 +41,20 @@ function hasFeature(character, featureName) {
   return features.some(
     (feature) =>
       feature?.name === featureName &&
-      Number(feature?.level ?? 0) <= level
+      Number(feature?.level ?? 0) <= level,
   );
 }
 
 function hasJackOfAllTrades(character) {
   const disabledByUi = Boolean(character.ui?.rulesOverrides?.disableJackOfAllTrades);
   return hasFeature(character, "Мастер на все руки") && !disabledByUi;
+}
+
+function hasDuelingStyle(character) {
+  const disabledByUi = Boolean(character.ui?.rulesOverrides?.disableDuelingStyle);
+  const fightingStyleName = String(character.combat?.fightingStyle?.name ?? "").trim();
+
+  return fightingStyleName === "Дуэлянт" && !disabledByUi;
 }
 
 function getAbilityModifiers(character) {
@@ -117,15 +122,44 @@ function getSkills(character, abilityModifiers, proficiencyBonus, hasJoat) {
   }, {});
 }
 
+function getInventoryItems(character) {
+  return Array.isArray(character.inventory?.items) ? character.inventory.items : [];
+}
+
+function getEquippedItems(character) {
+  return getInventoryItems(character).filter((item) => item?.equipped);
+}
+
+function getEquippedItemsByType(character, type) {
+  return getEquippedItems(character).filter((item) => item?.type === type);
+}
+
+function getEquippedArmor(character) {
+  return getEquippedItemsByType(character, "armor")[0] ?? null;
+}
+
+function getEquippedWeapons(character) {
+  return getEquippedItemsByType(character, "weapon").filter((item) => item?.weapon);
+}
+
 function getArmorClass(character, abilityModifiers) {
-  const armorBase = Number(character.combat?.armorBase ?? 10);
   const dexMod = abilityModifiers.dexterity ?? 0;
-  const dexCap = character.combat?.armorDexCap;
-  const shieldBonus = Number(character.combat?.shieldBonus ?? 0);
   const miscBonus = Number(character.combat?.armorBonusExtra ?? 0);
+  const shieldBonus = Number(character.combat?.shieldBonus ?? 0);
+
+  const equippedArmor = getEquippedArmor(character);
+
+  if (!equippedArmor?.armor) {
+    return 10 + dexMod + shieldBonus + miscBonus;
+  }
+
+  const armor = equippedArmor.armor;
+  const baseAc = Number(armor.baseAc ?? 10);
+  const dexCap = armor.dexCap;
+  const magicalBonusAc = Number(armor.magicalBonusAc ?? 0);
   const appliedDex = dexCap == null ? dexMod : Math.min(dexMod, Number(dexCap));
 
-  return armorBase + appliedDex + shieldBonus + miscBonus;
+  return baseAc + appliedDex + magicalBonusAc + shieldBonus + miscBonus;
 }
 
 function getMaxHitPoints(character, abilityModifiers) {
@@ -167,7 +201,7 @@ function getBardProgression(character) {
     spellsKnown: 0,
     bardicDie: null,
     bardicUses: 0,
-    slots: {}
+    slots: {},
   };
 
   if (character.profile?.className !== "Бард") {
@@ -178,40 +212,44 @@ function getBardProgression(character) {
 }
 
 function getWeaponDerivedList(character, abilityModifiers, proficiencyBonus) {
-  const weapons =
-    Array.isArray(character.combat?.weapons) && character.combat.weapons.length
-      ? character.combat.weapons
-      : character.combat?.weapon
-        ? [character.combat.weapon]
-        : [];
+  const weapons = getEquippedWeapons(character);
 
-  return weapons.map((weapon) => {
+  return weapons.map((item) => {
+    const weapon = item.weapon ?? {};
     const attackStat = weapon.attackStat ?? "strength";
     const abilityMod = abilityModifiers[attackStat] ?? 0;
+
+    const isMeleeWeapon = weapon.category !== "ranged";
+    const isOneHanded = !Boolean(weapon.twoHanded);
+
     const duelingApplies =
-      character.combat?.fightingStyle?.name === "Дуэлянт" &&
-      String(weapon.name || "").toLowerCase() !== "кинжал";
+      hasDuelingStyle(character) &&
+      isMeleeWeapon &&
+      isOneHanded;
 
     const styleDamageBonus = duelingApplies
       ? Number(character.combat?.fightingStyle?.damageBonus ?? 0)
       : 0;
 
-    const attackBonus = abilityMod + proficiencyBonus;
-    const damageBonus = abilityMod + styleDamageBonus;
+    const magicalBonusAttack = Number(weapon.magicalBonusAttack ?? 0);
+    const magicalBonusDamage = Number(weapon.magicalBonusDamage ?? 0);
+
+    const attackBonus = abilityMod + proficiencyBonus + magicalBonusAttack;
+    const damageBonus = abilityMod + styleDamageBonus + magicalBonusDamage;
 
     return {
-      id: weapon.id || `weapon-${String(weapon.name || "weapon").toLowerCase().replaceAll(" ", "-")}`,
-      name: weapon.name || "Оружие",
+      id: item.id,
+      name: item.name,
       attackStat,
       attackBonus,
       formattedAttackBonus: formatSigned(attackBonus),
-      damageDice: weapon.damageDice ?? weapon.damage ?? "—",
+      damageDice: weapon.damageDice ?? "—",
       damageBonus,
       formattedDamageBonus: formatSigned(damageBonus),
-      damageType: weapon.damageType || "—",
-      properties: weapon.properties || [],
-      notes: weapon.notes || "",
-      duelingApplies
+      damageType: weapon.damageType ?? "—",
+      properties: Array.isArray(weapon.properties) ? weapon.properties : [],
+      notes: item.notes ?? "",
+      duelingApplies,
     };
   });
 }
@@ -236,7 +274,7 @@ function getSpellStats(character, abilityModifiers, proficiencyBonus) {
     spellcastingModifier: spellMod,
     spellSaveDc,
     spellAttackBonus,
-    formattedSpellAttackBonus: formatSigned(spellAttackBonus)
+    formattedSpellAttackBonus: formatSigned(spellAttackBonus),
   };
 }
 
@@ -279,8 +317,7 @@ export function formatSpellDamage(spell, spellcastingModifier) {
       ? spellcastingModifier
       : Number(spell.damage.modifier ?? 0);
 
-  const modifierPart =
-    modifier === 0 ? "" : ` ${formatSigned(modifier)}`;
+  const modifierPart = modifier === 0 ? "" : ` ${formatSigned(modifier)}`;
 
   return `${spell.damage.dice}${modifierPart} ${spell.damage.type}`.trim();
 }
@@ -295,8 +332,7 @@ export function formatHealing(spell, spellcastingModifier) {
       ? spellcastingModifier
       : Number(spell.healing.modifier ?? 0);
 
-  const modifierPart =
-    modifier === 0 ? "" : ` ${formatSigned(modifier)}`;
+  const modifierPart = modifier === 0 ? "" : ` ${formatSigned(modifier)}`;
 
   return `${spell.healing.dice}${modifierPart} лечение`.trim();
 }
@@ -357,10 +393,7 @@ function inferCombatRole(spell) {
     "зеркальное отражение",
   ];
 
-  if (
-    knownCombatSpells.includes(originalName) ||
-    knownCombatSpells.includes(name)
-  ) {
+  if (knownCombatSpells.includes(originalName) || knownCombatSpells.includes(name)) {
     return "combat";
   }
 
@@ -421,7 +454,7 @@ function getCombatFeatures(character) {
     title: flourish.name || "Росчерк",
     cost: flourish.cost || "",
     notes: flourish.text || "",
-    tags: ["Росчерк клинка"]
+    tags: ["Росчерк клинка"],
   }));
 }
 
@@ -434,13 +467,13 @@ function getCombatCards(character, derivedBase) {
     damage: formatDiceWithModifier(weapon.damageDice, weapon.damageBonus),
     damageType: weapon.damageType,
     tags: weapon.properties,
-    notes: weapon.notes
+    notes: weapon.notes,
   }));
 
   return {
     weapons,
     features: getCombatFeatures(character),
-    spells: getCombatSpells(character, derivedBase.spellStats)
+    spells: getCombatSpells(character, derivedBase.spellStats),
   };
 }
 
@@ -457,7 +490,7 @@ function getSpellSlotsState(character, bardProgression) {
       level,
       max,
       used,
-      available: Math.max(0, max - used)
+      available: Math.max(0, max - used),
     };
   });
 }
@@ -487,9 +520,9 @@ function getTurnTracker(character) {
         label: item.label,
         used,
         ready: !used,
-        stateLabel: used ? item.usedLabel : item.readyLabel
+        stateLabel: used ? item.usedLabel : item.readyLabel,
       };
-    })
+    }),
   };
 }
 
@@ -505,7 +538,7 @@ function getBardicInspirationState(character, bardProgression, abilityModifiers)
     rangeFeet: Number(character.combat?.bardicInspiration?.rangeFeet ?? 60),
     rangeMeters: Number(character.combat?.bardicInspiration?.rangeMeters ?? 18),
     duration: character.combat?.bardicInspiration?.duration ?? "10 минут",
-    notes: character.combat?.bardicInspiration?.notes ?? ""
+    notes: character.combat?.bardicInspiration?.notes ?? "",
   };
 }
 
@@ -513,7 +546,7 @@ export function getDerivedStats(character) {
   const level = getLevel(character);
   const proficiencyBonus = getProficiencyBonus(
     level,
-    character.profile?.proficiencyBonusOverride ?? null
+    character.profile?.proficiencyBonusOverride ?? null,
   );
   const joat = hasJackOfAllTrades(character);
   const abilityModifiers = getAbilityModifiers(character);
@@ -531,7 +564,7 @@ export function getDerivedStats(character) {
   const bardicInspiration = getBardicInspirationState(
     character,
     bardProgression,
-    abilityModifiers
+    abilityModifiers,
   );
 
   const derivedBase = {

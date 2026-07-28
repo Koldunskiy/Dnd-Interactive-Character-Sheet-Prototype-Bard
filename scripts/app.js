@@ -18,13 +18,14 @@ import {
   ensureInventoryState,
 } from "./state-helpers.js";
 
-const actionHandlers = createActionHandlers(resetState);
+const actionHandlers = createActionHandlers({ resetState });
 
 function parseInputValue(input) {
   if (input.type === "number") {
     if (input.value === "") {
       return 0;
     }
+
     return Number(input.value);
   }
 
@@ -33,6 +34,27 @@ function parseInputValue(input) {
   }
 
   return input.value;
+}
+
+function setByPathOnObject(target, path, value) {
+  const keys = String(path || "").split(".");
+  const lastKey = keys.pop();
+
+  if (!lastKey) {
+    return;
+  }
+
+  let current = target;
+
+  for (const key of keys) {
+    if (current[key] == null || typeof current[key] !== "object") {
+      current[key] = {};
+    }
+
+    current = current[key];
+  }
+
+  current[lastKey] = value;
 }
 
 function bindEditableFields(root = document) {
@@ -65,7 +87,9 @@ function bindActionButtons(root = document) {
       return;
     }
 
-    element.addEventListener("click", (event) => {
+    const eventName = element.type === "checkbox" ? "change" : "click";
+
+    element.addEventListener(eventName, (event) => {
       const target = event.currentTarget;
       const action = target.dataset.action;
       const handler = actionHandlers[action];
@@ -158,7 +182,31 @@ function bindInventoryFields(root = document) {
           return draft;
         }
 
-        item[field] = value;
+        setByPathOnObject(item, field, value);
+        return draft;
+      });
+    });
+
+    element.dataset.bound = "true";
+  });
+}
+
+function bindClickAction(root, selector, actionKey) {
+  const handler = actionHandlers[actionKey];
+  if (!handler) {
+    return;
+  }
+
+  root.querySelectorAll(selector).forEach((element) => {
+    if (element.dataset.bound === "true") {
+      return;
+    }
+
+    element.addEventListener("click", (event) => {
+      const target = event.currentTarget;
+
+      updateState((draft) => {
+        handler(draft, target);
         return draft;
       });
     });
@@ -168,113 +216,22 @@ function bindInventoryFields(root = document) {
 }
 
 function bindSpellLibraryControls(root = document) {
-  root.querySelectorAll("[data-spell-library-level]").forEach((element) => {
-    if (element.dataset.bound === "true") {
-      return;
-    }
-
-    element.addEventListener("click", (event) => {
-      const target = event.currentTarget;
-      const handler = actionHandlers["spell-library-set-level"];
-
-      updateState((draft) => {
-        handler(draft, target);
-        return draft;
-      });
-    });
-
-    element.dataset.bound = "true";
-  });
-
-  root.querySelectorAll("[data-spell-library-selection]").forEach((element) => {
-    if (element.dataset.bound === "true") {
-      return;
-    }
-
-    element.addEventListener("click", (event) => {
-      const target = event.currentTarget;
-      const handler = actionHandlers["spell-library-set-selection-filter"];
-
-      updateState((draft) => {
-        handler(draft, target);
-        return draft;
-      });
-    });
-
-    element.dataset.bound = "true";
-  });
-
-  root.querySelectorAll("[data-spell-library-toggle]").forEach((element) => {
-    if (element.dataset.bound === "true") {
-      return;
-    }
-
-    element.addEventListener("click", (event) => {
-      const target = event.currentTarget;
-      const handler = actionHandlers["spell-library-toggle-expand"];
-
-      updateState((draft) => {
-        handler(draft, target);
-        return draft;
-      });
-    });
-
-    element.dataset.bound = "true";
-  });
-
-  root.querySelectorAll("[data-spell-library-select]").forEach((element) => {
-    if (element.dataset.bound === "true") {
-      return;
-    }
-
-    element.addEventListener("click", (event) => {
-      const target = event.currentTarget;
-      const handler = actionHandlers["spell-library-toggle-select"];
-
-      updateState((draft) => {
-        handler(draft, target);
-        return draft;
-      });
-    });
-
-    element.dataset.bound = "true";
-  });
+  bindClickAction(root, "[data-spell-library-level]", "spell-library-set-level");
+  bindClickAction(
+    root,
+    "[data-spell-library-selection]",
+    "spell-library-set-selection-filter",
+  );
+  bindClickAction(root, "[data-spell-library-toggle]", "spell-library-toggle-expand");
+  bindClickAction(root, "[data-spell-library-select]", "spell-library-toggle-select");
 }
 
 function bindSpellsControls(root = document) {
-  root.querySelectorAll("[data-spells-toggle]").forEach((element) => {
-    if (element.dataset.bound === "true") return;
-
-    element.addEventListener("click", (event) => {
-      const target = event.currentTarget;
-      const handler = actionHandlers["spells-toggle-expand"];
-
-      updateState((draft) => {
-        handler(draft, target);
-        return draft;
-      });
-    });
-
-    element.dataset.bound = "true";
-  });
+  bindClickAction(root, "[data-spells-toggle]", "spells-toggle-expand");
 }
 
 function bindMeleeControls(root = document) {
-  root.querySelectorAll("[data-melee-toggle]").forEach((element) => {
-    if (element.dataset.bound === "true") return;
-
-    element.addEventListener("click", (event) => {
-      const target = event.currentTarget;
-      const handler = actionHandlers["melee-toggle-expand"];
-
-      updateState((draft) => {
-        handler(draft, target);
-        return draft;
-      });
-    });
-
-    element.dataset.bound = "true";
-  });
+  bindClickAction(root, "[data-melee-toggle]", "melee-toggle-expand");
 }
 
 function bindUi(root = document) {

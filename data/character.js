@@ -136,8 +136,6 @@ export const character = {
   },
 
   combat: {
-    armorBase: 12,
-    armorName: "Клёпаная кожаная броня",
     hitDie: 8,
     speed: 9,
     speedFeet: 30,
@@ -150,26 +148,8 @@ export const character = {
       maxOverride: null
     },
 
-    weapons: [
-      {
-        id: "rapier",
-        name: "Рапира",
-        attackStat: "dexterity",
-        damageDice: "1d8",
-        damageType: "колющий",
-        properties: ["Фехтовальное", "Одноручное"],
-        notes: "Основное оружие дуэлянта; стиль боя «Дуэлянт» усиливает урон."
-      },
-      {
-        id: "dagger",
-        name: "Кинжал",
-        attackStat: "dexterity",
-        damageDice: "1d4",
-        damageType: "колющий",
-        properties: ["Фехтовальное", "Лёгкое", "Метательное (20/60)"],
-        notes: "Запасное и метательное оружие; урон использует модификатор Ловкости."
-      },
-    ],
+    armorBonusExtra: 0,
+    shieldBonus: 0,
 
     fightingStyle: {
       name: "Дуэлянт",
@@ -307,7 +287,7 @@ export const character = {
       "Модель ориентирована на Bard 2024: заговоры выбираются отдельно, заклинания 1+ круга готовятся из библиотеки.",
 
     cantripIds: [
-      "dancing-lights",
+      "mage-hand",
       "vicious-mockery",
       "minor-illusion"
     ],
@@ -318,7 +298,7 @@ export const character = {
       "cure-wounds",
       "healing-word",
       "speak-with-animals",
-      "mirror-image"
+      "crown-of-madness"
     ],
 
     grantedSpellIds: [
@@ -374,7 +354,7 @@ export const character = {
       id: "stealth",
       name: "Скрытность",
       ability: "dexterity",
-      proficient: true,
+      proficient: false,
       expertise: false,
       source: "class"
     },
@@ -430,7 +410,7 @@ export const character = {
       id: "insight",
       name: "Проницательность",
       ability: "wisdom",
-      proficient: true,
+      proficient: false,
       expertise: false,
       source: "class"
     },
@@ -446,7 +426,7 @@ export const character = {
       id: "perception",
       name: "Восприятие",
       ability: "wisdom",
-      proficient: true,
+      proficient: false,
       expertise: false,
       source: "class"
     },
@@ -463,7 +443,7 @@ export const character = {
       name: "Обман",
       ability: "charisma",
       proficient: true,
-      expertise: false,
+      expertise: true,
       source: "class"
     },
     {
@@ -487,7 +467,7 @@ export const character = {
       name: "Убеждение",
       ability: "charisma",
       proficient: true,
-      expertise: false,
+      expertise: true,
       source: "class"
     }
   ],
@@ -496,59 +476,179 @@ export const character = {
     items: [
       {
         id: "rapier",
+        type: "weapon",
         name: "Рапира",
         quantity: 1,
+        stackable: false,
         equipped: true,
-        notes: "Основное оружие"
+        notes: "Основное оружие дуэлянта; подходит как фокусировка Коллегии Мечей.",
+        tags: ["боевое", "фокус"],
+        weapon: {
+          category: "martial-melee",
+          attackStat: "dexterity",
+          damageDice: "1d8",
+          damageType: "колющий",
+          properties: ["Фехтовальное", "Одноручное"],
+          range: null,
+          twoHanded: false,
+          finesse: true,
+          thrown: false,
+          magicalBonusAttack: 0,
+          magicalBonusDamage: 0
+        },
+        armor: null,
+        focus: {
+          classes: ["bard"],
+          notes: "Может использоваться как фокусировка заклинаний барда."
+        },
+        consumable: null,
+        uses: null,
+        charges: null
       },
       {
         id: "dagger",
+        type: "weapon",
         name: "Кинжал",
         quantity: 1,
-        equipped: false,
-        notes: "Запасное и метательное оружие"
+        stackable: false,
+        equipped: true,
+        notes: "Запасное и метательное оружие; урон использует модификатор Ловкости.",
+        tags: ["боевое"],
+        weapon: {
+          category: "simple-melee",
+          attackStat: "dexterity",
+          damageDice: "1d4",
+          damageType: "колющий",
+          properties: ["Фехтовальное", "Лёгкое", "Метательное (20/60)"],
+          range: {
+            normalFeet: 20,
+            longFeet: 60
+          },
+          twoHanded: false,
+          finesse: true,
+          thrown: true,
+          magicalBonusAttack: 0,
+          magicalBonusDamage: 0
+        },
+        armor: null,
+        focus: null,
+        consumable: null,
+        uses: null,
+        charges: null
       },
       {
         id: "studded-leather",
+        type: "armor",
         name: "Клёпаная кожаная броня",
         quantity: 1,
+        stackable: false,
         equipped: true,
-        notes: "Основной доспех"
+        notes: "Основной доспех.",
+        tags: ["боевое"],
+        weapon: null,
+        armor: {
+          category: "light",
+          baseAc: 12,
+          dexCap: null,
+          magicalBonusAc: 0
+        },
+        focus: null,
+        consumable: null,
+        uses: null,
+        charges: null
       },
       {
         id: "costume",
+        type: "misc",
         name: "Костюм артиста",
         quantity: 1,
+        stackable: false,
         equipped: false,
-        notes: "Сценический образ"
+        notes: "Сценический образ.",
+        tags: ["социальное"],
+        weapon: null,
+        armor: null,
+        focus: null,
+        consumable: null,
+        uses: null,
+        charges: null
       },
       {
         id: "makeup-kit",
+        type: "tool",
         name: "Набор для грима",
         quantity: 1,
+        stackable: false,
         equipped: false,
-        notes: "Инструмент предыстории"
+        notes: "Инструмент предыстории.",
+        tags: ["инструмент"],
+        weapon: null,
+        armor: null,
+        focus: null,
+        consumable: null,
+        uses: null,
+        charges: null
       },
       {
         id: "instrument",
-        name: "Музыкальный инструмент",
+        type: "focus",
+        name: "Музыкальный инструмент: Виола",
         quantity: 1,
+        stackable: false,
         equipped: false,
-        notes: "Фокусировка заклинаний и часть образа"
+        notes: "Фокусировка заклинаний и часть образа.",
+        tags: ["фокус", "инструмент"],
+        weapon: null,
+        armor: null,
+        focus: {
+          classes: ["bard"],
+          notes: "Стандартная фокусировка для заклинаний барда."
+        },
+        consumable: null,
+        uses: null,
+        charges: null
       },
       {
         id: "fan-gift",
+        type: "misc",
         name: "Подарок от поклонницы",
         quantity: 1,
+        stackable: false,
         equipped: false,
-        notes: "Личная безделушка из прошлого"
+        notes: "Личная безделушка из прошлого.",
+        tags: ["личное"],
+        weapon: null,
+        armor: null,
+        focus: null,
+        consumable: null,
+        uses: null,
+        charges: null
+      },
+      {
+        id: "healing-potion",
+        type: "consumable",
+        name: "Зелье лечения",
+        quantity: 0,
+        stackable: true,
+        equipped: false,
+        notes: "Стандартное лечебное зелье.",
+        tags: ["расходник"],
+        weapon: null,
+        armor: null,
+        focus: null,
+        consumable: {
+          effect: "heal",
+          formula: "2d4 + 2"
+        },
+        uses: null,
+        charges: null
       }
     ],
     currency: {
       cp: 0,
       sp: 0,
       ep: 0,
-      gp: 25,
+      gp: 15,
       pp: 0
     },
     notes:

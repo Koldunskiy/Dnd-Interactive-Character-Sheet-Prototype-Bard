@@ -10,6 +10,7 @@ import {
   ensureUiState,
   ensureSpellsUiState,
   ensureMeleeUiState,
+  ensureInventoryUiState,
 } from "./state-helpers.js";
 import {
   isCantripSelected,
@@ -105,10 +106,19 @@ function handleInventoryAddItem(draft) {
 
   inventory.items.push({
     id: buildRuntimeId("item"),
+    type: "misc",
     name: "",
     quantity: 1,
+    stackable: false,
     equipped: false,
     notes: "",
+    tags: [],
+    weapon: null,
+    armor: null,
+    focus: null,
+    consumable: null,
+    uses: null,
+    charges: null,
   });
 }
 
@@ -477,6 +487,11 @@ function handleToggleJackOfAllTrades(draft) {
   );
 }
 
+function handleToggleDuelingStyle(draft) {
+  const rulesOverrides = ensureRulesOverridesState(draft);
+  rulesOverrides.disableDuelingStyle = !Boolean(rulesOverrides.disableDuelingStyle);
+}
+
 function handlePrintSheet() {
   window.print();
 }
@@ -528,17 +543,6 @@ function handleLevelAdjust(draft, target) {
 function handleSpellLibrarySetLevel(draft, target) {
   const levelValue = target.dataset.spellLibraryLevel;
   const ui = ensureUiState(draft);
-
-  if (!ui.spellLibrary || typeof ui.spellLibrary !== "object") {
-    ui.spellLibrary = {
-      selectedLevel: "all",
-      expandedSpellIds: [],
-    };
-  }
-
-  if (!ui.spellLibrary.selectionFilter) {
-    ui.spellLibrary.selectionFilter = "all";
-  }
 
   ui.spellLibrary.selectedLevel = levelValue ?? "all";
 }
@@ -705,6 +709,50 @@ function handleMeleeToggleExpand(draft, target) {
     : [...expandedCardIds, cardId];
 }
 
+function handleInventoryToggleEquipped(draft, target) {
+  const itemId = String(target.dataset.itemId ?? "");
+  if (!itemId) {
+    return;
+  }
+
+  const inventory = ensureInventoryState(draft);
+  const item = inventory.items.find((entry) => entry.id === itemId);
+
+  if (!item) {
+    return;
+  }
+
+  const nextEquipped = !Boolean(item.equipped);
+
+  if (item.type === "armor" && nextEquipped) {
+    for (const entry of inventory.items) {
+      if (entry.type === "armor") {
+        entry.equipped = false;
+      }
+    }
+  }
+
+  item.equipped = nextEquipped;
+}
+
+function handleInventoryToggleExpand(draft, target) {
+  const itemId = target.dataset.itemId;
+  if (!itemId) {
+    return;
+  }
+
+  const inventoryUi = ensureInventoryUiState(draft);
+  const expandedItemIds = Array.isArray(inventoryUi.expandedItemIds)
+    ? inventoryUi.expandedItemIds
+    : [];
+
+  const isExpanded = expandedItemIds.includes(itemId);
+
+  inventoryUi.expandedItemIds = isExpanded
+    ? expandedItemIds.filter((id) => id !== itemId)
+    : [...expandedItemIds, itemId];
+}
+
 export function createActionHandlers({ resetState }) {
   return {
     "hp-change": handleHpChange,
@@ -734,6 +782,7 @@ export function createActionHandlers({ resetState }) {
     "weapon-attack": handleWeaponAttack,
     "spell-cast": handleSpellCast,
     "toggle-jack-of-all-trades": handleToggleJackOfAllTrades,
+    "toggle-dueling-style": handleToggleDuelingStyle,
     "level-adjust": handleLevelAdjust,
     "spell-library-set-level": handleSpellLibrarySetLevel,
     "spell-library-set-selection-filter": handleSpellLibrarySetSelectionFilter,
@@ -741,5 +790,7 @@ export function createActionHandlers({ resetState }) {
     "spell-library-toggle-select": handleSpellLibraryToggleSelect,
     "spells-toggle-expand": handleSpellsToggleExpand,
     "melee-toggle-expand": handleMeleeToggleExpand,
+    "inventory-toggle-equipped": handleInventoryToggleEquipped,
+    "inventory-toggle-expand": handleInventoryToggleExpand,
   };
 }

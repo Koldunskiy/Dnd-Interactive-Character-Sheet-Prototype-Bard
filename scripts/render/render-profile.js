@@ -282,6 +282,29 @@ function renderAbilityCard(card) {
   `;
 }
 
+function renderFeatureToggle({
+  label,
+  action,
+  enabled,
+  title,
+}) {
+  return `
+    <div class="feature-toggle-row">
+      <span class="feature-toggle-label">${escapeHtml(label)}</span>
+      <button
+        type="button"
+        class="feature-toggle-btn ${enabled ? "feature-toggle-btn--active" : ""}"
+        data-action="${escapeHtml(action)}"
+        aria-pressed="${enabled ? "true" : "false"}"
+        aria-label="${escapeHtml(`${title}: ${enabled ? "включён" : "выключен"}`)}"
+        title="${escapeHtml(title)}"
+      >
+        ${enabled ? "Вкл" : "Выкл"}
+      </button>
+    </div>
+  `;
+}
+
 function renderAbilitiesSection(character, derived) {
   const cards = getAbilityCardsData(character, derived);
 
@@ -452,31 +475,29 @@ function renderBackgroundDetails(backgroundDetails) {
   `;
 }
 
-function renderJackOfAllTradesToggle(feature, character) {
-  const isTargetFeature = String(feature?.name || "").trim() === "Мастер на все руки";
+function renderFeatureRulesToggle(feature, character) {
+  const featureName = String(feature?.name || "").trim();
+  const rulesOverrides = character?.ui?.rulesOverrides ?? {};
 
-  if (!isTargetFeature) {
-    return "";
+  if (featureName === "Мастер на все руки") {
+    return renderFeatureToggle({
+      label: "Учитывать в расчётах",
+      action: "toggle-jack-of-all-trades",
+      enabled: !Boolean(rulesOverrides.disableJackOfAllTrades),
+      title: "Мастер на все руки",
+    });
   }
 
-  const disabled = Boolean(character?.ui?.rulesOverrides?.disableJackOfAllTrades);
-  const enabled = !disabled;
+  if (featureName === "Боевой стиль: Дуэлянт") {
+    return renderFeatureToggle({
+      label: "Учитывать в расчётах",
+      action: "toggle-dueling-style",
+      enabled: !Boolean(rulesOverrides.disableDuelingStyle),
+      title: "Боевой стиль: Дуэлянт",
+    });
+  }
 
-  return `
-    <div class="feature-toggle-row">
-      <span class="feature-toggle-label">Учитывать в расчётах</span>
-      <button
-        type="button"
-        class="feature-toggle-btn ${enabled ? "feature-toggle-btn--active" : ""}"
-        data-action="toggle-jack-of-all-trades"
-        aria-pressed="${enabled ? "true" : "false"}"
-        aria-label="Мастер на все руки: ${enabled ? "включён" : "выключен"}"
-        title="Мастер на все руки"
-      >
-        ${enabled ? "Вкл" : "Выкл"}
-      </button>
-    </div>
-  `;
+  return "";
 }
 
 function renderClassFeatures(features, character) {
@@ -499,7 +520,7 @@ function renderClassFeatures(features, character) {
                 </div>
                 <h3 class="feature-title">${escapeHtml(feature.name)}</h3>
                 <p class="feature-text">${escapeHtml(feature.text)}</p>
-                ${renderJackOfAllTradesToggle(feature, character)}
+                ${renderFeatureRulesToggle(feature, character)}
               </article>
             `,
           )

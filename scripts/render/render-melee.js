@@ -4,7 +4,6 @@ import {
   renderSpellFacts,
   renderTextParagraph,
   renderSpellBody,
-  renderSpellCardHeader,
   renderSpellSummaryLine,
   getSpellGeometryFactItem,
 } from "./shared/spell-card.js";
@@ -20,7 +19,13 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-function renderPipTrack({ total, active, action, itemData = {} }) {
+function renderPipTrack({
+  total,
+  active,
+  action,
+  indexAttr = "charge-index",
+  itemData = {},
+}) {
   const safeTotal = Math.max(0, Number(total || 0));
   const safeActive = clamp(Number(active || 0), 0, safeTotal);
 
@@ -39,7 +44,7 @@ function renderPipTrack({ total, active, action, itemData = {} }) {
             type="button"
             class="resource-pip ${isActive ? "resource-pip--active" : ""}"
             data-action="${escapeHtml(action)}"
-            data-charge-index="${pipIndex}"
+            data-${escapeHtml(indexAttr)}="${pipIndex}"
             ${attrs}
             aria-label="Установить значение ${pipIndex} из ${safeTotal}"
             aria-pressed="${isActive ? "true" : "false"}"
@@ -65,6 +70,7 @@ function renderBardicPips(bardic) {
         total,
         active: current,
         action: "bardic-set-current",
+        indexAttr: "charge-index",
       })}
     </div>
   `;
@@ -189,6 +195,10 @@ function renderHpCard(state, derived) {
           <button type="button" class="btn btn--utility hp-action-btn" data-action="hp-apply-heal">
             Лечение
           </button>
+
+          <button type="button" class="btn btn--utility hp-action-btn" data-action="hp-reset">
+            Полные хиты
+          </button>
         </div>
       </div>
     </article>
@@ -197,10 +207,9 @@ function renderHpCard(state, derived) {
 
 function renderCombatResources(state, derived) {
   const concentration = state?.combat?.concentration || "";
-  const slots = Array.isArray(derived?.spellSlots) ? derived.spellSlots : [];
   const bardic = derived?.bardicInspiration || null;
 
-  const slotEntries = Array.isArray(derived.spellSlots)
+  const slotEntries = Array.isArray(derived?.spellSlots)
     ? derived.spellSlots.map(renderSpellSlotPips).join("")
     : "";
 
@@ -373,74 +382,22 @@ function renderMeleeSpellStats(card) {
   return renderSpellFacts(items);
 }
 
-function renderCombatSpellCard(card, expandedCardIds = []) {
-  const badges = [
-    `<span class="spell-badge spell-badge--level">${escapeHtml(formatSpellLevel(card.level))}</span>`,
-  ];
-
-  if (card.concentration) {
-    badges.push(`<span class="spell-badge">Концентрация</span>`);
-  }
-
-  if (Array.isArray(card.tags)) {
-    for (const tag of card.tags.filter(Boolean)) {
-      badges.push(`<span class="spell-badge">${escapeHtml(tag)}</span>`);
-    }
-  }
-
-  const geometryItem = getSpellGeometryFactItem(card);
-
-  const factItems = [
-    card.castTime ? { label: "Накладывание", value: card.castTime } : null,
-    geometryItem ?? (card.range ? { label: "Дистанция", value: card.range } : null),
-    card.duration
-      ? {
-          label: "Длительность",
-          value: `${card.duration}${card.concentration ? " (конц.)" : ""}`,
-        }
-      : card.concentration
-        ? { label: "Длительность", value: "Концентрация" }
-        : null,
-  ].filter(Boolean);
-
-  return renderExpandableCombatCard(
-    {
-      card,
-      title: escapeHtml(card.title || "Заклинание"),
-      summary: escapeHtml(card.summary || ""),
-      badges: badges.join(""),
-      details: `
-        ${renderSpellSummaryLine({
-          level: card.level,
-          school: card.school,
-        })}
-        ${factItems.length ? renderSpellFacts(factItems) : ""}
-        ${renderMeleeSpellStats(card)}
-        ${renderSpellBody(
-          renderTextParagraph("spell-description", card.description || card.summary),
-          renderTextParagraph("spell-notes", card.notes),
-          renderTextParagraph("spell-vibe", card.vibe),
-        )}
-      `,
-      actions: renderCardActions(card),
-    },
-    expandedCardIds,
-  );
-}
-
-function getCombatCardRuntimeId(card) {
+function getCombatCardRuntimeId(card, index = 0) {
   const kind = String(card?.kind || "card");
   const baseId =
     card?.id ||
     card?.spellId ||
     card?.title ||
-    Math.random().toString(16).slice(2);
+    `${kind}-${index}`;
 
   return `${kind}:${String(baseId)}`;
 }
 
-function renderExpandableCombatCard({ card, title, summary = "", badges = "", details = "", actions = "" }, expandedCardIds = []) {
-  const cardId = getCombatCardRuntimeId(card);
+function renderExpandableCombatCard(
+  { card, title, summary = "", badges = "", details = "", actions = "", index = 0 },
+  expandedCardIds = [],
+) {
+  const cardId = getCombatCardRuntimeId(card, index);
   const isExpanded = expandedCardIds.includes(cardId);
   const contentId = `melee-card-content-${escapeHtml(cardId)}`;
   const toggleLabel = isExpanded ? "Свернуть" : "Подробнее";
@@ -480,9 +437,63 @@ function renderExpandableCombatCard({ card, title, summary = "", badges = "", de
   `;
 }
 
-function renderCombatActionCard(card, expandedCardIds = []) {
+function renderCombatSpellCard(card, expandedCardIds = [], index = 0) {
+  const badges = [
+    `<span class="spell-badge spell-badge--level">${escapeHtml(formatSpellLevel(card.level))}</span>`,
+  ];
+
+  if (card.concentration) {
+    badges.push(`<span class="spell-badge">Концентрация</span>`);
+  }
+
+  if (Array.isArray(card.tags)) {
+    for (const tag of card.tags.filter(Boolean)) {
+      badges.push(`<span class="spell-badge">${escapeHtml(tag)}</span>`);
+    }
+  }
+
+  const geometryItem = getSpellGeometryFactItem(card);
+
+  const factItems = [
+    card.castTime ? { label: "Накладывание", value: card.castTime } : null,
+    geometryItem ?? (card.range ? { label: "Дистанция", value: card.range } : null),
+    card.duration
+      ? {
+          label: "Длительность",
+          value: `${card.duration}${card.concentration ? " (конц.)" : ""}`,
+        }
+      : card.concentration
+        ? { label: "Длительность", value: "Концентрация" }
+        : null,
+  ].filter(Boolean);
+
+  return renderExpandableCombatCard(
+    {
+      card,
+      index,
+      title: escapeHtml(card.title || "Заклинание"),
+      summary: escapeHtml(card.summary || ""),
+      badges: badges.join(""),
+      details: `
+        ${renderSpellSummaryLine({
+          level: card.level,
+          school: card.school,
+        })}
+        ${factItems.length ? renderSpellFacts(factItems) : ""}
+        ${renderMeleeSpellStats(card)}
+        ${renderSpellBody(
+          renderTextParagraph("spell-notes", card.notes),
+        )}
+      `,
+      actions: renderCardActions(card),
+    },
+    expandedCardIds,
+  );
+}
+
+function renderCombatActionCard(card, expandedCardIds = [], index = 0) {
   if (card.kind === "spell") {
-    return renderCombatSpellCard(card, expandedCardIds);
+    return renderCombatSpellCard(card, expandedCardIds, index);
   }
 
   const tagsMarkup = renderTags(card.tags || []);
@@ -492,6 +503,7 @@ function renderCombatActionCard(card, expandedCardIds = []) {
     return renderExpandableCombatCard(
       {
         card,
+        index,
         title: escapeHtml(card.title || "Оружие"),
         summary: `Атака: ${escapeHtml(card.attack || "—")} · Урон: ${escapeHtml(card.damage || "—")}`,
         details: `
@@ -513,6 +525,7 @@ function renderCombatActionCard(card, expandedCardIds = []) {
     return renderExpandableCombatCard(
       {
         card,
+        index,
         title: escapeHtml(card.title || "Способность"),
         summary: card.cost ? `Стоимость: ${escapeHtml(card.cost)}` : "",
         details: `
@@ -540,7 +553,9 @@ function renderCombatActionGroup(title, cards, expandedCardIds = []) {
     <div class="combat-card-group">
       <div class="combat-card-group-title">${escapeHtml(title)}</div>
       <div class="cards-grid">
-        ${cards.map((card) => renderCombatActionCard(card, expandedCardIds)).join("")}
+        ${cards
+          .map((card, index) => renderCombatActionCard(card, expandedCardIds, index))
+          .join("")}
       </div>
     </div>
   `;

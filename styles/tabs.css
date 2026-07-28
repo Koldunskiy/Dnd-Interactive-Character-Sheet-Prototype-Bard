@@ -56,3 +56,18 @@
 .tab-panel.is-active {
   display: block;
 }
+
+.tabs {
+  position: sticky;
+  top: 16px;
+  z-index: 30;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px;
+  backdrop-filter: blur(10px);
+}
+
+.tab-btn {
+  white-space: nowrap;
+}
