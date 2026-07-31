@@ -44,6 +44,19 @@ function getMaxHp(derived) {
   return Number(derived.maxHitPoints ?? derived.maxHp ?? 0);
 }
 
+function resolveLibrarySpellById(spellId) {
+  if (!spellId) {
+    return null;
+  }
+
+  return (
+    BARD_SPELL_LIBRARY_BY_ID[spellId] ??
+    BARD_SPELL_LIBRARY_BY_ID[`${spellId}-2024`] ??
+    BARD_SPELL_LIBRARY_BY_ID[`${spellId}-2014`] ??
+    null
+  );
+}
+
 function findSpellByActionId(spells, spellId) {
   return spells.find((entry) => String(entry.id) === String(spellId));
 }
@@ -574,21 +587,27 @@ function handleSpellLibraryToggleExpand(draft, target) {
 }
 
 function handleSpellLibraryToggleSelect(draft, target) {
-  const spellId = target.dataset.spellLibrarySelect;
+  const rawSpellId = target.dataset.spellLibrarySelect;
   const mode = target.dataset.spellLibraryMode;
   const level = Number(draft.profile?.level ?? 1);
   const spellcasting = ensureSpellcastingState(draft);
 
-  if (!spellId || !mode) {
+  if (!rawSpellId || !mode) {
     return;
   }
 
-  const spell = BARD_SPELL_LIBRARY_BY_ID[spellId];
-  if (!spell) {
+  const resolvedSpell = resolveLibrarySpellById(rawSpellId);
+  if (!resolvedSpell) {
+    console.warn("[actions] Unknown library spell id:", rawSpellId);
     return;
   }
 
-  if (spell.availableFromLevel && Number(spell.availableFromLevel) > level) {
+  const spellId = resolvedSpell.id;
+
+  if (
+    resolvedSpell.availableFromLevel &&
+    Number(resolvedSpell.availableFromLevel) > level
+  ) {
     return;
   }
 
@@ -614,13 +633,8 @@ function handleSpellLibraryToggleSelect(draft, target) {
         : [],
     );
 
-    const selected = isCantripSelected(draft, spellId);
-
-    const cantripIds = [...new Set(spellcasting.cantripIds.filter(Boolean))];
-
-    const classCantripIds = cantripIds.filter(
-      (id) => !grantedSpellIdSet.has(id),
-    );
+    const selected = cantripIds.includes(spellId);
+    const classCantripIds = cantripIds.filter((id) => !grantedSpellIdSet.has(id));
 
     if (grantedSpellIdSet.has(spellId)) {
       return;
@@ -632,7 +646,6 @@ function handleSpellLibraryToggleSelect(draft, target) {
     }
 
     const limit = getBardCantripLimit(level);
-
     if (classCantripIds.length >= limit) {
       return;
     }
@@ -642,7 +655,7 @@ function handleSpellLibraryToggleSelect(draft, target) {
   }
 
   if (mode === "prepared") {
-    const selected = isPreparedSpellSelected(draft, spellId);
+    const selected = preparedSpellIds.includes(spellId);
 
     if (selected) {
       spellcasting.preparedSpellIds = preparedSpellIds.filter((id) => id !== spellId);

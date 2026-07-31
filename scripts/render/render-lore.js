@@ -7,6 +7,24 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function renderInfoCard(title, text, fallback = "—") {
+  if (!text && text !== 0) {
+    return `
+      <div class="info-card">
+        <div class="info-card-title">${escapeHtml(title)}</div>
+        <div class="info-card-text">${escapeHtml(fallback)}</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="info-card">
+      <div class="info-card-title">${escapeHtml(title)}</div>
+      <div class="info-card-text">${escapeHtml(text)}</div>
+    </div>
+  `;
+}
+
 export function renderLorePanel(state) {
   const lorePanel = document.getElementById("lorePanel");
   if (!lorePanel) {
@@ -15,45 +33,35 @@ export function renderLorePanel(state) {
 
   const lore = state.lore ?? {};
 
+  const primaryCards = [
+    renderInfoCard("Внешний вид", lore.appearance),
+    renderInfoCard("Орден", lore.order),
+    renderInfoCard("Цель", lore.motivation),
+    renderInfoCard("Характер", lore.personality),
+  ].join("");
+
   const extraCards = [
-    lore.racePerspective && `
-      <div class="info-card">
-        <div class="info-card-title">Расовая перспектива</div>
-        <div class="info-card-text">${escapeHtml(lore.racePerspective)}</div>
-      </div>
-    `,
-    lore.performerIdentity && `
-      <div class="info-card">
-        <div class="info-card-title">Сценический образ</div>
-        <div class="info-card-text">${escapeHtml(lore.performerIdentity)}</div>
-      </div>
-    `
-  ].filter(Boolean).join("");
+    lore.racePerspective
+      ? renderInfoCard("Расовая перспектива", lore.racePerspective)
+      : "",
+    lore.performerIdentity
+      ? renderInfoCard("Сценический образ", lore.performerIdentity)
+      : "",
+    lore.trauma
+      ? renderInfoCard("Травма", lore.trauma)
+      : "",
+    lore.gmTriggers
+      ? renderInfoCard("Триггеры для мастера", lore.gmTriggers)
+      : "",
+  ]
+    .filter(Boolean)
+    .join("");
 
   lorePanel.innerHTML = `
     <h2>Лор</h2>
 
     <div class="cards-grid">
-      <div class="info-card">
-        <div class="info-card-title">Внешний вид</div>
-        <div class="info-card-text">${escapeHtml(lore.appearance || "—")}</div>
-      </div>
-
-      <div class="info-card">
-        <div class="info-card-title">Орден</div>
-        <div class="info-card-text">${escapeHtml(lore.order || "—")}</div>
-      </div>
-
-      <div class="info-card">
-        <div class="info-card-title">Цель</div>
-        <div class="info-card-text">${escapeHtml(lore.motivation || "—")}</div>
-      </div>
-
-      <div class="info-card">
-        <div class="info-card-title">Характер</div>
-        <div class="info-card-text">${escapeHtml(lore.personality || "—")}</div>
-      </div>
-
+      ${primaryCards}
       ${extraCards}
     </div>
 

@@ -16,17 +16,41 @@ function mergeSpellWithOverrides(baseSpell, override = {}) {
   };
 }
 
+function resolveSpellById(spellId) {
+  return (
+    BARD_SPELL_LIBRARY_BY_ID[spellId] ??
+    BARD_SPELL_LIBRARY_BY_ID[`${spellId}-2024`] ??
+    BARD_SPELL_LIBRARY_BY_ID[`${spellId}-2014`] ??
+    null
+  );
+}
+
+function resolveOverrideById(overrides, spellId, resolvedSpell) {
+  if (overrides[spellId]) {
+    return overrides[spellId];
+  }
+
+  if (resolvedSpell?.id && overrides[resolvedSpell.id]) {
+    return overrides[resolvedSpell.id];
+  }
+
+  return {};
+}
+
 function resolveSpellsByIds(spellIds, overrides) {
   return uniqueIds(spellIds)
     .map((spellId) => {
-      const baseSpell = BARD_SPELL_LIBRARY_BY_ID[spellId];
+      const baseSpell = resolveSpellById(spellId);
 
       if (!baseSpell) {
         console.warn("[spellcasting] Unknown spell id:", spellId);
         return null;
       }
 
-      return mergeSpellWithOverrides(baseSpell, overrides[spellId] ?? {});
+      return mergeSpellWithOverrides(
+        baseSpell,
+        resolveOverrideById(overrides, spellId, baseSpell),
+      );
     })
     .filter(Boolean);
 }
