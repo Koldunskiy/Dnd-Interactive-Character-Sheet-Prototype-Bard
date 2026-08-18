@@ -61,18 +61,6 @@ export const PROFICIENCY_BY_LEVEL = [
   { min: 17, max: 20, value: 6 },
 ];
 
-/**
- * Bard 2024 spellcasting progression.
- *
- * Notes:
- * - preparedSpells = number of prepared level 1+ spells from the class table
- * - cantripsKnown stays separate
- * - slots remain full-caster progression
- *
- * Prepared spells progression is aligned with 2024 Bard table:
- * 1:4, 2:5, 3:6, 4:7, 5:9, 6:10, 7:11, 8:12, 9:14, 10:15,
- * 11:16, 12:16, 13:17, 14:17, 15:18, 16:18, 17:19, 18:20, 19:21, 20:22
- */
 export const BARD_PROGRESSION = {
   1: {
     cantripsKnown: 2,
@@ -100,91 +88,91 @@ export const BARD_PROGRESSION = {
   },
   5: {
     cantripsKnown: 3,
-    preparedSpells: 9,
+    preparedSpells: 8,
     bardicDie: "1d8",
     slots: { 1: 4, 2: 3, 3: 2 },
   },
   6: {
     cantripsKnown: 3,
-    preparedSpells: 10,
+    preparedSpells: 9,
     bardicDie: "1d8",
     slots: { 1: 4, 2: 3, 3: 3 },
   },
   7: {
     cantripsKnown: 3,
-    preparedSpells: 11,
+    preparedSpells: 10,
     bardicDie: "1d8",
     slots: { 1: 4, 2: 3, 3: 3, 4: 1 },
   },
   8: {
     cantripsKnown: 3,
-    preparedSpells: 12,
+    preparedSpells: 11,
     bardicDie: "1d8",
     slots: { 1: 4, 2: 3, 3: 3, 4: 2 },
   },
   9: {
     cantripsKnown: 3,
-    preparedSpells: 14,
+    preparedSpells: 12,
     bardicDie: "1d8",
     slots: { 1: 4, 2: 3, 3: 3, 4: 3, 5: 1 },
   },
   10: {
     cantripsKnown: 4,
-    preparedSpells: 15,
+    preparedSpells: 14,
     bardicDie: "1d10",
     slots: { 1: 4, 2: 3, 3: 3, 4: 3, 5: 2 },
   },
   11: {
     cantripsKnown: 4,
-    preparedSpells: 16,
+    preparedSpells: 15,
     bardicDie: "1d10",
     slots: { 1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1 },
   },
   12: {
     cantripsKnown: 4,
-    preparedSpells: 16,
+    preparedSpells: 15,
     bardicDie: "1d10",
     slots: { 1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1 },
   },
   13: {
     cantripsKnown: 4,
-    preparedSpells: 17,
+    preparedSpells: 16,
     bardicDie: "1d10",
     slots: { 1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1 },
   },
   14: {
     cantripsKnown: 4,
-    preparedSpells: 17,
+    preparedSpells: 18,
     bardicDie: "1d10",
     slots: { 1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1 },
   },
   15: {
     cantripsKnown: 4,
-    preparedSpells: 18,
+    preparedSpells: 19,
     bardicDie: "1d12",
     slots: { 1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1 },
   },
   16: {
     cantripsKnown: 4,
-    preparedSpells: 18,
+    preparedSpells: 19,
     bardicDie: "1d12",
     slots: { 1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1 },
   },
   17: {
     cantripsKnown: 4,
-    preparedSpells: 19,
+    preparedSpells: 20,
     bardicDie: "1d12",
     slots: { 1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1, 9: 1 },
   },
   18: {
     cantripsKnown: 4,
-    preparedSpells: 20,
+    preparedSpells: 22,
     bardicDie: "1d12",
     slots: { 1: 4, 2: 3, 3: 3, 4: 3, 5: 3, 6: 1, 7: 1, 8: 1, 9: 1 },
   },
   19: {
     cantripsKnown: 4,
-    preparedSpells: 21,
+    preparedSpells: 22,
     bardicDie: "1d12",
     slots: { 1: 4, 2: 3, 3: 3, 4: 3, 5: 3, 6: 2, 7: 1, 8: 1, 9: 1 },
   },

@@ -1,23 +1,4 @@
-function detectEditionFromSourceUrl(sourceUrl) {
-  if (typeof sourceUrl !== "string") {
-    return "unknown";
-  }
-
-  if (sourceUrl.includes("next.dnd.su")) {
-    return "2024";
-  }
-
-  if (sourceUrl.includes("5e14.dnd.su")) {
-    return "2014";
-  }
-
-  return "unknown";
-}
-
 function createBardSpell(spell) {
-  const edition =
-    spell.edition ?? detectEditionFromSourceUrl(spell.sourceUrl ?? null);
-
   return {
     originalName: null,
     classes: ["Бард"],
@@ -38,304 +19,12 @@ function createBardSpell(spell) {
     areaSizeFeet: null,
     areaType: null,
 
-    edition,
-    isLegacy: edition === "2014",
-    supersedesSpellId: null,
-
     ...spell,
-    edition,
-    isLegacy: spell.isLegacy ?? edition === "2014",
   };
 }
 
-function normalizeSpellIdentity(spell) {
-  return (
-    spell.originalName?.trim().toLowerCase() ||
-    spell.name?.trim().toLowerCase() ||
-    spell.id
-  );
-}
-
-function scoreSpellEdition(spell) {
-  if (spell.edition === "2024") {
-    return 2;
-  }
-
-  if (spell.edition === "2014") {
-    return 1;
-  }
-
-  return 0;
-}
-
-function mergeSpellVersions(spells) {
-  const byIdentity = new Map();
-
-  for (const spell of spells) {
-    const identity = normalizeSpellIdentity(spell);
-    const existing = byIdentity.get(identity);
-
-    if (!existing) {
-      byIdentity.set(identity, spell);
-      continue;
-    }
-
-    if (scoreSpellEdition(spell) > scoreSpellEdition(existing)) {
-      byIdentity.set(identity, {
-        ...spell,
-        supersedesSpellId: existing.id,
-      });
-      continue;
-    }
-
-    if (!existing.supersedesSpellId) {
-      existing.supersedesSpellId = spell.id;
-    }
-  }
-
-  return Array.from(byIdentity.values()).sort((a, b) => {
-    if (a.level !== b.level) {
-      return a.level - b.level;
-    }
-
-    return a.name.localeCompare(b.name, "ru");
-  });
-}
-
 export const RAW_BARD_SPELL_LIBRARY = [
-  // 0 УРОВЕНЬ (КАНТРИПЫ) — 2024
-
-  createBardSpell({
-    id: "mage-hand-2024",
-    level: 0,
-    name: "Волшебная рука",
-    originalName: "Mage Hand",
-    school: "Вызов",
-    castingTime: "1 действие",
-    range: "30 футов",
-    rangeFeet: 30,
-    components: "В, С",
-    duration: "1 минута",
-    sourceUrl: "https://next.dnd.su/spells/10564-mage-hand",
-    summary:
-      "Призрачная рука выполняет простые манипуляции с лёгкими предметами на расстоянии.",
-    notes:
-      "Не может атаковать, активировать магические предметы и переносить тяжёлые объекты.",
-  }),
-
-  createBardSpell({
-    id: "friends-2024",
-    level: 0,
-    name: "Дружба",
-    originalName: "Friends",
-    school: "Очарование",
-    castingTime: "1 действие",
-    range: "На себя",
-    rangeFeet: 0,
-    components: "С, М",
-    duration: "До 1 минуты",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10523-friends",
-    summary:
-      "Даёт преимущество на проверки Харизмы против выбранного существа, которое не враждебно.",
-    notes:
-      "После окончания эффекта цель понимает, что на неё воздействовали магией, и может стать враждебной.",
-  }),
-
-  createBardSpell({
-    id: "blade-ward-2024",
-    level: 0,
-    name: "Защита от оружия",
-    originalName: "Blade Ward",
-    school: "Ограждение",
-    castingTime: "1 действие",
-    range: "На себя",
-    rangeFeet: 0,
-    components: "В, С",
-    duration: "1 раунд",
-    sourceUrl: "https://next.dnd.su/spells/10444-blade-ward",
-    summary:
-      "Даёт сопротивление дробящему, колющему и рубящему урону от оружия до начала вашего следующего хода.",
-  }),
-
-  createBardSpell({
-    id: "starry-wisp-2024",
-    level: 0,
-    name: "Звёздный светлячок",
-    originalName: "Starry Wisp",
-    school: "Вызов",
-    castingTime: "1 действие",
-    range: "60 футов",
-    rangeFeet: 60,
-    components: "В, С",
-    duration: "До 1 минуты",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10654-starry-wisp",
-    summary:
-      "Создаёт маленький мерцающий светлячок, который освещает область и может перемещаться по команде.",
-    notes:
-      "Подходит для скрытного освещения или обозначения цели в темноте.",
-  }),
-
-  createBardSpell({
-    id: "vicious-mockery-2024",
-    level: 0,
-    name: "Злая насмешка",
-    originalName: "Vicious Mockery",
-    school: "Очарование",
-    castingTime: "1 действие",
-    range: "60 футов",
-    rangeFeet: 60,
-    components: "В",
-    duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10692-vicious-mockery",
-    summary:
-      "Наносит психический урон и накладывает помеху на следующий бросок атаки цели при провале спасброска.",
-    damage: {
-      dice: "1d4",
-      modifier: null,
-      type: "психический",
-    },
-    saveAbility: "wisdom",
-  }),
-
-  createBardSpell({
-    id: "minor-illusion-2024",
-    level: 0,
-    name: "Малая иллюзия",
-    originalName: "Minor Illusion",
-    school: "Иллюзия",
-    castingTime: "1 действие",
-    range: "30 футов",
-    rangeFeet: 30,
-    components: "С, М",
-    duration: "1 минута",
-    sourceUrl: "https://next.dnd.su/spells/10582-minor-illusion",
-    summary:
-      "Создаёт небольшой звук или статичный визуальный образ для отвлечения, маскировки или обмана.",
-  }),
-
-  createBardSpell({
-    id: "true-strike-2024",
-    level: 0,
-    name: "Меткий удар",
-    originalName: "True Strike",
-    school: "Прорицание",
-    castingTime: "1 действие",
-    range: "30 футов",
-    rangeFeet: 30,
-    components: "С, М",
-    duration: "1 раунд",
-    sourceUrl: "https://next.dnd.su/spells/10688-true-strike",
-    summary:
-      "Даёт преимущество на одну атаку по выбранной цели, если вы атакуюте её до конца следующего хода.",
-  }),
-
-  createBardSpell({
-    id: "dancing-lights-2024",
-    level: 0,
-    name: "Пляшущие огоньки",
-    originalName: "Dancing Lights",
-    school: "Вызов",
-    castingTime: "1 действие",
-    range: "120 футов",
-    rangeFeet: 120,
-    components: "В, С, М",
-    duration: "До 1 минуты",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10472-dancing-lights",
-    summary:
-      "Создаёт до четырёх движущихся огоньков, дающих тусклый свет и способных изменять расположение.",
-  }),
-
-  createBardSpell({
-    id: "mending-2024",
-    level: 0,
-    name: "Починка",
-    originalName: "Mending",
-    school: "Преобразование",
-    castingTime: "1 минута",
-    range: "Касание",
-    components: "В, С, М",
-    duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10576-mending",
-    summary:
-      "Чинит небольшие повреждения объекта или соединяет разорванные части целого предмета.",
-  }),
-
-  createBardSpell({
-    id: "thunderclap-2024",
-    level: 0,
-    name: "Раскат грома",
-    originalName: "Thunderclap",
-    school: "Воплощение",
-    castingTime: "1 действие",
-    range: "На себя (радиус 5 футов)",
-    rangeFeet: 0,
-    areaShape: "radius",
-    areaSizeFeet: 5,
-    areaType: "radius",
-    components: "С",
-    duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10678-thunderclap",
-    summary:
-      "Создаёт громкий взрыв звука вокруг вас, который может повредить существам поблизости.",
-    damage: {
-      dice: "1d6",
-      modifier: null,
-      type: "громовой",
-    },
-    saveAbility: "constitution",
-  }),
-
-  createBardSpell({
-    id: "light-2024",
-    level: 0,
-    name: "Свет",
-    originalName: "Light",
-    school: "Воплощение",
-    castingTime: "1 действие",
-    range: "Касание",
-    components: "В, М",
-    duration: "1 час",
-    sourceUrl: "https://next.dnd.su/spells/10561-light",
-    summary:
-      "Освещает объект ярким светом в радиусе, заменяя факел или магический фонарь.",
-  }),
-
-  createBardSpell({
-    id: "message-2024",
-    level: 0,
-    name: "Сообщение",
-    originalName: "Message",
-    school: "Преобразование",
-    castingTime: "1 действие",
-    range: "120 футов",
-    rangeFeet: 120,
-    components: "С, М",
-    duration: "1 раунд",
-    sourceUrl: "https://next.dnd.su/spells/10577-message",
-    summary:
-      "Отправляет короткое шепчущее сообщение выбранному существу, которое может ответить.",
-  }),
-
-  createBardSpell({
-    id: "prestidigitation-2024",
-    level: 0,
-    name: "Фокусы",
-    originalName: "Prestidigitation",
-    school: "Преобразование",
-    castingTime: "1 действие",
-    range: "10 футов",
-    rangeFeet: 10,
-    components: "В, С",
-    duration: "До 1 часа",
-    sourceUrl: "https://next.dnd.su/spells/10610-prestidigitation",
-    summary:
-      "Создаёт набор мелких утилитарных и сценических эффектов: чистка, вкус, искры и подобные трюки.",
-  }),
-
-  // 0 УРОВЕНЬ — пример legacy 2014 (остальные добавишь по необходимости)
+  // 0 УРОВЕНЬ (ЗАГОВОРЫ)
 
   createBardSpell({
     id: "mage-hand-2014",
@@ -348,15 +37,208 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 30,
     components: "В, С",
     duration: "1 минута",
-    sourceUrl: "https://5e14.dnd.su/spells/26-mage-hand/",
+    sourceUrl: "https://5e14.dnd.su/spells/mage-hand/",
     summary:
       "Призрачная рука выполняет простые манипуляции с лёгкими предметами на расстоянии.",
   }),
 
-  // 1 УРОВЕНЬ — 2024
+  createBardSpell({
+    id: "friends-2014",
+    level: 0,
+    name: "Дружба",
+    originalName: "Friends",
+    school: "Очарование",
+    castingTime: "1 действие",
+    range: "На себя",
+    rangeFeet: 0,
+    components: "С, М",
+    duration: "До 1 минуты",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/friends/",
+    summary:
+      "Даёт преимущество на проверки Харизмы против одного существа, которое не враждебно к вам.",
+  }),
 
   createBardSpell({
-    id: "silent-image-2024",
+    id: "blade-ward-2014",
+    level: 0,
+    name: "Защита от оружия",
+    originalName: "Blade Ward",
+    school: "Ограждение",
+    castingTime: "1 действие",
+    range: "На себя",
+    rangeFeet: 0,
+    components: "В, С",
+    duration: "1 раунд",
+    sourceUrl: "https://5e14.dnd.su/spells/blade-ward/",
+    summary:
+      "Даёт сопротивление дробящему, колющему и рубящему урону от оружия до начала следующего хода.",
+  }),
+
+  createBardSpell({
+    id: "vicious-mockery-2014",
+    level: 0,
+    name: "Злая насмешка",
+    originalName: "Vicious Mockery",
+    school: "Очарование",
+    castingTime: "1 действие",
+    range: "60 футов",
+    rangeFeet: 60,
+    components: "В",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/vicious-mockery/",
+    summary:
+      "Наносит психический урон и накладывает помеху на следующий бросок атаки цели при провале спасброска.",
+    damage: {
+      dice: "1d4",
+      modifier: null,
+      type: "психический",
+    },
+    saveAbility: "wisdom",
+  }),
+
+  createBardSpell({
+    id: "minor-illusion-2014",
+    level: 0,
+    name: "Малая иллюзия",
+    originalName: "Minor Illusion",
+    school: "Иллюзия",
+    castingTime: "1 действие",
+    range: "30 футов",
+    rangeFeet: 30,
+    components: "С, М",
+    duration: "1 минута",
+    sourceUrl: "https://5e14.dnd.su/spells/minor-illusion/",
+    summary:
+      "Создаёт небольшой звук или статичный визуальный образ для отвлечения, маскировки или обмана.",
+  }),
+
+  createBardSpell({
+    id: "true-strike-2014",
+    level: 0,
+    name: "Меткий удар",
+    originalName: "True Strike",
+    school: "Прорицание",
+    castingTime: "1 действие",
+    range: "30 футов",
+    rangeFeet: 30,
+    components: "С",
+    duration: "1 раунд",
+    sourceUrl: "https://5e14.dnd.su/spells/true-strike/",
+    summary:
+      "Даёт преимущество на одну атаку по выбранной цели, если вы атакуете её до конца следующего хода.",
+  }),
+
+  createBardSpell({
+    id: "dancing-lights-2014",
+    level: 0,
+    name: "Пляшущие огоньки",
+    originalName: "Dancing Lights",
+    school: "Воплощение",
+    castingTime: "1 действие",
+    range: "120 футов",
+    rangeFeet: 120,
+    components: "В, С, М",
+    duration: "До 1 минуты",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/dancing-lights/",
+    summary:
+      "Создаёт до четырёх движущихся огоньков, дающих тусклый свет и способных менять расположение.",
+  }),
+
+  createBardSpell({
+    id: "mending-2014",
+    level: 0,
+    name: "Починка",
+    originalName: "Mending",
+    school: "Преобразование",
+    castingTime: "1 минута",
+    range: "Касание",
+    rangeFeet: null,
+    components: "В, С, М",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/mending/",
+    summary:
+      "Чинит небольшие повреждения объекта или соединяет разорванные части целого предмета.",
+  }),
+
+  createBardSpell({
+    id: "thunderclap-2014",
+    level: 0,
+    name: "Раскат грома",
+    originalName: "Thunderclap",
+    school: "Воплощение",
+    castingTime: "1 действие",
+    range: "На себя (радиус 5 футов)",
+    rangeFeet: 0,
+    areaShape: "radius",
+    areaSizeFeet: 5,
+    areaType: "radius",
+    components: "С",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/thunderclap/",
+    summary:
+      "Создаёт громкий взрыв звука вокруг вас, повреждающий существ поблизости.",
+    damage: {
+      dice: "1d6",
+      modifier: null,
+      type: "громовой",
+    },
+    saveAbility: "constitution",
+  }),
+
+  createBardSpell({
+    id: "light-2014",
+    level: 0,
+    name: "Свет",
+    originalName: "Light",
+    school: "Воплощение",
+    castingTime: "1 действие",
+    range: "Касание",
+    rangeFeet: null,
+    components: "В, М",
+    duration: "1 час",
+    sourceUrl: "https://5e14.dnd.su/spells/light/",
+    summary:
+      "Освещает объект ярким светом в радиусе, заменяя факел или магический фонарь.",
+  }),
+
+  createBardSpell({
+    id: "message-2014",
+    level: 0,
+    name: "Сообщение",
+    originalName: "Message",
+    school: "Преобразование",
+    castingTime: "1 действие",
+    range: "120 футов",
+    rangeFeet: 120,
+    components: "В, С, М",
+    duration: "1 раунд",
+    sourceUrl: "https://5e14.dnd.su/spells/message/",
+    summary:
+      "Отправляет короткое шепчущее сообщение выбранному существу, которое может ответить.",
+  }),
+
+  createBardSpell({
+    id: "prestidigitation-2014",
+    level: 0,
+    name: "Фокусы",
+    originalName: "Prestidigitation",
+    school: "Преобразование",
+    castingTime: "1 действие",
+    range: "10 футов",
+    rangeFeet: 10,
+    components: "В, С",
+    duration: "До 1 часа",
+    sourceUrl: "https://5e14.dnd.su/spells/prestidigitation/",
+    summary:
+      "Создаёт набор мелких утилитарных и сценических эффектов: чистка, вкус, искры и подобные трюки.",
+  }),
+
+  // 1 УРОВЕНЬ
+
+  createBardSpell({
+    id: "silent-image-2014",
     level: 1,
     name: "Безмолвный образ",
     originalName: "Silent Image",
@@ -367,13 +249,13 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 10 минут",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10642-silent-image",
+    sourceUrl: "https://5e14.dnd.su/spells/silent-image/",
     summary:
       "Создаёт подвижную, но беззвучную иллюзию объекта или существа среднего размера.",
   }),
 
   createBardSpell({
-    id: "thunderwave-2024",
+    id: "thunderwave-2014",
     level: 1,
     name: "Волна грома",
     originalName: "Thunderwave",
@@ -386,9 +268,9 @@ export const RAW_BARD_SPELL_LIBRARY = [
     areaType: "side",
     components: "В, С",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10680-thunderwave",
+    sourceUrl: "https://5e14.dnd.su/spells/thunderwave/",
     summary:
-      "Вызываете ударную волну, наносящую громовой урон и отбрасывающую существ вокруг вас.",
+      "Вызывает ударную волну, наносящую громовой урон и отбрасывающую существ вокруг вас.",
     damage: {
       dice: "2d8",
       modifier: null,
@@ -398,23 +280,24 @@ export const RAW_BARD_SPELL_LIBRARY = [
   }),
 
   createBardSpell({
-    id: "heroism-2024",
+    id: "heroism-2014",
     level: 1,
     name: "Героизм",
     originalName: "Heroism",
     school: "Очарование",
     castingTime: "1 действие",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10222-heroism",
+    sourceUrl: "https://5e14.dnd.su/spells/heroism/",
     summary:
       "Вселяет храбрость в цель, делая её невосприимчивой к испугу и давая временные хиты каждый ход.",
   }),
 
   createBardSpell({
-    id: "dissonant-whispers-2024",
+    id: "dissonant-whispers-2014",
     level: 1,
     name: "Диссонирующий шёпот",
     originalName: "Dissonant Whispers",
@@ -424,7 +307,7 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 60,
     components: "В",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10483-dissonant-whispers",
+    sourceUrl: "https://5e14.dnd.su/spells/dissonant-whispers/",
     summary:
       "Наносит психический урон и может заставить цель немедленно отступить реакцией при провале спасброска.",
     damage: {
@@ -436,7 +319,32 @@ export const RAW_BARD_SPELL_LIBRARY = [
   }),
 
   createBardSpell({
-    id: "animal-friendship-2024",
+    id: "earth-tremor-2014",
+    level: 1,
+    name: "Дрожь земли",
+    originalName: "Earth Tremor",
+    school: "Воплощение",
+    castingTime: "1 действие",
+    range: "На себя (радиус 10 футов)",
+    rangeFeet: 0,
+    areaShape: "radius",
+    areaSizeFeet: 10,
+    areaType: "radius",
+    components: "В, С",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/earth-tremor/",
+    summary:
+      "Заставляет землю вокруг вас вздыбиться, сбивая с ног существ рядом при провале спасброска.",
+    damage: {
+      dice: "1d6",
+      modifier: null,
+      type: "дробящий",
+    },
+    saveAbility: "dexterity",
+  }),
+
+  createBardSpell({
+    id: "animal-friendship-2014",
     level: 1,
     name: "Дружба с животными",
     originalName: "Animal Friendship",
@@ -446,13 +354,13 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 30,
     components: "В, С, М",
     duration: "24 часа",
-    sourceUrl: "https://next.dnd.su/spells/10264-animal-friendship",
+    sourceUrl: "https://5e14.dnd.su/spells/animal-friendship/",
     summary:
       "Убеждает зверя в том, что вы не представляете угрозы, делая его дружелюбным на время действия заклинания.",
   }),
 
   createBardSpell({
-    id: "tashas-hideous-laughter-2024",
+    id: "tashas-hideous-laughter-2014",
     level: 1,
     name: "Жуткий смех Таши",
     originalName: "Tasha's Hideous Laughter",
@@ -463,30 +371,47 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10670-tashas-hideous-laughter",
+    sourceUrl: "https://5e14.dnd.su/spells/tashas-hideous-laughter/",
     summary:
       "Повергает цель в неудержимый смех, лишая её дееспособности и сбивая с ног при провале спасброска.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "illusory-script-2024",
+    id: "distort-value-2014",
     level: 1,
-    name: "Иллюзорные письмена",
-    originalName: "Illusory Script",
+    name: "Искажение цены",
+    originalName: "Distort Value",
     school: "Иллюзия",
-    castingTime: "1 минута",
+    castingTime: "1 действие",
     range: "Касание",
-    components: "С, М",
-    duration: "10 дней",
-    ritual: true,
-    sourceUrl: "https://next.dnd.su/spells/10550-illusory-script",
+    rangeFeet: null,
+    components: "В, С, М",
+    duration: "До 1 часа",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/distort-value/",
     summary:
-      "Накладывает иллюзию на письменный текст, скрывая истинное содержание от всех, кроме выбранных вами читателей.",
+      "Накладывает иллюзию на предмет, заставляя оценивающего воспринимать его ценность искажённо.",
   }),
 
   createBardSpell({
-    id: "healing-word-2024",
+    id: "silvery-barbs-2014",
+    level: 1,
+    name: "Искусная острота",
+    originalName: "Silvery Barbs",
+    school: "Очарование",
+    castingTime: "1 реакция",
+    range: "60 футов",
+    rangeFeet: 60,
+    components: "В",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/silvery-barbs/",
+    summary:
+      "Реакцией заставляет существо перебросить успешный бросок атаки, проверку или спасбросок, а союзника — получить преимущество на следующий бросок.",
+  }),
+
+  createBardSpell({
+    id: "healing-word-2014",
     level: 1,
     name: "Лечащее слово",
     originalName: "Healing Word",
@@ -496,7 +421,7 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 60,
     components: "В",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10539-healing-word",
+    sourceUrl: "https://5e14.dnd.su/spells/healing-word/",
     summary:
       "Быстро лечит союзника на расстоянии; особенно полезно для поднятия из состояния 0 хитов.",
     healing: {
@@ -506,16 +431,17 @@ export const RAW_BARD_SPELL_LIBRARY = [
   }),
 
   createBardSpell({
-    id: "cure-wounds-2024",
+    id: "cure-wounds-2014",
     level: 1,
     name: "Лечение ран",
     originalName: "Cure Wounds",
     school: "Воплощение",
     castingTime: "1 действие",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10270-cure-wounds",
+    sourceUrl: "https://5e14.dnd.su/spells/cure-wounds/",
     summary:
       "Лечит существо прикосновением, восстанавливая больше хитов, чем лечащее слово, но требуя действия и близости.",
     healing: {
@@ -525,7 +451,7 @@ export const RAW_BARD_SPELL_LIBRARY = [
   }),
 
   createBardSpell({
-    id: "disguise-self-2024",
+    id: "disguise-self-2014",
     level: 1,
     name: "Маскировка",
     originalName: "Disguise Self",
@@ -535,13 +461,30 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 0,
     components: "В, С",
     duration: "1 час",
-    sourceUrl: "https://next.dnd.su/spells/10480-disguise-self",
+    sourceUrl: "https://5e14.dnd.su/spells/disguise-self/",
     summary:
       "Меняет ваш внешний вид на иллюзорный: одежду, черты лица и телосложение в допустимых пределах.",
   }),
 
   createBardSpell({
-    id: "unseen-servant-2024",
+    id: "illusory-script-2014",
+    level: 1,
+    name: "Невидимое письмо",
+    originalName: "Illusory Script",
+    school: "Иллюзия",
+    castingTime: "1 минута",
+    range: "Касание",
+    rangeFeet: null,
+    components: "С, М",
+    duration: "10 дней",
+    ritual: true,
+    sourceUrl: "https://5e14.dnd.su/spells/illusory-script/",
+    summary:
+      "Накладывает иллюзию на письменный текст, скрывая истинное содержание от всех, кроме выбранных вами читателей.",
+  }),
+
+  createBardSpell({
+    id: "unseen-servant-2014",
     level: 1,
     name: "Невидимый слуга",
     originalName: "Unseen Servant",
@@ -552,29 +495,13 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "1 час",
     ritual: true,
-    sourceUrl: "https://next.dnd.su/spells/10690-unseen-servant",
+    sourceUrl: "https://5e14.dnd.su/spells/unseen-servant/",
     summary:
       "Создаёт невидимую силу, которая выполняет простые бытовые задачи по вашей команде.",
   }),
 
   createBardSpell({
-    id: "wardaway-2024",
-    level: 1,
-    name: "Оберегающий разряд",
-    originalName: "Wardaway",
-    school: "Ограждение",
-    castingTime: "1 реакция",
-    range: "30 футов",
-    rangeFeet: 30,
-    components: "В, С",
-    duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/12471-wardaway",
-    summary:
-      "Используется реакцией для ослабления удара или эффекта, направленного на союзника.",
-  }),
-
-  createBardSpell({
-    id: "detect-magic-2024",
+    id: "detect-magic-2014",
     level: 1,
     name: "Обнаружение магии",
     originalName: "Detect Magic",
@@ -589,13 +516,13 @@ export const RAW_BARD_SPELL_LIBRARY = [
     duration: "До 10 минут",
     concentration: true,
     ritual: true,
-    sourceUrl: "https://next.dnd.su/spells/10274-detect-magic",
+    sourceUrl: "https://5e14.dnd.su/spells/detect-magic/",
     summary:
       "Позволяет чувствовать присутствие магии и видеть её ауру вокруг предметов и существ.",
   }),
 
   createBardSpell({
-    id: "faerie-fire-2024",
+    id: "faerie-fire-2014",
     level: 1,
     name: "Огонь фей",
     originalName: "Faerie Fire",
@@ -609,30 +536,31 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10503-faerie-fire",
+    sourceUrl: "https://5e14.dnd.su/spells/faerie-fire/",
     summary:
-      "Обводит существ и объекты светом, давая преимущество на атаки по ним и лишая скрытности.",
+      "Обводит существ и объекты светом, давая преимущество на атаки по ним и лишая их скрытности.",
     saveAbility: "dexterity",
   }),
 
   createBardSpell({
-    id: "identify-2024",
+    id: "identify-2014",
     level: 1,
     name: "Опознание",
     originalName: "Identify",
     school: "Прорицание",
     castingTime: "1 минута",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "Мгновенная",
     ritual: true,
-    sourceUrl: "https://next.dnd.su/spells/10549-identify",
+    sourceUrl: "https://5e14.dnd.su/spells/identify/",
     summary:
       "Определяет магические свойства предмета или заклинания, наложенного на существо.",
   }),
 
   createBardSpell({
-    id: "charm-person-2024",
+    id: "charm-person-2014",
     level: 1,
     name: "Очарование личности",
     originalName: "Charm Person",
@@ -642,14 +570,14 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 30,
     components: "В, С",
     duration: "1 час",
-    sourceUrl: "https://next.dnd.su/spells/10456-charm-person",
+    sourceUrl: "https://5e14.dnd.su/spells/charm-person/",
     summary:
-      "Пытается сделать гуманоид дружелюбным к вам, облегчая социальные взаимодействия.",
+      "Пытается сделать гуманоида дружелюбным к вам, облегчая социальные взаимодействия.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "feather-fall-2024",
+    id: "feather-fall-2014",
     level: 1,
     name: "Падение пёрышком",
     originalName: "Feather Fall",
@@ -659,13 +587,13 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 60,
     components: "В, М",
     duration: "1 минута",
-    sourceUrl: "https://next.dnd.su/spells/10506-feather-fall",
+    sourceUrl: "https://5e14.dnd.su/spells/feather-fall/",
     summary:
       "Замедляет падение нескольких существ, предотвращая повреждения от падения.",
   }),
 
   createBardSpell({
-    id: "comprehend-languages-2024",
+    id: "comprehend-languages-2014",
     level: 1,
     name: "Понимание языков",
     originalName: "Comprehend Languages",
@@ -676,13 +604,13 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "1 час",
     ritual: true,
-    sourceUrl: "https://next.dnd.su/spells/10200-comprehend-languages",
+    sourceUrl: "https://5e14.dnd.su/spells/comprehend-languages/",
     summary:
       "Позволяет понимать значение устной и письменной речи на любом языке, но не расшифровывает шифры.",
   }),
 
   createBardSpell({
-    id: "bane-2024",
+    id: "bane-2014",
     level: 1,
     name: "Порча",
     originalName: "Bane",
@@ -690,17 +618,17 @@ export const RAW_BARD_SPELL_LIBRARY = [
     castingTime: "1 действие",
     range: "30 футов",
     rangeFeet: 30,
-    components: "В, С",
+    components: "В, С, М",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10243-bane",
+    sourceUrl: "https://5e14.dnd.su/spells/bane/",
     summary:
       "Накладывает штраф на броски атаки и спасброски трём существам при провале их бросков.",
     saveAbility: "charisma",
   }),
 
   createBardSpell({
-    id: "command-2024",
+    id: "command-2014",
     level: 1,
     name: "Приказ",
     originalName: "Command",
@@ -710,14 +638,14 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 60,
     components: "В",
     duration: "1 раунд",
-    sourceUrl: "https://next.dnd.su/spells/10196-command",
+    sourceUrl: "https://5e14.dnd.su/spells/command/",
     summary:
       "Заставляет цель выполнить краткий однословный приказ при провале спасброска.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "speak-with-animals-2024",
+    id: "speak-with-animals-2014",
     level: 1,
     name: "Разговор с животными",
     originalName: "Speak with Animals",
@@ -728,17 +656,17 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С",
     duration: "10 минут",
     ritual: true,
-    sourceUrl: "https://next.dnd.su/spells/10246-speak-with-animals",
+    sourceUrl: "https://5e14.dnd.su/spells/speak-with-animals/",
     summary:
       "Позволяет понимать и устно общаться с обычными животными.",
   }),
 
   createBardSpell({
-    id: "color-spray-2024",
+    id: "color-spray-2014",
     level: 1,
     name: "Сверкающие брызги",
     originalName: "Color Spray",
-    school: "Воплощение",
+    school: "Иллюзия",
     castingTime: "1 действие",
     range: "На себя (конус 15 футов)",
     rangeFeet: 0,
@@ -747,28 +675,29 @@ export const RAW_BARD_SPELL_LIBRARY = [
     areaType: "length",
     components: "В, С, М",
     duration: "1 раунд",
-    sourceUrl: "https://next.dnd.su/spells/10465-color-spray",
+    sourceUrl: "https://5e14.dnd.su/spells/color-spray/",
     summary:
       "Выбрасывает конус ослепляющих цветных вспышек, временно ослепляя существ с низкими хитами.",
   }),
 
   createBardSpell({
-    id: "longstrider-2024",
+    id: "longstrider-2014",
     level: 1,
     name: "Скороход",
     originalName: "Longstrider",
     school: "Преобразование",
     castingTime: "1 действие",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "1 час",
-    sourceUrl: "https://next.dnd.su/spells/10294-longstrider",
+    sourceUrl: "https://5e14.dnd.su/spells/longstrider/",
     summary:
       "Увеличивает скорость перемещения цели, улучшая мобильность в бою и путешествиях.",
   }),
 
   createBardSpell({
-    id: "sleep-2024",
+    id: "sleep-2014",
     level: 1,
     name: "Усыпление",
     originalName: "Sleep",
@@ -781,15 +710,15 @@ export const RAW_BARD_SPELL_LIBRARY = [
     areaType: "radius",
     components: "В, С, М",
     duration: "1 минута",
-    sourceUrl: "https://next.dnd.su/spells/10644-sleep",
+    sourceUrl: "https://5e14.dnd.su/spells/sleep/",
     summary:
       "Погружает существ с низкими хитами в магический сон, начиная с самых ослабленных.",
   }),
 
-  // 2 УРОВЕНЬ — 2024
+  // 2 УРОВЕНЬ
 
   createBardSpell({
-    id: "see-invisibility-2024",
+    id: "see-invisibility-2014",
     level: 2,
     name: "Видение невидимого",
     originalName: "See Invisibility",
@@ -799,13 +728,13 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 0,
     components: "В, С, М",
     duration: "1 час",
-    sourceUrl: "https://next.dnd.su/spells/10632-see-invisibility",
+    sourceUrl: "https://5e14.dnd.su/spells/see-invisibility/",
     summary:
-      "Позволяет видеть невидимых существ и объекты.",
+      "Позволяет видеть невидимых существ и объекты, а также существ на Плане Теней.",
   }),
 
   createBardSpell({
-    id: "suggestion-2024",
+    id: "suggestion-2014",
     level: 2,
     name: "Внушение",
     originalName: "Suggestion",
@@ -816,29 +745,31 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, М",
     duration: "До 8 часов",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10658-suggestion",
+    sourceUrl: "https://5e14.dnd.su/spells/suggestion/",
     summary:
       "Заставляет цель следовать разумному предложению, сформулированному в одной фразе.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "magic-mouth-2024",
+    id: "magic-mouth-2014",
     level: 2,
     name: "Волшебные уста",
     originalName: "Magic Mouth",
     school: "Иллюзия",
     castingTime: "1 минута",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "До активации",
-    sourceUrl: "https://next.dnd.su/spells/10568-magic-mouth",
+    ritual: true,
+    sourceUrl: "https://5e14.dnd.su/spells/magic-mouth/",
     summary:
       "Вкладывает в объект условное голосовое сообщение, которое срабатывает при заданном триггере.",
   }),
 
   createBardSpell({
-    id: "phantasmal-force-2024",
+    id: "phantasmal-force-2014",
     level: 2,
     name: "Воображаемая сила",
     originalName: "Phantasmal Force",
@@ -849,7 +780,7 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10597-phantasmal-force",
+    sourceUrl: "https://5e14.dnd.su/spells/phantasmal-force/",
     summary:
       "Создаёт для цели частично реальную иллюзию, наносящую ей урон, пока она верит в её существование.",
     damage: {
@@ -861,24 +792,24 @@ export const RAW_BARD_SPELL_LIBRARY = [
   }),
 
   createBardSpell({
-    id: "blindness-deafness-2024",
+    id: "blindness-deafness-2014",
     level: 2,
     name: "Глухота/слепота",
     originalName: "Blindness/Deafness",
-    school: "Преобразование",
+    school: "Некромантия",
     castingTime: "1 действие",
     range: "30 футов",
     rangeFeet: 30,
     components: "В",
     duration: "1 минута",
-    sourceUrl: "https://next.dnd.su/spells/10448-blindness-deafness",
+    sourceUrl: "https://5e14.dnd.su/spells/blindness-deafness/",
     summary:
       "Лишает цель зрения или слуха при провале спасброска.",
     saveAbility: "constitution",
   }),
 
   createBardSpell({
-    id: "shatter-2024",
+    id: "shatter-2014",
     level: 2,
     name: "Дребезги",
     originalName: "Shatter",
@@ -891,7 +822,7 @@ export const RAW_BARD_SPELL_LIBRARY = [
     areaType: "radius",
     components: "В, С, М",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10637-shatter",
+    sourceUrl: "https://5e14.dnd.su/spells/shatter/",
     summary:
       "Выбрасывает зону звукового взрыва, наносящего урон существам и предметам.",
     damage: {
@@ -903,7 +834,43 @@ export const RAW_BARD_SPELL_LIBRARY = [
   }),
 
   createBardSpell({
-    id: "crown-of-madness-2024",
+    id: "borrowed-knowledge-2014",
+    level: 2,
+    name: "Заимствованные знания",
+    originalName: "Borrowed Knowledge",
+    school: "Прорицание",
+    castingTime: "1 действие",
+    range: "На себя",
+    rangeFeet: 0,
+    components: "В, С, М",
+    duration: "1 час",
+    sourceUrl: "https://5e14.dnd.su/spells/borrowed-knowledge/",
+    summary:
+      "Временно даёт владение одним навыком по вашему выбору.",
+  }),
+
+  createBardSpell({
+    id: "warding-wind-2014",
+    level: 2,
+    name: "Защитный ветер",
+    originalName: "Warding Wind",
+    school: "Воплощение",
+    castingTime: "1 действие",
+    range: "На себя (радиус 10 футов)",
+    rangeFeet: 0,
+    areaShape: "radius",
+    areaSizeFeet: 10,
+    areaType: "radius",
+    components: "В",
+    duration: "До 10 минут",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/warding-wind/",
+    summary:
+      "Создаёт вокруг вас вихрь ветра, мешающий слышимости, полёту и дальним атакам противников.",
+  }),
+
+  createBardSpell({
+    id: "crown-of-madness-2014",
     level: 2,
     name: "Корона безумия",
     originalName: "Crown of Madness",
@@ -914,40 +881,307 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10470-crown-of-madness",
+    sourceUrl: "https://5e14.dnd.su/spells/crown-of-madness/",
     summary:
-      "Вселяет безумие в гуманоид, заставляя его атаковать ближайших существ по вашему указанию.",
+      "Вселяет безумие в гуманоида, заставляя его атаковать ближайших существ по вашему указанию.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "lesser-restoration-2024",
+    id: "lesser-restoration-2014",
     level: 2,
     name: "Малое восстановление",
     originalName: "Lesser Restoration",
-    school: "Воплощение",
+    school: "Ограждение",
     castingTime: "1 действие",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10289-lesser-restoration",
+    sourceUrl: "https://5e14.dnd.su/spells/lesser-restoration/",
     summary:
-      "Снимает болезнь или одно состояние, такое как ослепление, паралич, отравление.",
+      "Снимает болезнь или одно состояние: ослепление, паралич, окаменение, оглушение и подобные.",
   }),
 
   createBardSpell({
-    id: "heat-metal-2024",
+    id: "nathairs-mischief-2014",
     level: 2,
-    name: "Нагрев металла",
-    originalName: "Heat Metal",
-    school: "Воплощение",
+    name: "Натайрово озорство",
+    originalName: "Nathair's Mischief",
+    school: "Вызов",
     castingTime: "1 действие",
     range: "60 футов",
     rangeFeet: 60,
     components: "В, С, М",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10540-heat-metal",
+    sourceUrl: "https://5e14.dnd.su/spells/nathairs-mischief/",
+    summary:
+      "Создаёт зону с одним из нескольких выбираемых эффектов: искры, дым, паутина или пузыри, действующую на существ по вашему выбору.",
+  }),
+
+  createBardSpell({
+    id: "skywrite-2014",
+    level: 2,
+    name: "Небесные письмена",
+    originalName: "Skywrite",
+    school: "Преобразование",
+    castingTime: "1 действие",
+    range: "На себя (в облаках, если есть)",
+    rangeFeet: 0,
+    components: "В, С",
+    duration: "До 1 часа",
+    concentration: true,
+    ritual: true,
+    sourceUrl: "https://5e14.dnd.su/spells/skywrite/",
+    summary:
+      "Оставляет короткое сообщение из облаков, видимое на большом расстоянии.",
+  }),
+
+  createBardSpell({
+    id: "invisibility-2014",
+    level: 2,
+    name: "Невидимость",
+    originalName: "Invisibility",
+    school: "Иллюзия",
+    castingTime: "1 действие",
+    range: "Касание",
+    rangeFeet: null,
+    components: "В, С, М",
+    duration: "До 1 часа",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/invisibility/",
+    summary:
+      "Делает существо невидимым до нападения, применения заклинания или окончания эффекта.",
+  }),
+
+  createBardSpell({
+    id: "cloud-of-daggers-2014",
+    level: 2,
+    name: "Облако кинжалов",
+    originalName: "Cloud of Daggers",
+    school: "Вызов",
+    castingTime: "1 действие",
+    range: "60 футов",
+    rangeFeet: 60,
+    components: "В, С, М",
+    duration: "До 1 минуты",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/cloud-of-daggers/",
+    summary:
+      "Создаёт куб вращающихся лезвий, наносящих урон существам внутри.",
+    damage: {
+      dice: "4d4",
+      modifier: null,
+      type: "рубящий",
+    },
+  }),
+
+  createBardSpell({
+    id: "zone-of-truth-2014",
+    level: 2,
+    name: "Область истины",
+    originalName: "Zone of Truth",
+    school: "Очарование",
+    castingTime: "1 действие",
+    range: "60 футов",
+    rangeFeet: 60,
+    components: "В, С",
+    duration: "10 минут",
+    sourceUrl: "https://5e14.dnd.su/spells/zone-of-truth/",
+    summary:
+      "Создаёт область, в которой существа затрудняются сознательно лгать.",
+    saveAbility: "charisma",
+  }),
+
+  createBardSpell({
+    id: "detect-thoughts-2014",
+    level: 2,
+    name: "Обнаружение мыслей",
+    originalName: "Detect Thoughts",
+    school: "Прорицание",
+    castingTime: "1 действие",
+    range: "На себя",
+    rangeFeet: 0,
+    components: "В, С, М",
+    duration: "До 1 минуты",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/detect-thoughts/",
+    summary:
+      "Считывает поверхностные мысли существ и позволяет углубляться дальше при концентрации.",
+    saveAbility: "wisdom",
+  }),
+
+  createBardSpell({
+    id: "knock-2014",
+    level: 2,
+    name: "Открывание",
+    originalName: "Knock",
+    school: "Преобразование",
+    castingTime: "1 действие",
+    range: "60 футов",
+    rangeFeet: 60,
+    components: "В",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/knock/",
+    summary:
+      "Открывает запертые двери, сундуки и другие запоры, включая магические, с громким звуком.",
+  }),
+
+  createBardSpell({
+    id: "mirror-image-2014",
+    level: 2,
+    name: "Отражения",
+    originalName: "Mirror Image",
+    school: "Иллюзия",
+    castingTime: "1 действие",
+    range: "На себя",
+    rangeFeet: 0,
+    components: "В, С",
+    duration: "1 минута",
+    sourceUrl: "https://5e14.dnd.su/spells/mirror-image/",
+    summary:
+      "Создаёт несколько иллюзорных копий вас, затрудняя противникам попадание по вам.",
+  }),
+
+  createBardSpell({
+    id: "pyrotechnics-2014",
+    level: 2,
+    name: "Пиротехника",
+    originalName: "Pyrotechnics",
+    school: "Преобразование",
+    castingTime: "1 действие",
+    range: "60 футов",
+    rangeFeet: 60,
+    components: "В, С",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/pyrotechnics/",
+    summary:
+      "Превращает огонь в область фейерверка или густого дыма по вашему выбору.",
+    saveAbility: "constitution",
+  }),
+
+  createBardSpell({
+    id: "gift-of-gab-2014",
+    level: 2,
+    name: "Подарок болтуна",
+    originalName: "Gift of Gab",
+    school: "Преобразование",
+    castingTime: "1 бонусное действие",
+    range: "На себя",
+    rangeFeet: 0,
+    components: "В, С, М",
+    duration: "1 раунд",
+    sourceUrl: "https://5e14.dnd.su/spells/gift-of-gab/",
+    summary:
+      "Позволяет вставить дополнительную реплику или переформулировать сказанное для лучшего эффекта.",
+  }),
+
+  createBardSpell({
+    id: "aid-2014",
+    level: 2,
+    name: "Подмога",
+    originalName: "Aid",
+    school: "Ограждение",
+    castingTime: "1 действие",
+    range: "30 футов",
+    rangeFeet: 30,
+    components: "В, С, М",
+    duration: "8 часов",
+    sourceUrl: "https://5e14.dnd.su/spells/aid/",
+    summary:
+      "Повышает максимальные и текущие хиты нескольких существ на время действия заклинания.",
+  }),
+
+  createBardSpell({
+    id: "locate-animals-or-plants-2014",
+    level: 2,
+    name: "Поиск животных или растений",
+    originalName: "Locate Animals or Plants",
+    school: "Прорицание",
+    castingTime: "1 действие",
+    range: "На себя",
+    rangeFeet: 0,
+    components: "В, С, М",
+    duration: "Мгновенная",
+    ritual: true,
+    sourceUrl: "https://5e14.dnd.su/spells/locate-animals-or-plants/",
+    summary:
+      "Определяет направление к ближайшему животному или растению заданного вида в пределах мили.",
+  }),
+
+  createBardSpell({
+    id: "locate-object-2014",
+    level: 2,
+    name: "Поиск предмета",
+    originalName: "Locate Object",
+    school: "Прорицание",
+    castingTime: "1 действие",
+    range: "На себя",
+    rangeFeet: 0,
+    components: "В, С, М",
+    duration: "10 минут",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/locate-object/",
+    summary:
+      "Позволяет ощущать направление к известному вам или описанному предмету.",
+  }),
+
+  createBardSpell({
+    id: "animal-messenger-2014",
+    level: 2,
+    name: "Почтовое животное",
+    originalName: "Animal Messenger",
+    school: "Очарование",
+    castingTime: "1 действие",
+    range: "30 футов",
+    rangeFeet: 30,
+    components: "В, С, М",
+    duration: "24 часа",
+    ritual: true,
+    sourceUrl: "https://5e14.dnd.su/spells/animal-messenger/",
+    summary:
+      "Посылает небольшое животное с коротким устным сообщением к указанному адресату или месту.",
+  }),
+
+  createBardSpell({
+    id: "spray-of-cards-2014",
+    level: 2,
+    name: "Разбрасывание карт",
+    originalName: "Spray of Cards",
+    school: "Воплощение",
+    castingTime: "1 действие",
+    range: "На себя (конус 15 футов)",
+    rangeFeet: 0,
+    areaShape: "cone",
+    areaSizeFeet: 15,
+    areaType: "length",
+    components: "В, С, М",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/spray-of-cards/",
+    summary:
+      "Выбрасывает веер заколдованных карт, режущих существ перед вами.",
+    damage: {
+      dice: "2d6",
+      modifier: null,
+      type: "рубящий",
+    },
+    saveAbility: "dexterity",
+  }),
+
+  createBardSpell({
+    id: "heat-metal-2014",
+    level: 2,
+    name: "Раскалённый металл",
+    originalName: "Heat Metal",
+    school: "Преобразование",
+    castingTime: "1 действие",
+    range: "60 футов",
+    rangeFeet: 60,
+    components: "В, С, М",
+    duration: "До 1 минуты",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/heat-metal/",
     summary:
       "Нагревает металлический предмет, причиняя урон существу, которое его носит или держит.",
     damage: {
@@ -959,164 +1193,7 @@ export const RAW_BARD_SPELL_LIBRARY = [
   }),
 
   createBardSpell({
-    id: "invisibility-2024",
-    level: 2,
-    name: "Невидимость",
-    originalName: "Invisibility",
-    school: "Иллюзия",
-    castingTime: "1 действие",
-    range: "Касание",
-    components: "В, С, М",
-    duration: "До 1 часа",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10555-invisibility",
-    summary:
-      "Делает существо невидимым до нападения или применения заклинания.",
-  }),
-
-  createBardSpell({
-    id: "cloud-of-daggers-2024",
-    level: 2,
-    name: "Облако кинжалов",
-    originalName: "Cloud of Daggers",
-    school: "Воплощение",
-    castingTime: "1 действие",
-    range: "60 футов",
-    rangeFeet: 60,
-    components: "В, С, М",
-    duration: "До 1 минуты",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10463-cloud-of-daggers",
-    summary:
-      "Создаёт куб вращающихся лезвий, наносящих урон существам внутри.",
-    damage: {
-      dice: "4d4",
-      modifier: null,
-      type: "рубящий",
-    },
-  }),
-
-  createBardSpell({
-    id: "zone-of-truth-2024",
-    level: 2,
-    name: "Область истины",
-    originalName: "Zone of Truth",
-    school: "Очарование",
-    castingTime: "1 действие",
-    range: "60 футов",
-    rangeFeet: 60,
-    components: "В, С",
-    duration: "10 минут",
-    sourceUrl: "https://next.dnd.su/spells/10240-zone-of-truth",
-    summary:
-      "Создаёт область, в которой существа затрудняются лгать.",
-    saveAbility: "charisma",
-  }),
-
-  createBardSpell({
-    id: "detect-thoughts-2024",
-    level: 2,
-    name: "Обнаружение мыслей",
-    originalName: "Detect Thoughts",
-    school: "Прорицание",
-    castingTime: "1 действие",
-    range: "На себя",
-    rangeFeet: 0,
-    components: "В, С, М",
-    duration: "До 1 минуты",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10479-detect-thoughts",
-    summary:
-      "Считывает поверхностные мысли существ и может углубляться дальше.",
-    saveAbility: "wisdom",
-  }),
-
-  createBardSpell({
-    id: "mirror-image-2024",
-    level: 2,
-    name: "Отражения",
-    originalName: "Mirror Image",
-    school: "Иллюзия",
-    castingTime: "1 действие",
-    range: "На себя",
-    rangeFeet: 0,
-    components: "В, С",
-    duration: "1 минута",
-    sourceUrl: "https://next.dnd.su/spells/10584-mirror-image",
-    summary:
-      "Создаёт несколько иллюзорных копий вас, затрудняя попадание по вам.",
-  }),
-
-  createBardSpell({
-    id: "aid-2024",
-    level: 2,
-    name: "Подмога",
-    originalName: "Aid",
-    school: "Воплощение",
-    castingTime: "1 действие",
-    range: "30 футов",
-    rangeFeet: 30,
-    components: "В, С, М",
-    duration: "8 часов",
-    sourceUrl: "https://next.dnd.su/spells/10242-aid",
-    summary:
-      "Повышает максимальные и текущие хиты нескольких существ.",
-  }),
-
-  createBardSpell({
-    id: "locate-animals-or-plants-2024",
-    level: 2,
-    name: "Поиск животных или растений",
-    originalName: "Locate Animals or Plants",
-    school: "Прорицание",
-    castingTime: "1 действие",
-    range: "На себя",
-    rangeFeet: 0,
-    components: "В, С, М",
-    duration: "10 минут",
-    ritual: true,
-    sourceUrl:
-      "https://next.dnd.su/spells/10291-locate-animals-or-plants",
-    summary:
-      "Определяет направление к ближайшему животному или растению заданного вида.",
-  }),
-
-  createBardSpell({
-    id: "locate-object-2024",
-    level: 2,
-    name: "Поиск объекта",
-    originalName: "Locate Object",
-    school: "Прорицание",
-    castingTime: "1 действие",
-    range: "На себя",
-    rangeFeet: 0,
-    components: "В, С, М",
-    duration: "10 минут",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10293-locate-object",
-    summary:
-      "Позволяет ощущать направление к известному вам объекту.",
-  }),
-
-  createBardSpell({
-    id: "animal-messenger-2024",
-    level: 2,
-    name: "Почтовое животное",
-    originalName: "Animal Messenger",
-    school: "Прорицание",
-    castingTime: "1 действие",
-    range: "30 футов",
-    rangeFeet: 30,
-    components: "В, С, М",
-    duration: "24 часа",
-    ritual: true,
-    sourceUrl: "https://next.dnd.su/spells/10265-animal-messenger",
-    summary:
-      "Посылает небольшое животное с коротким устным сообщением к указанному адресату.",
-  }),
-
-  createBardSpell({
-    id: "enthrall-2024",
+    id: "enthrall-2014",
     level: 2,
     name: "Речь златоуста",
     originalName: "Enthrall",
@@ -1126,47 +1203,32 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 60,
     components: "В, С",
     duration: "1 минута",
-    sourceUrl: "https://next.dnd.su/spells/10497-enthrall",
+    sourceUrl: "https://5e14.dnd.su/spells/enthrall/",
     summary:
-      "Привлекает внимание существ, затрудняя их восприятие других целей.",
+      "Привлекает внимание существ к вашим словам, затрудняя их восприятие других происходящих событий.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "knock-2024",
-    level: 2,
-    name: "Стук",
-    originalName: "Knock",
-    school: "Преобразование",
-    castingTime: "1 действие",
-    range: "60 футов",
-    rangeFeet: 60,
-    components: "В",
-    duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10557-knock",
-    summary:
-      "Открывает запертые двери, сундуки и другие запоры, включая магические.",
-  }),
-
-  createBardSpell({
-    id: "silence-2024",
+    id: "silence-2014",
     level: 2,
     name: "Тишина",
     originalName: "Silence",
-    school: "Ограждение",
+    school: "Иллюзия",
     castingTime: "1 действие",
     range: "120 футов",
     rangeFeet: 120,
     components: "В, С",
     duration: "До 10 минут",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10300-silence",
+    ritual: true,
+    sourceUrl: "https://5e14.dnd.su/spells/silence/",
     summary:
       "Создаёт область абсолютной тишины, в которой невозможно произносить заклинания с вербальным компонентом.",
   }),
 
   createBardSpell({
-    id: "enlarge-reduce-2024",
+    id: "enlarge-reduce-2014",
     level: 2,
     name: "Увеличение/уменьшение",
     originalName: "Enlarge/Reduce",
@@ -1177,14 +1239,30 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10496-enlarge-reduce",
+    sourceUrl: "https://5e14.dnd.su/spells/enlarge-reduce/",
     summary:
-      "Увеличивает или уменьшает существо или объект, изменяя размер и наносящие урон кубики.",
+      "Увеличивает или уменьшает существо или объект, изменяя размер и наносимый им урон.",
     saveAbility: "constitution",
   }),
 
   createBardSpell({
-    id: "hold-person-2024",
+    id: "kinetic-jaunt-2014",
+    level: 2,
+    name: "Увлекательная прогулка",
+    originalName: "Kinetic Jaunt",
+    school: "Преобразование",
+    castingTime: "1 действие",
+    range: "На себя",
+    rangeFeet: 0,
+    components: "С",
+    duration: "1 час",
+    sourceUrl: "https://5e14.dnd.su/spells/kinetic-jaunt/",
+    summary:
+      "Позволяет вашему телу временно становиться туманным, проходя через мелкие щели и преграды.",
+  }),
+
+  createBardSpell({
+    id: "hold-person-2014",
     level: 2,
     name: "Удержание личности",
     originalName: "Hold Person",
@@ -1195,30 +1273,31 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10254-hold-person",
+    sourceUrl: "https://5e14.dnd.su/spells/hold-person/",
     summary:
-      "Парализует гуманоид при провале спасброска, делая его уязвимым к атакам.",
+      "Парализует гуманоида при провале спасброска, делая его уязвимым к критическим атакам.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "enhance-ability-2024",
+    id: "enhance-ability-2014",
     level: 2,
     name: "Улучшение характеристики",
     originalName: "Enhance Ability",
-    school: "Воплощение",
+    school: "Преобразование",
     castingTime: "1 действие",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "1 час",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10252-enhance-ability",
+    sourceUrl: "https://5e14.dnd.su/spells/enhance-ability/",
     summary:
-      "Даёт существу магическое улучшение выбранной характеристики, предоставляя преимущество на соответствующие проверки.",
+      "Даёт существу магическое улучшение выбранной характеристики и преимущество на связанные проверки.",
   }),
 
   createBardSpell({
-    id: "calm-emotions-2024",
+    id: "calm-emotions-2014",
     level: 2,
     name: "Умиротворение",
     originalName: "Calm Emotions",
@@ -1228,16 +1307,50 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 60,
     components: "В, С",
     duration: "1 минута",
-    sourceUrl: "https://next.dnd.su/spells/10453-calm-emotions",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/calm-emotions/",
     summary:
-      "Подавляет сильные эмоции существ в области, ослабляя враждебность и страх.",
+      "Подавляет сильные эмоции существ в области, ослабляя враждебность или очарование/испуг.",
     saveAbility: "charisma",
   }),
 
-  // 3 УРОВЕНЬ — 2024
+  // 3 УРОВЕНЬ
 
   createBardSpell({
-    id: "hypnotic-pattern-2024",
+    id: "fast-friends-2014",
+    level: 3,
+    name: "Быстрые друзья",
+    originalName: "Fast Friends",
+    school: "Очарование",
+    castingTime: "1 действие",
+    range: "На себя",
+    rangeFeet: 0,
+    components: "В, С",
+    duration: "1 час",
+    sourceUrl: "https://5e14.dnd.su/spells/fast-friends/",
+    summary:
+      "Мгновенно создаёт видимость давнего дружеского знакомства с выбранным существом.",
+  }),
+
+  createBardSpell({
+    id: "antagonize-2014",
+    level: 3,
+    name: "Враждебность",
+    originalName: "Antagonize",
+    school: "Воплощение",
+    castingTime: "1 действие",
+    range: "60 футов",
+    rangeFeet: 60,
+    components: "В, С, М",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/antagonize/",
+    summary:
+      "Провоцирует существ, вызывая у них помеху на спасбросок против страха или очарования либо желание атаковать вас.",
+    saveAbility: "wisdom",
+  }),
+
+  createBardSpell({
+    id: "hypnotic-pattern-2014",
     level: 3,
     name: "Гипнотический узор",
     originalName: "Hypnotic Pattern",
@@ -1245,17 +1358,33 @@ export const RAW_BARD_SPELL_LIBRARY = [
     castingTime: "1 действие",
     range: "120 футов",
     rangeFeet: 120,
-    components: "В, С, М",
+    components: "С, М",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10547-hypnotic-pattern",
+    sourceUrl: "https://5e14.dnd.su/spells/hypnotic-pattern/",
     summary:
-      "Создаёт узор, очаровывающий и лишающий дееспособности существ при провале спасброска.",
+      "Создаёт мерцающий узор, очаровывающий и лишающий дееспособности существ при провале спасброска.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "slow-2024",
+    id: "catnap-2014",
+    level: 3,
+    name: "Дрёма",
+    originalName: "Catnap",
+    school: "Преобразование",
+    castingTime: "1 действие",
+    range: "30 футов",
+    rangeFeet: 30,
+    components: "С, М",
+    duration: "10 минут",
+    sourceUrl: "https://5e14.dnd.su/spells/catnap/",
+    summary:
+      "Погружает до трёх существ в короткий магический сон, дающий эффект короткого отдыха.",
+  }),
+
+  createBardSpell({
+    id: "slow-2014",
     level: 3,
     name: "Замедление",
     originalName: "Slow",
@@ -1266,32 +1395,84 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10646-slow",
+    sourceUrl: "https://5e14.dnd.su/spells/slow/",
     summary:
-      "Замедляет несколько существ, снижая их скорость и ограничивая действия.",
+      "Замедляет до шести существ, снижая их скорость, КД и ограничивая количество действий.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "stinking-cloud-2024",
+    id: "stinking-cloud-2014",
     level: 3,
     name: "Зловонное облако",
     originalName: "Stinking Cloud",
-    school: "Воплощение",
+    school: "Вызов",
     castingTime: "1 действие",
     range: "90 футов",
     rangeFeet: 90,
     components: "В, С, М",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10655-stinking-cloud",
+    sourceUrl: "https://5e14.dnd.su/spells/stinking-cloud/",
     summary:
-      "Создаёт облако газа, мешающее существам действовать и концентрироваться.",
+      "Создаёт облако тошнотворного газа, из-за которого существа могут тратить ход на рвотные позывы.",
     saveAbility: "constitution",
   }),
 
   createBardSpell({
-    id: "mass-healing-word-2024",
+    id: "enemies-abound-2014",
+    level: 3,
+    name: "Изобилие врагов",
+    originalName: "Enemies Abound",
+    school: "Очарование",
+    castingTime: "1 действие",
+    range: "120 футов",
+    rangeFeet: 120,
+    components: "В, С",
+    duration: "До 1 минуты",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/enemies-abound/",
+    summary:
+      "Заставляет цель на короткое время воспринимать ближайших существ как врагов.",
+    saveAbility: "intelligence",
+  }),
+
+  createBardSpell({
+    id: "intellect-fortress-2014",
+    level: 3,
+    name: "Крепость интеллекта",
+    originalName: "Intellect Fortress",
+    school: "Ограждение",
+    castingTime: "1 действие",
+    range: "30 футов",
+    rangeFeet: 30,
+    components: "В",
+    duration: "До 1 минуты",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/intellect-fortress/",
+    summary:
+      "Даёт сопротивление психическому урону и преимущество на спасброски Интеллекта, Мудрости и Харизмы.",
+  }),
+
+  createBardSpell({
+    id: "leomunds-tiny-hut-2014",
+    level: 3,
+    name: "Леомундова хижина",
+    originalName: "Leomund's Tiny Hut",
+    school: "Воплощение",
+    castingTime: "1 минута",
+    range: "На себя (полусфера 10 футов)",
+    rangeFeet: 0,
+    components: "В, С, М",
+    duration: "8 часов",
+    ritual: true,
+    sourceUrl: "https://5e14.dnd.su/spells/leomunds-tiny-hut/",
+    summary:
+      "Создаёт непроницаемый купол силового поля, защищающий отдыхающих внутри от непогоды и посторонних.",
+  }),
+
+  createBardSpell({
+    id: "mass-healing-word-2014",
     level: 3,
     name: "Множественное лечащее слово",
     originalName: "Mass Healing Word",
@@ -1301,9 +1482,9 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 60,
     components: "В",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10572-mass-healing-word",
+    sourceUrl: "https://5e14.dnd.su/spells/mass-healing-word/",
     summary:
-      "Лечит нескольких союзников на небольшое количество хитов.",
+      "Лечит нескольких союзников в пределах дальности на небольшое количество хитов одновременно.",
     healing: {
       dice: "1d4",
       modifier: "spellcasting",
@@ -1311,39 +1492,40 @@ export const RAW_BARD_SPELL_LIBRARY = [
   }),
 
   createBardSpell({
-    id: "bestow-curse-2024",
+    id: "motivational-speech-2014",
     level: 3,
-    name: "Наложение проклятия",
-    originalName: "Bestow Curse",
+    name: "Мотивирующая речь",
+    originalName: "Motivational Speech",
     school: "Очарование",
-    castingTime: "1 действие",
-    range: "Касание",
-    components: "В, С",
+    castingTime: "1 бонусное действие",
+    range: "30 футов",
+    rangeFeet: 30,
+    components: "В",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10441-bestow-curse",
+    sourceUrl: "https://5e14.dnd.su/spells/motivational-speech/",
     summary:
-      "Накладывает разнообразные негативные эффекты на цель при провале спасброска.",
-    saveAbility: "wisdom",
+      "Даёт союзникам временные хиты и снимает с них испуг мощной вдохновляющей речью.",
   }),
 
   createBardSpell({
-    id: "nondetection-2024",
+    id: "nondetection-2014",
     level: 3,
     name: "Необнаружимость",
     originalName: "Nondetection",
     school: "Ограждение",
     castingTime: "1 действие",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "8 часов",
-    sourceUrl: "https://next.dnd.su/spells/10296-nondetection",
+    sourceUrl: "https://5e14.dnd.su/spells/nondetection/",
     summary:
-      "Защищает существо или объект от обнаружения магией прорицания.",
+      "Защищает существо или объект от обнаружения магией прорицания и от считывания через сканирование.",
   }),
 
   createBardSpell({
-    id: "major-image-2024",
+    id: "major-image-2014",
     level: 3,
     name: "Образ",
     originalName: "Major Image",
@@ -1354,28 +1536,29 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 10 минут",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10569-major-image",
+    sourceUrl: "https://5e14.dnd.su/spells/major-image/",
     summary:
-      "Создаёт крупную детализированную иллюзию с визуальными и звуковыми эффектами.",
+      "Создаёт крупную детализированную иллюзию с визуальными, звуковыми и обонятельными эффектами.",
   }),
 
   createBardSpell({
-    id: "glyph-of-warding-2024",
+    id: "glyph-of-warding-2014",
     level: 3,
     name: "Охранная руна",
     originalName: "Glyph of Warding",
     school: "Ограждение",
     castingTime: "1 час",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "До развеивания",
-    sourceUrl: "https://next.dnd.su/spells/10531-glyph-of-warding",
+    sourceUrl: "https://5e14.dnd.su/spells/glyph-of-warding/",
     summary:
-      "Создаёт магическую глифу, которая срабатывает при определённых условиях, нанося урон или накладывая заклинание.",
+      "Создаёт скрытую магическую глифу, которая срабатывает при определённых условиях, нанося урон или накладывая заклинание.",
   }),
 
   createBardSpell({
-    id: "clairvoyance-2024",
+    id: "clairvoyance-2014",
     level: 3,
     name: "Подсматривание",
     originalName: "Clairvoyance",
@@ -1386,75 +1569,96 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "10 минут",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10461-clairvoyance",
+    sourceUrl: "https://5e14.dnd.su/spells/clairvoyance/",
     summary:
-      "Создаёт невидимый сенсор, позволяющий видеть или слышать удалённое место.",
+      "Создаёт невидимый сенсор, позволяющий видеть или слышать удалённое известное вам место.",
   }),
 
   createBardSpell({
-    id: "sending-2024",
+    id: "sending-2014",
     level: 3,
     name: "Послание",
     originalName: "Sending",
     school: "Прорицание",
     castingTime: "1 действие",
     range: "Специальная",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10634-sending",
+    sourceUrl: "https://5e14.dnd.su/spells/sending/",
     summary:
-      "Отправляет короткое сообщение существу в любом месте, даже на другом плане.",
+      "Отправляет короткое сообщение существу в любом месте, даже на другом плане, и позволяет получить ответ.",
   }),
 
   createBardSpell({
-    id: "feign-death-2024",
+    id: "feign-death-2014",
     level: 3,
     name: "Притворная смерть",
     originalName: "Feign Death",
     school: "Некромантия",
     castingTime: "1 действие",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "1 час",
     ritual: true,
-    sourceUrl: "https://next.dnd.su/spells/10507-feign-death",
+    sourceUrl: "https://5e14.dnd.su/spells/feign-death/",
     summary:
-      "Погружает существо в состояние, похожее на смерть, защищая его от некоторых эффектов.",
+      "Погружает существо в состояние, неотличимое от смерти, защищая его от яда и некоторых эффектов.",
   }),
 
   createBardSpell({
-    id: "speak-with-dead-2024",
+    id: "bestow-curse-2014",
+    level: 3,
+    name: "Проклятие",
+    originalName: "Bestow Curse",
+    school: "Некромантия",
+    castingTime: "1 действие",
+    range: "Касание",
+    rangeFeet: null,
+    components: "В, С",
+    duration: "До 1 минуты",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/bestow-curse/",
+    summary:
+      "Накладывает один из нескольких негативных эффектов на цель, коснувшуюся вас в бою или ритуале.",
+    saveAbility: "wisdom",
+  }),
+
+  createBardSpell({
+    id: "speak-with-dead-2014",
     level: 3,
     name: "Разговор с мёртвыми",
     originalName: "Speak with Dead",
     school: "Некромантия",
     castingTime: "1 действие",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "10 минут",
-    sourceUrl: "https://next.dnd.su/spells/10649-speak-with-dead",
+    sourceUrl: "https://5e14.dnd.su/spells/speak-with-dead/",
     summary:
-      "Позволяет задавать вопросы трупу и получать ограниченные ответы.",
+      "Позволяет задавать вопросы трупу и получать ограниченные, но правдивые ответы.",
   }),
 
   createBardSpell({
-    id: "speak-with-plants-2024",
+    id: "speak-with-plants-2014",
     level: 3,
     name: "Разговор с растениями",
     originalName: "Speak with Plants",
-    school: "Прорицание",
+    school: "Преобразование",
     castingTime: "1 действие",
     range: "На себя",
     rangeFeet: 0,
     components: "В, С",
     duration: "10 минут",
-    sourceUrl: "https://next.dnd.su/spells/10301-speak-with-plants",
+    sourceUrl: "https://5e14.dnd.su/spells/speak-with-plants/",
     summary:
-      "Одушевляет растения, позволяя им отвечать на вопросы и двигаться ограниченным образом.",
+      "Одушевляет растения в области, позволяя им отвечать на вопросы и слегка двигаться по вашей просьбе.",
   }),
 
   createBardSpell({
-    id: "dispel-magic-2024",
+    id: "dispel-magic-2014",
     level: 3,
     name: "Рассеивание магии",
     originalName: "Dispel Magic",
@@ -1464,13 +1668,13 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 120,
     components: "В, С",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10245-dispel-magic",
+    sourceUrl: "https://5e14.dnd.su/spells/dispel-magic/",
     summary:
-      "Разрушает магические эффекты и заклинания определённого уровня или ниже.",
+      "Разрушает активные магические эффекты и заклинания определённого уровня или ниже.",
   }),
 
   createBardSpell({
-    id: "plant-growth-2024",
+    id: "plant-growth-2014",
     level: 3,
     name: "Рост растений",
     originalName: "Plant Growth",
@@ -1480,95 +1684,65 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 150,
     components: "В, С",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10247-plant-growth",
+    sourceUrl: "https://5e14.dnd.su/spells/plant-growth/",
     summary:
-      "Усиливает рост растений, преобразуя местность или улучшая урожай.",
+      "Усиливает рост растений в области, преобразуя местность или значительно улучшая урожай.",
   }),
 
   createBardSpell({
-    id: "fear-2024",
+    id: "fear-2014",
     level: 3,
     name: "Ужас",
     originalName: "Fear",
     school: "Иллюзия",
     castingTime: "1 действие",
-    range: "30 футов",
-    rangeFeet: 30,
+    range: "На себя (конус 30 футов)",
+    rangeFeet: 0,
+    areaShape: "cone",
+    areaSizeFeet: 30,
+    areaType: "length",
     components: "В, С, М",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10505-fear",
+    sourceUrl: "https://5e14.dnd.su/spells/fear/",
     summary:
-      "Порождает сильный страх, заставляющий существ бросать оружие и убегать.",
+      "Порождает у существ в конусе сильный страх, заставляющий их бросить оружие и в панике убегать.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "leomunds-tiny-hut-2024",
-    level: 3,
-    name: "Хижина Леомунда",
-    originalName: "Leomund's Tiny Hut",
-    school: "Воплощение",
-    castingTime: "1 действие",
-    range: "На себя",
-    rangeFeet: 0,
-    components: "В, С, М",
-    duration: "8 часов",
-    ritual: true,
-    sourceUrl: "https://next.dnd.su/spells/10559-leomunds-tiny-hut",
-    summary:
-      "Создаёт стационарный купол, защищающий вас и союзников от внешних воздействий.",
-  }),
-
-  createBardSpell({
-    id: "cacophonic-shield-2024",
-    level: 3,
-    name: "Щит какофонии",
-    originalName: "Cacophonic Shield",
-    school: "Ограждение",
-    castingTime: "1 действие",
-    range: "На себя",
-    rangeFeet: 0,
-    components: "В, С",
-    duration: "До 10 минут",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/12446-cacophonic-shield",
-    summary:
-      "Создаёт звуковой щит, мешающий атакам и заклинаниям против вас.",
-  }),
-
-  createBardSpell({
-    id: "tongues-2024",
+    id: "tongues-2014",
     level: 3,
     name: "Языки",
     originalName: "Tongues",
-    school: "Преобразование",
+    school: "Прорицание",
     castingTime: "1 действие",
     range: "Касание",
-    components: "В, С, М",
+    rangeFeet: null,
+    components: "В, М",
     duration: "1 час",
-    sourceUrl: "https://next.dnd.su/spells/10683-tongues",
+    sourceUrl: "https://5e14.dnd.su/spells/tongues/",
     summary:
-      "Позволяет существу понимать и говорить на любом языке.",
+      "Позволяет цели понимать любой устный язык и быть понятой на любом языке, на котором она говорит.",
   }),
 
-    // 4 УРОВЕНЬ — 2024
+  // 4 УРОВЕНЬ
 
   createBardSpell({
-    id: "phantasmal-killer-2024",
+    id: "phantasmal-killer-2014",
     level: 4,
     name: "Воображаемый убийца",
     originalName: "Phantasmal Killer",
     school: "Иллюзия",
     castingTime: "1 действие",
-    range: "120 футов",
-    rangeFeet: 120,
+    range: "90 футов",
+    rangeFeet: 90,
     components: "В, С",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10598-phantasmal-killer",
+    sourceUrl: "https://5e14.dnd.su/spells/phantasmal-killer/",
     summary:
-      "Создаёт ужасающую иллюзию, причиняющую повторяющийся психический урон существу при провале спасбросков.",
+      "Создаёт для цели иллюзорный кошмар, наносящий психический урон, пока она верит в его реальность.",
     damage: {
       dice: "4d10",
       modifier: null,
@@ -1578,40 +1752,24 @@ export const RAW_BARD_SPELL_LIBRARY = [
   }),
 
   createBardSpell({
-    id: "greater-invisibility-2024",
+    id: "greater-invisibility-2014",
     level: 4,
     name: "Высшая невидимость",
     originalName: "Greater Invisibility",
     school: "Иллюзия",
     castingTime: "1 действие",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10533-greater-invisibility",
+    sourceUrl: "https://5e14.dnd.su/spells/greater-invisibility/",
     summary:
       "Делает цель невидимой даже при атаке или использовании заклинаний, пока вы сохраняете концентрацию.",
   }),
 
   createBardSpell({
-    id: "fount-of-moonlight-2024",
-    level: 4,
-    name: "Источник лунного света",
-    originalName: "Fount of Moonlight",
-    school: "Воплощение",
-    castingTime: "1 действие",
-    range: "60 футов",
-    rangeFeet: 60,
-    components: "В, С, М",
-    duration: "До 1 минуты",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10522-fount-of-moonlight",
-    summary:
-      "Создаёт столп лунного света, наносящий урон врагам и усиливающий союзников в области.",
-  }),
-
-  createBardSpell({
-    id: "hallucinatory-terrain-2024",
+    id: "hallucinatory-terrain-2014",
     level: 4,
     name: "Мираж",
     originalName: "Hallucinatory Terrain",
@@ -1620,32 +1778,16 @@ export const RAW_BARD_SPELL_LIBRARY = [
     range: "300 футов",
     rangeFeet: 300,
     components: "В, С, М",
-    duration: "24 часа",
-    sourceUrl: "https://next.dnd.su/spells/10536-hallucinatory-terrain",
+    duration: "До 24 часов",
+    sourceUrl: "https://5e14.dnd.su/spells/hallucinatory-terrain/",
     summary:
-      "Меняет визуальное восприятие местности, создавая иллюзорные изменения ландшафта.",
+      "Маскирует область местности иллюзией, заставляя её выглядеть как другой рельеф или ландшафт.",
   }),
 
   createBardSpell({
-    id: "backlash-2024",
+    id: "charm-monster-2014",
     level: 4,
-    name: "Ответный урон",
-    originalName: "Backlash",
-    school: "Ограждение",
-    castingTime: "1 реакция",
-    range: "60 футов",
-    rangeFeet: 60,
-    components: "В, С",
-    duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/12444-backlash",
-    summary:
-      "Отражает часть урона или эффекта обратно в атакующего.",
-  }),
-
-  createBardSpell({
-    id: "charm-monster-2024",
-    level: 4,
-    name: "Очарование монстра",
+    name: "Очарование чудовища",
     originalName: "Charm Monster",
     school: "Очарование",
     castingTime: "1 действие",
@@ -1653,14 +1795,14 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 30,
     components: "В, С",
     duration: "1 час",
-    sourceUrl: "https://next.dnd.su/spells/10455-charm-monster",
+    sourceUrl: "https://5e14.dnd.su/spells/charm-monster/",
     summary:
-      "Очаровывает любое существо, делая его дружелюбным к вам при провале спасброска.",
+      "Пытается очаровать существо любого типа, делая его дружелюбным к вам на время действия.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "dimension-door-2024",
+    id: "dimension-door-2014",
     level: 4,
     name: "Переносящая дверь",
     originalName: "Dimension Door",
@@ -1670,39 +1812,13 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 500,
     components: "В",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10244-dimension-door",
+    sourceUrl: "https://5e14.dnd.su/spells/dimension-door/",
     summary:
-      "Мгновенно перемещает вас и ещё одно существо на значительное расстояние, если точка назначения известна.",
+      "Мгновенно телепортирует вас и, возможно, одного согласного союзника в пределах дальности.",
   }),
 
   createBardSpell({
-    id: "doomtide-2024",
-    level: 4,
-    name: "Погибель",
-    originalName: "Doomtide",
-    school: "Некромантия",
-    castingTime: "1 действие",
-    range: "60 футов",
-    rangeFeet: 60,
-    areaShape: "sphere",
-    areaSizeFeet: 15,
-    areaType: "radius",
-    components: "В, С, М",
-    duration: "До 1 минуты",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/12451-doomtide",
-    summary:
-      "Создаёт волну некротической энергии, наносящую урон и ослабляющую существ в области.",
-    damage: {
-      dice: "4d6",
-      modifier: null,
-      type: "некротический",
-    },
-    saveAbility: "constitution",
-  }),
-
-  createBardSpell({
-    id: "locate-creature-2024",
+    id: "locate-creature-2014",
     level: 4,
     name: "Поиск существа",
     originalName: "Locate Creature",
@@ -1713,13 +1829,13 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 1 часа",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10292-locate-creature",
+    sourceUrl: "https://5e14.dnd.su/spells/locate-creature/",
     summary:
-      "Позволяет чувствовать направление к известному существу в пределах определённой дистанции.",
+      "Определяет направление к известному вам существу или существу выбранного типа в пределах 1000 футов.",
   }),
 
   createBardSpell({
-    id: "polymorph-2024",
+    id: "polymorph-2014",
     level: 4,
     name: "Превращение",
     originalName: "Polymorph",
@@ -1730,14 +1846,14 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 1 часа",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10604-polymorph",
+    sourceUrl: "https://5e14.dnd.su/spells/polymorph/",
     summary:
-      "Превращает существо в другое существо того же или меньшего уровня опасности при провале спасброска.",
+      "Превращает согласное существо или враждебную цель при провале спасброска в другое существо.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "compulsion-2024",
+    id: "compulsion-2014",
     level: 4,
     name: "Принуждение",
     originalName: "Compulsion",
@@ -1745,32 +1861,55 @@ export const RAW_BARD_SPELL_LIBRARY = [
     castingTime: "1 действие",
     range: "30 футов",
     rangeFeet: 30,
-    components: "В",
+    components: "В, С",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10201-compulsion",
+    sourceUrl: "https://5e14.dnd.su/spells/compulsion/",
     summary:
-      "Заставляет существ в радиусе двигаться в выбранном вами направлении при провале спасброска.",
+      "Заставляет существ в области двигаться в выбранном вами направлении при провале спасброска.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "freedom-of-movement-2024",
+    id: "raulothims-psychic-lance-2014",
     level: 4,
-    name: "Свобода перемещения",
-    originalName: "Freedom of Movement",
-    school: "Воплощение",
+    name: "Психическое копьё Раулотима",
+    originalName: "Raulothim's Psychic Lance",
+    school: "Прорицание",
     castingTime: "1 действие",
-    range: "Касание",
-    components: "В, С, М",
-    duration: "1 час",
-    sourceUrl: "https://next.dnd.su/spells/10249-freedom-of-movement",
+    range: "120 футов",
+    rangeFeet: 120,
+    components: "В",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/raulothims-psychic-lance/",
     summary:
-      "Защищает существо от затруднённой местности и эффектов, ограничивающих движение.",
+      "Наносит цели, чьё имя вам известно, сильный психический урон и может лишить её реакции.",
+    damage: {
+      dice: "7d6",
+      modifier: null,
+      type: "психический",
+    },
+    saveAbility: "intelligence",
   }),
 
   createBardSpell({
-    id: "confusion-2024",
+    id: "freedom-of-movement-2014",
+    level: 4,
+    name: "Свобода перемещения",
+    originalName: "Freedom of Movement",
+    school: "Ограждение",
+    castingTime: "1 действие",
+    range: "Касание",
+    rangeFeet: null,
+    components: "В, С, М",
+    duration: "24 часа",
+    sourceUrl: "https://5e14.dnd.su/spells/freedom-of-movement/",
+    summary:
+      "Защищает существо от обездвиживания, паралича и от эффектов трудной местности.",
+  }),
+
+  createBardSpell({
+    id: "confusion-2014",
     level: 4,
     name: "Смятение",
     originalName: "Confusion",
@@ -1779,95 +1918,66 @@ export const RAW_BARD_SPELL_LIBRARY = [
     range: "90 футов",
     rangeFeet: 90,
     components: "В, С, М",
-    duration: "1 минута",
+    duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10203-confusion",
+    sourceUrl: "https://5e14.dnd.su/spells/confusion/",
     summary:
-      "Дезориентирует существ в области, заставляя их действовать хаотично при провале спасбросков.",
+      "Заставляет существ в области действовать случайным образом при провале спасброска.",
     saveAbility: "wisdom",
   }),
 
-  // 5 УРОВЕНЬ — 2024
+  // 5 УРОВЕНЬ
 
   createBardSpell({
-    id: "raise-dead-2024",
+    id: "dream-2014",
     level: 5,
-    name: "Возвращение к жизни",
-    originalName: "Raise Dead",
-    school: "Некромантия",
-    castingTime: "1 час",
-    range: "Касание",
+    name: "Вещий сон",
+    originalName: "Dream",
+    school: "Иллюзия",
+    castingTime: "1 минута",
+    range: "Особая",
+    rangeFeet: null,
     components: "В, С, М",
-    duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10617-raise-dead",
+    duration: "8 часов",
+    sourceUrl: "https://5e14.dnd.su/spells/dream/",
     summary:
-      "Возвращает умершее существо к жизни с ослабленным состоянием.",
+      "Позволяет являться в сны выбранного существа, чтобы передать сообщение или вызвать кошмар.",
   }),
 
   createBardSpell({
-    id: "greater-restoration-2024",
+    id: "greater-restoration-2014",
     level: 5,
     name: "Высшее восстановление",
     originalName: "Greater Restoration",
-    school: "Воплощение",
+    school: "Ограждение",
     castingTime: "1 действие",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10212-greater-restoration",
+    sourceUrl: "https://5e14.dnd.su/spells/greater-restoration/",
     summary:
-      "Снимает тяжёлые негативные эффекты, такие как уровни истощения, окаменение и проклятия.",
+      "Снимает истощение, проклятие, окаменение или уменьшает характеристику/максимум хитов цели.",
   }),
 
   createBardSpell({
-    id: "geas-2024",
-    level: 5,
-    name: "Гейс",
-    originalName: "Geas",
-    school: "Очарование",
-    castingTime: "1 минута",
-    range: "60 футов",
-    rangeFeet: 60,
-    components: "В",
-    duration: "30 дней",
-    sourceUrl: "https://next.dnd.su/spells/10526-geas",
-    summary:
-      "Накладывает долгосрочное магическое повеление на существо при провале спасброска.",
-    saveAbility: "wisdom",
-  }),
-
-  createBardSpell({
-    id: "dream-2024",
-    level: 5,
-    name: "Грёзы",
-    originalName: "Dream",
-    school: "Иллюзия",
-    castingTime: "1 действие",
-    range: "Специальная",
-    components: "В, С, М",
-    duration: "8 часов",
-    sourceUrl: "https://next.dnd.su/spells/10491-dream",
-    summary:
-      "Позволяет вступить в сновидение существа, посылать сообщения и наносить психический урон.",
-  }),
-
-  createBardSpell({
-    id: "legend-lore-2024",
+    id: "legend-lore-2014",
     level: 5,
     name: "Знание легенд",
     originalName: "Legend Lore",
     school: "Прорицание",
     castingTime: "10 минут",
     range: "На себя",
+    rangeFeet: 0,
     components: "В, С, М",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10228-legend-lore",
+    sourceUrl: "https://5e14.dnd.su/spells/legend-lore/",
     summary:
-      "Даёт видения и факты о легендарных личностях, местах или предметах.",
+      "Даёт краткие известные легенды о человеке, месте или предмете, названном или показанном вами.",
   }),
 
   createBardSpell({
-    id: "modify-memory-2024",
+    id: "modify-memory-2014",
     level: 5,
     name: "Изменение памяти",
     originalName: "Modify Memory",
@@ -1876,16 +1986,16 @@ export const RAW_BARD_SPELL_LIBRARY = [
     range: "30 футов",
     rangeFeet: 30,
     components: "В, С",
-    duration: "До 10 минут",
+    duration: "1 минута",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10586-modify-memory",
+    sourceUrl: "https://5e14.dnd.su/spells/modify-memory/",
     summary:
-      "Изменяет или стирает воспоминания существа при провале спасброска, переписывая события.",
+      "Позволяет изменить, стереть или создать воспоминание у очарованной цели за последние сутки.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "teleportation-circle-2024",
+    id: "teleportation-circle-2014",
     level: 5,
     name: "Круг телепортации",
     originalName: "Teleportation Circle",
@@ -1893,32 +2003,15 @@ export const RAW_BARD_SPELL_LIBRARY = [
     castingTime: "1 минута",
     range: "10 футов",
     rangeFeet: 10,
-    components: "В, С, М",
+    components: "В, М",
     duration: "1 раунд",
-    sourceUrl: "https://next.dnd.su/spells/10674-teleportation-circle",
+    sourceUrl: "https://5e14.dnd.su/spells/teleportation-circle/",
     summary:
-      "Создаёт круг, через который существа могут мгновенно переместиться на связанную локацию.",
+      "Создаёт портал, связывающий вас с постоянным кругом телепортации в другом известном месте.",
   }),
 
   createBardSpell({
-    id: "alustriels-mooncloak-2024",
-    level: 5,
-    name: "Лунный покров Алустриэли",
-    originalName: "Alustriel's Mooncloak",
-    school: "Ограждение",
-    castingTime: "1 действие",
-    range: "На себя",
-    rangeFeet: 0,
-    components: "В, С, М",
-    duration: "До 1 часа",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/12443-alustriels-mooncloak",
-    summary:
-      "Создаёт защитный покров лунного света, дающий резисты и полезные эффекты.",
-  }),
-
-  createBardSpell({
-    id: "rarys-telepathic-bond-2024",
+    id: "rarys-telepathic-bond-2014",
     level: 5,
     name: "Ментальная связь Рэри",
     originalName: "Rary's Telepathic Bond",
@@ -1929,25 +2022,28 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "1 час",
     ritual: true,
-    sourceUrl: "https://next.dnd.su/spells/10618-rarys-telepathic-bond",
+    sourceUrl: "https://5e14.dnd.su/spells/rarys-telepathic-bond/",
     summary:
-      "Создаёт телепатическую сеть между несколькими существами для мгновенной связи.",
+      "Создаёт телепатическую связь между несколькими согласными существами на время действия.",
   }),
 
   createBardSpell({
-    id: "mass-cure-wounds-2024",
+    id: "mass-cure-wounds-2014",
     level: 5,
     name: "Множественное лечение ран",
     originalName: "Mass Cure Wounds",
     school: "Воплощение",
     castingTime: "1 действие",
-    range: "60 футов",
+    range: "60 футов, радиус 30 футов",
     rangeFeet: 60,
+    areaShape: "radius",
+    areaSizeFeet: 30,
+    areaType: "radius",
     components: "В, С",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10570-mass-cure-wounds",
+    sourceUrl: "https://5e14.dnd.su/spells/mass-cure-wounds/",
     summary:
-      "Лечит несколько существ в области на умеренное количество хитов.",
+      "Одновременно лечит нескольких существ в области действия заклинания.",
     healing: {
       dice: "3d8",
       modifier: "spellcasting",
@@ -1955,41 +2051,75 @@ export const RAW_BARD_SPELL_LIBRARY = [
   }),
 
   createBardSpell({
-    id: "scrying-2024",
+    id: "scrying-2014",
     level: 5,
     name: "Наблюдение",
     originalName: "Scrying",
     school: "Прорицание",
     castingTime: "10 минут",
-    range: "Специальная",
+    range: "На себя",
+    rangeFeet: 0,
     components: "В, С, М",
     duration: "До 10 минут",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10236-scrying",
+    sourceUrl: "https://5e14.dnd.su/spells/scrying/",
     summary:
-      "Создаёт магический сенсор, позволяющий наблюдать за существом или местом на расстоянии.",
+      "Создаёт невидимый сенсор около выбранного существа, позволяя видеть и слышать происходящее рядом с ним.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "animate-objects-2024",
+    id: "geas-2014",
+    level: 5,
+    name: "Обет",
+    originalName: "Geas",
+    school: "Очарование",
+    castingTime: "1 минута",
+    range: "60 футов",
+    rangeFeet: 60,
+    components: "В",
+    duration: "30 дней",
+    sourceUrl: "https://5e14.dnd.su/spells/geas/",
+    summary:
+      "Магически принуждает цель выполнить указанное вами задание или следовать поведению.",
+    saveAbility: "wisdom",
+  }),
+
+  createBardSpell({
+    id: "raise-dead-2014",
+    level: 5,
+    name: "Оживление",
+    originalName: "Raise Dead",
+    school: "Некромантия",
+    castingTime: "1 час",
+    range: "Касание",
+    rangeFeet: null,
+    components: "В, С, М",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/raise-dead/",
+    summary:
+      "Возвращает мёртвое существо к жизни при условии, что тело не повреждено критично и не прошло слишком много времени.",
+  }),
+
+  createBardSpell({
+    id: "animate-objects-2014",
     level: 5,
     name: "Оживление вещей",
     originalName: "Animate Objects",
-    school: "Вызов",
+    school: "Преобразование",
     castingTime: "1 действие",
     range: "120 футов",
     rangeFeet: 120,
     components: "В, С",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10423-animate-objects",
+    sourceUrl: "https://5e14.dnd.su/spells/animate-objects/",
     summary:
-      "Оживляет несколько объектов, позволяя им атаковать и действовать как ваши слуги.",
+      "Оживляет несколько неодушевлённых предметов, превращая их в подчиняющихся вам боевых конструктов.",
   }),
 
   createBardSpell({
-    id: "planar-binding-2024",
+    id: "planar-binding-2014",
     level: 5,
     name: "Планарные узы",
     originalName: "Planar Binding",
@@ -1999,14 +2129,14 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 60,
     components: "В, С, М",
     duration: "24 часа",
-    sourceUrl: "https://next.dnd.su/spells/10601-planar-binding",
+    sourceUrl: "https://5e14.dnd.su/spells/planar-binding/",
     summary:
-      "Привязывает вызванное или родное иное существо к вашей службе на длительное время.",
+      "Пытается связать существо с другого плана обязательством служить вам при провале спасброска.",
     saveAbility: "charisma",
   }),
 
   createBardSpell({
-    id: "dominate-person-2024",
+    id: "dominate-person-2014",
     level: 5,
     name: "Подчинение личности",
     originalName: "Dominate Person",
@@ -2017,14 +2147,14 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10488-dominate-person",
+    sourceUrl: "https://5e14.dnd.su/spells/dominate-person/",
     summary:
-      "Берёт под контроль действия гуманоида при провале спасброска.",
+      "Позволяет управлять действиями гуманоида, отдавая ему команды через ментальную связь.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "seeming-2024",
+    id: "seeming-2014",
     level: 5,
     name: "Притворство",
     originalName: "Seeming",
@@ -2034,40 +2164,45 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 30,
     components: "В, С",
     duration: "8 часов",
-    sourceUrl: "https://next.dnd.su/spells/10633-seeming",
+    sourceUrl: "https://5e14.dnd.su/spells/seeming/",
     summary:
-      "Меняет внешний вид множества существ, создавая массовую маскировку.",
+      "Меняет внешний облик нескольких существ, включая одежду и снаряжение, на время действия.",
+    saveAbility: "charisma",
   }),
 
   createBardSpell({
-    id: "awaken-2024",
+    id: "awaken-2014",
     level: 5,
     name: "Пробуждение разума",
     originalName: "Awaken",
     school: "Преобразование",
     castingTime: "8 часов",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10438-awaken",
+    sourceUrl: "https://5e14.dnd.su/spells/awaken/",
     summary:
-      "Дарует разум и речь существу зверя или растения, делая его полноценным союзником.",
+      "Даёт зверю или растению разум, интеллект и способность понимать один выбранный вами язык.",
   }),
 
   createBardSpell({
-    id: "synaptic-static-2024",
+    id: "synaptic-static-2014",
     level: 5,
     name: "Синаптический разряд",
     originalName: "Synaptic Static",
     school: "Очарование",
     castingTime: "1 действие",
-    range: "120 футов",
+    range: "120 футов, сфера 20 футов",
     rangeFeet: 120,
+    areaShape: "radius",
+    areaSizeFeet: 20,
+    areaType: "radius",
     components: "В, С",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10668-synaptic-static",
+    sourceUrl: "https://5e14.dnd.su/spells/synaptic-static/",
     summary:
-      "Создаёт психический взрыв, наносящий урон и накладывающий штрафы на мыслительные процессы.",
+      "Создаёт психический взрыв, наносящий урон и накладывающий временные штрафы на мыслительные процессы существ.",
     damage: {
       dice: "8d6",
       modifier: null,
@@ -2077,9 +2212,9 @@ export const RAW_BARD_SPELL_LIBRARY = [
   }),
 
   createBardSpell({
-    id: "hold-monster-2024",
+    id: "hold-monster-2014",
     level: 5,
-    name: "Удержание монстра",
+    name: "Удержание чудовища",
     originalName: "Hold Monster",
     school: "Очарование",
     castingTime: "1 действие",
@@ -2088,14 +2223,30 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10253-hold-monster",
+    sourceUrl: "https://5e14.dnd.su/spells/hold-monster/",
     summary:
-      "Парализует любое существо при провале спасброска, делая его уязвимым к атакам.",
+      "Парализует одно существо любого типа при провале спасброска, делая его уязвимым к критическим атакам.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "mislead-2024",
+    id: "skill-empowerment-2014",
+    level: 5,
+    name: "Усиление навыка",
+    originalName: "Skill Empowerment",
+    school: "Преобразование",
+    castingTime: "1 действие",
+    range: "Касание",
+    rangeFeet: null,
+    components: "В, С",
+    duration: "1 час",
+    sourceUrl: "https://5e14.dnd.su/spells/skill-empowerment/",
+    summary:
+      "Даёт цели удвоенный бонус мастерства в выбранном навыке на время действия заклинания.",
+  }),
+
+  createBardSpell({
+    id: "mislead-2014",
     level: 5,
     name: "Фальшивый двойник",
     originalName: "Mislead",
@@ -2103,35 +2254,18 @@ export const RAW_BARD_SPELL_LIBRARY = [
     castingTime: "1 действие",
     range: "На себя",
     rangeFeet: 0,
-    components: "В, С",
+    components: "С",
     duration: "До 1 часа",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10585-mislead",
+    sourceUrl: "https://5e14.dnd.su/spells/mislead/",
     summary:
-      "Создаёт иллюзорного двойника, пока вы становитесь невидимыми и управляете образом.",
+      "Делает вас невидимым и создаёт вашу иллюзорную копию, которой вы можете управлять на расстоянии.",
   }),
 
-  createBardSpell({
-    id: "yolandes-regal-presence-2024",
-    level: 5,
-    name: "Царственное величие Йоланды",
-    originalName: "Yolande's Regal Presence",
-    school: "Очарование",
-    castingTime: "1 действие",
-    range: "30 футов",
-    rangeFeet: 30,
-    components: "В, С, М",
-    duration: "1 минута",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10257-yolandes-regal-presence",
-    summary:
-      "Вселяет благоговение и уважение к вам, усиливая ваши социальные воздействия.",
-  }),
-
-  // 6 УРОВЕНЬ — 2024
+  // 6 УРОВЕНЬ
 
   createBardSpell({
-    id: "programmed-illusion-2024",
+    id: "programmed-illusion-2014",
     level: 6,
     name: "Заданная иллюзия",
     originalName: "Programmed Illusion",
@@ -2141,28 +2275,29 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 120,
     components: "В, С, М",
     duration: "До развеивания",
-    sourceUrl: "https://next.dnd.su/spells/10614-programmed-illusion",
+    sourceUrl: "https://5e14.dnd.su/spells/programmed-illusion/",
     summary:
-      "Создаёт сложную иллюзию, срабатывающую при предусмотренном триггере.",
+      "Создаёт иллюзию, которая активируется по заданному вами условию и повторяет один и тот же сценарий.",
   }),
 
   createBardSpell({
-    id: "true-seeing-2024",
+    id: "true-seeing-2014",
     level: 6,
-    name: "Истинный взор",
+    name: "Истинное зрение",
     originalName: "True Seeing",
     school: "Прорицание",
     castingTime: "1 действие",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "1 час",
-    sourceUrl: "https://next.dnd.su/spells/10687-true-seeing",
+    sourceUrl: "https://5e14.dnd.su/spells/true-seeing/",
     summary:
-      "Дарует существу способность видеть невидимое, иллюзии и истинную форму существ.",
+      "Даёт истинное зрение: видение через иллюзии, невидимость и в тёмное зрение на 120 футов.",
   }),
 
   createBardSpell({
-    id: "mass-suggestion-2024",
+    id: "mass-suggestion-2014",
     level: 6,
     name: "Множественное внушение",
     originalName: "Mass Suggestion",
@@ -2172,14 +2307,14 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 60,
     components: "В, М",
     duration: "24 часа",
-    sourceUrl: "https://next.dnd.su/spells/10573-mass-suggestion",
+    sourceUrl: "https://5e14.dnd.su/spells/mass-suggestion/",
     summary:
-      "Навязывает разумные указания группе существ, заставляя их следовать им при провале спасбросков.",
+      "Заставляет до 12 существ следовать разумному предложению, сформулированному в одной фразе.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "ottos-irresistible-dance-2024",
+    id: "ottos-irresistible-dance-2014",
     level: 6,
     name: "Неудержимая пляска Отто",
     originalName: "Otto's Irresistible Dance",
@@ -2187,101 +2322,86 @@ export const RAW_BARD_SPELL_LIBRARY = [
     castingTime: "1 действие",
     range: "30 футов",
     rangeFeet: 30,
-    components: "В",
-    duration: "1 минута",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10595-ottos-irresistible-dance",
-    summary:
-      "Заставляет существо бесконтрольно танцевать, мешая ему действовать эффективно.",
-  }),
-
-  createBardSpell({
-    id: "dirge-2024",
-    level: 6,
-    name: "Панихида",
-    originalName: "Dirge",
-    school: "Некромантия",
-    castingTime: "1 действие",
-    range: "60 футов",
-    rangeFeet: 60,
-    components: "В, С, М",
+    components: "В, С",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/12450-dirge",
+    sourceUrl: "https://5e14.dnd.su/spells/ottos-irresistible-dance/",
     summary:
-      "Мрачная песнь, ослабляющая врагов и усиливающая союзников против мёртвых.",
-  }),
-
-  createBardSpell({
-    id: "heroes-feast-2024",
-    level: 6,
-    name: "Пир героев",
-    originalName: "Heroes' Feast",
-    school: "Воплощение",
-    castingTime: "1 час",
-    range: "30 футов",
-    rangeFeet: 30,
-    components: "В, С, М",
-    duration: "24 часа",
-    sourceUrl: "https://next.dnd.su/spells/10542-heroes-feast",
-    summary:
-      "Создаёт магический пир, дающий участникам бонусы к хп, спасброскам и иммунитеты.",
-  }),
-
-  createBardSpell({
-    id: "find-the-path-2024",
-    level: 6,
-    name: "Поиск пути",
-    originalName: "Find the Path",
-    school: "Прорицание",
-    castingTime: "1 действие",
-    range: "Касание",
-    components: "В, С, М",
-    duration: "1 день",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10509-find-the-path",
-    summary:
-      "Указывает кратчайший безопасный путь к известному месту.",
-  }),
-
-  createBardSpell({
-    id: "eyebite-2024",
-    level: 6,
-    name: "Разящее око",
-    originalName: "Eyebite",
-    school: "Очарование",
-    castingTime: "1 действие",
-    range: "На себя",
-    rangeFeet: 0,
-    components: "В, С",
-    duration: "1 минута",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10501-eyebite",
-    summary:
-      "Позволяет накладывать различные эффекты ужаса и сонливости на существ, на которых вы смотрите.",
+      "Заставляет цель нелепо танцевать, тратя действие и становясь легче поразить в бою.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "guards-and-wards-2024",
+    id: "heroes-feast-2014",
     level: 6,
-    name: "Стражи и обереги",
-    originalName: "Guards and Wards",
-    school: "Ограждение",
-    castingTime: "1 действие",
-    range: "120 футов",
-    rangeFeet: 120,
+    name: "Пир героев",
+    originalName: "Heroes' Feast",
+    school: "Вызов",
+    castingTime: "10 минут",
+    range: "30 футов",
+    rangeFeet: 30,
     components: "В, С, М",
-    duration: "24 часа",
-    sourceUrl: "https://next.dnd.su/spells/10534-guards-and-wards",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/heroes-feast/",
     summary:
-      "Защищает здание или область набором магических эффектов и ловушек.",
+      "Создаёт роскошный пир, дарующий вкусившим временные хиты, иммунитет к страху и защиту от яда на сутки.",
   }),
 
-    // 7 УРОВЕНЬ — 2024
+  createBardSpell({
+    id: "find-the-path-2014",
+    level: 6,
+    name: "Поиск пути",
+    originalName: "Find the Path",
+    school: "Прорицание",
+    castingTime: "1 минута",
+    range: "На себя",
+    rangeFeet: 0,
+    components: "В, С, М",
+    duration: "24 часа",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/find-the-path/",
+    summary:
+      "Указывает кратчайший, наиболее прямой физический маршрут к известному месту или объекту.",
+  }),
 
   createBardSpell({
-    id: "mordenkainens-magnificent-mansion-2024",
+    id: "eyebite-2014",
+    level: 6,
+    name: "Разящее око",
+    originalName: "Eyebite",
+    school: "Некромантия",
+    castingTime: "1 действие",
+    range: "На себя",
+    rangeFeet: 0,
+    components: "В, С",
+    duration: "До 1 минуты",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/eyebite/",
+    summary:
+      "Позволяет взглядом наводить на цель сон, испуг или болезнь по вашему выбору при провале спасброска.",
+    saveAbility: "wisdom",
+  }),
+
+  createBardSpell({
+    id: "guards-and-wards-2014",
+    level: 6,
+    name: "Стражи",
+    originalName: "Guards and Wards",
+    school: "Ограждение",
+    castingTime: "10 минут",
+    range: "На себя",
+    rangeFeet: 0,
+    components: "В, С, М",
+    duration: "24 часа",
+    sourceUrl: "https://5e14.dnd.su/spells/guards-and-wards/",
+    summary:
+      "Накладывает на область здания несколько защитных эффектов: туман, звук, ловушки и запертые двери.",
+  }),
+
+  // 7 УРОВЕНЬ
+
+  createBardSpell({
+    id: "mordenkainens-magnificent-mansion-2014",
     level: 7,
     name: "Великолепный особняк Морденкайнена",
     originalName: "Mordenkainen's Magnificent Mansion",
@@ -2291,44 +2411,46 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 300,
     components: "В, С, М",
     duration: "24 часа",
-    sourceUrl:
-      "https://next.dnd.su/spells/10588-mordenkainens-magnificent-mansion",
+    sourceUrl: "https://5e14.dnd.su/spells/mordenkainens-magnificent-mansion/",
     summary:
-      "Создаёт экстрамерный особняк, служащий безопасным убежищем.",
+      "Создаёт внепространственный особняк с обстановкой и незримыми слугами, доступный через портал-дверь.",
   }),
 
   createBardSpell({
-    id: "resurrection-2024",
+    id: "resurrection-2014",
     level: 7,
     name: "Воскрешение",
     originalName: "Resurrection",
     school: "Некромантия",
     castingTime: "1 час",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10626-resurrection",
+    sourceUrl: "https://5e14.dnd.su/spells/resurrection/",
     summary:
-      "Возвращает умершее существо к жизни спустя значительное время после смерти.",
+      "Возвращает к жизни существо, умершее не более столетия назад, полностью восстанавливая тело.",
   }),
 
   createBardSpell({
-    id: "symbol-2024",
+    id: "symbol-2014",
     level: 7,
     name: "Знак",
     originalName: "Symbol",
     school: "Ограждение",
-    castingTime: "1 минута",
+    castingTime: "1 час",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "До развеивания",
-    sourceUrl: "https://next.dnd.su/spells/10667-symbol",
+    sourceUrl: "https://5e14.dnd.su/spells/symbol/",
     summary:
-      "Создаёт магический символ, накладывающий мощные эффекты при срабатывании.",
+      "Начертает скрытый магический символ-ловушку, срабатывающий с сильным негативным эффектом при активации.",
+    saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "mordenkainens-sword-2024",
+    id: "mordenkainens-sword-2014",
     level: 7,
     name: "Меч Морденкайнена",
     originalName: "Mordenkainen's Sword",
@@ -2339,18 +2461,18 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 1 минуты",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10590-mordenkainens-sword",
+    sourceUrl: "https://5e14.dnd.su/spells/mordenkainens-sword/",
     summary:
-      "Призывает летающий магический меч, который наносит урон по вашим командам.",
+      "Создаёт призрачный клинок силы, которым вы можете атаковать бонусным действием каждый ход.",
     damage: {
       dice: "3d10",
       modifier: null,
-      type: "силовой",
+      type: "силовое поле",
     },
   }),
 
   createBardSpell({
-    id: "project-image-2024",
+    id: "project-image-2014",
     level: 7,
     name: "Проекция",
     originalName: "Project Image",
@@ -2361,13 +2483,13 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 1 дня",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10615-project-image",
+    sourceUrl: "https://5e14.dnd.su/spells/project-image/",
     summary:
-      "Создаёт иллюзорную копию вас, через которую можно видеть, слышать и накладывать заклинания.",
+      "Создаёт неосязаемую иллюзорную копию себя в удалённом известном месте, через которую вы можете действовать.",
   }),
 
   createBardSpell({
-    id: "prismatic-spray-2024",
+    id: "prismatic-spray-2014",
     level: 7,
     name: "Радужные брызги",
     originalName: "Prismatic Spray",
@@ -2380,64 +2502,63 @@ export const RAW_BARD_SPELL_LIBRARY = [
     areaType: "length",
     components: "В, С",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10611-prismatic-spray",
+    sourceUrl: "https://5e14.dnd.su/spells/prismatic-spray/",
     summary:
-      "Выбрасывает конус разноцветных лучей, каждый из которых оказывает различный опасный эффект.",
+      "Выпускает восемь разноцветных лучей случайного действия, каждый со своим разрушительным эффектом.",
+    saveAbility: "dexterity",
   }),
 
   createBardSpell({
-    id: "regenerate-2024",
+    id: "regenerate-2014",
     level: 7,
     name: "Регенерация",
     originalName: "Regenerate",
     school: "Преобразование",
     castingTime: "1 минута",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "1 час",
-    sourceUrl: "https://next.dnd.su/spells/10622-regenerate",
+    sourceUrl: "https://5e14.dnd.su/spells/regenerate/",
     summary:
-      "Быстро лечит цель и восстанавливает утраченные конечности.",
-    healing: {
-      dice: "4d8",
-      modifier: 15,
-    },
+      "Позволяет цели быстро восстанавливать хиты каждый ход и отращивать утраченные конечности.",
   }),
 
   createBardSpell({
-    id: "power-word-fortify-2024",
+    id: "dream-of-the-blue-veil-2014",
     level: 7,
-    name: "Слово силы: укрепление",
-    originalName: "Power Word Fortify",
-    school: "Воплощение",
-    castingTime: "1 действие",
-    range: "60 футов",
-    rangeFeet: 60,
-    components: "В",
-    duration: "1 минута",
-    sourceUrl: "https://next.dnd.su/spells/10605-power-word-fortify",
+    name: "Сон синей вуали",
+    originalName: "Dream of the Blue Veil",
+    school: "Вызов",
+    castingTime: "1 час",
+    range: "Особая",
+    rangeFeet: null,
+    components: "В, С, М",
+    duration: "До 8 часов",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/dream-of-the-blue-veil/",
     summary:
-      "Мгновенно наполняет существо силой и стойкостью, давая значительный запас временных хитов.",
+      "Открывает временный проход на другой известный план для вас и группы согласных существ.",
   }),
 
   createBardSpell({
-    id: "mirage-arcane-2024",
+    id: "mirage-arcane-2014",
     level: 7,
     name: "Таинственный мираж",
     originalName: "Mirage Arcane",
     school: "Иллюзия",
     castingTime: "10 минут",
-    range: "Миля",
-    rangeFeet: null,
+    range: "На себя (в пределах видимости)",
+    rangeFeet: 0,
     components: "В, С",
-    duration: "10 дней",
-    sourceUrl: "https://next.dnd.su/spells/10583-mirage-arcane",
+    duration: "До 10 дней",
+    sourceUrl: "https://5e14.dnd.su/spells/mirage-arcane/",
     summary:
-      "Преображает обширную область, создавая сложную иллюзию изменённого ландшафта.",
+      "Иллюзорно изменяет вид обширной местности, включая рельеф, растительность и строения.",
   }),
 
   createBardSpell({
-    id: "teleport-2024",
+    id: "teleport-2014",
     level: 7,
     name: "Телепортация",
     originalName: "Teleport",
@@ -2447,13 +2568,13 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 10,
     components: "В",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10673-teleport",
+    sourceUrl: "https://5e14.dnd.su/spells/teleport/",
     summary:
-      "Мгновенно переносит вас и несколько существ или предметов в известную точку на том же плане.",
+      "Мгновенно переносит вас и до восьми согласных существ в известное вам место, с шансом на неточность.",
   }),
 
   createBardSpell({
-    id: "forcecage-2024",
+    id: "forcecage-2014",
     level: 7,
     name: "Узилище",
     originalName: "Forcecage",
@@ -2461,18 +2582,16 @@ export const RAW_BARD_SPELL_LIBRARY = [
     castingTime: "1 действие",
     range: "100 футов",
     rangeFeet: 100,
-    areaShape: "cube",
-    areaSizeFeet: 20,
-    areaType: "side",
     components: "В, С, М",
     duration: "1 час",
-    sourceUrl: "https://next.dnd.su/spells/10520-forcecage",
+    sourceUrl: "https://5e14.dnd.su/spells/forcecage/",
     summary:
-      "Создаёт почти неразрушимую клетку или короб из магической силы, запирая существ внутри.",
+      "Создаёт клетку или сплошной куб из силового поля, запирающий существ внутри области.",
+    saveAbility: "charisma",
   }),
 
   createBardSpell({
-    id: "etherealness-2024",
+    id: "etherealness-2014",
     level: 7,
     name: "Эфирность",
     originalName: "Etherealness",
@@ -2482,15 +2601,15 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 0,
     components: "В, С",
     duration: "До 8 часов",
-    sourceUrl: "https://next.dnd.su/spells/10498-etherealness",
+    sourceUrl: "https://5e14.dnd.su/spells/etherealness/",
     summary:
-      "Переводит вас в Эфирный план, позволяя проходить сквозь материальные преграды.",
+      "Переносит вас на границу Эфирного плана, позволяя видеть и перемещаться сквозь материальный мир.",
   }),
 
-  // 8 УРОВЕНЬ — 2024
+  // 8 УРОВЕНЬ
 
   createBardSpell({
-    id: "antipathy-sympathy-2024",
+    id: "antipathy-sympathy-2014",
     level: 8,
     name: "Антипатия/симпатия",
     originalName: "Antipathy/Sympathy",
@@ -2500,14 +2619,14 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 60,
     components: "В, С, М",
     duration: "10 дней",
-    sourceUrl: "https://next.dnd.su/spells/10426-antipathy-sympathy",
+    sourceUrl: "https://5e14.dnd.su/spells/antipathy-sympathy/",
     summary:
-      "Настраивает объект или существо так, чтобы другие либо избегали его, либо тянулись к нему.",
+      "Заставляет существ определённого вида либо избегать, либо непреодолимо стремиться к объекту или месту.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "glibness-2024",
+    id: "glibness-2014",
     level: 8,
     name: "Находчивость",
     originalName: "Glibness",
@@ -2517,15 +2636,15 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 0,
     components: "В",
     duration: "1 час",
-    sourceUrl: "https://next.dnd.su/spells/10529-glibness",
+    sourceUrl: "https://5e14.dnd.su/spells/glibness/",
     summary:
-      "Делает вашу речь сверхъестественно убедительной и почти неуязвимой для магического распознавания лжи.",
+      "Позволяет заменять броски проверок Харизмы фиксированным высоким значением и обманывать даже магию.",
   }),
 
   createBardSpell({
-    id: "dominate-monster-2024",
+    id: "dominate-monster-2014",
     level: 8,
-    name: "Подчинение монстра",
+    name: "Подчинение чудовища",
     originalName: "Dominate Monster",
     school: "Очарование",
     castingTime: "1 действие",
@@ -2534,32 +2653,36 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С",
     duration: "До 1 часа",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10487-dominate-monster",
+    sourceUrl: "https://5e14.dnd.su/spells/dominate-monster/",
     summary:
-      "Подчиняет любое существо вашей воле при провале спасброска.",
+      "Позволяет полностью управлять действиями существа любого типа через ментальную связь.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "befuddlement-2024",
+    id: "feeblemind-2014",
     level: 8,
-    name: "Помутнение разума",
-    originalName: "Befuddlement",
+    name: "Слабоумие",
+    originalName: "Feeblemind",
     school: "Очарование",
     castingTime: "1 действие",
-    range: "60 футов",
-    rangeFeet: 60,
+    range: "150 футов",
+    rangeFeet: 150,
     components: "В, С, М",
-    duration: "До 1 минуты",
-    concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10440-befuddlement",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/feeblemind/",
     summary:
-      "Запутывает разум существ в области, ухудшая их способность действовать и концентрироваться.",
+      "Наносит психический урон и при провале спасброска резко понижает Интеллект и Харизму цели.",
+    damage: {
+      dice: "4d6",
+      modifier: null,
+      type: "психический",
+    },
     saveAbility: "intelligence",
   }),
 
   createBardSpell({
-    id: "power-word-stun-2024",
+    id: "power-word-stun-2014",
     level: 8,
     name: "Слово силы: ошеломление",
     originalName: "Power Word Stun",
@@ -2569,30 +2692,31 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 60,
     components: "В",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10608-power-word-stun",
+    sourceUrl: "https://5e14.dnd.su/spells/power-word-stun/",
     summary:
-      "Может немедленно оглушить существо с достаточно низким запасом хитов.",
+      "Без спасброска мгновенно оглушает цель, если её хиты не превышают заданный порог.",
   }),
 
   createBardSpell({
-    id: "mind-blank-2024",
+    id: "mind-blank-2014",
     level: 8,
     name: "Сокрытие разума",
     originalName: "Mind Blank",
     school: "Ограждение",
     castingTime: "1 действие",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С",
     duration: "24 часа",
-    sourceUrl: "https://next.dnd.su/spells/10579-mind-blank",
+    sourceUrl: "https://5e14.dnd.su/spells/mind-blank/",
     summary:
-      "Защищает разум существа от психического воздействия, чар и магического чтения мыслей.",
+      "Делает цель невосприимчивой к урону психической энергией и к любым методам чтения или контроля разума.",
   }),
 
-  // 9 УРОВЕНЬ — 2024
+  // 9 УРОВЕНЬ
 
   createBardSpell({
-    id: "true-polymorph-2024",
+    id: "true-polymorph-2014",
     level: 9,
     name: "Истинное превращение",
     originalName: "True Polymorph",
@@ -2603,64 +2727,102 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 1 часа",
     concentration: true,
-    sourceUrl: "https://next.dnd.su/spells/10685-true-polymorph",
+    sourceUrl: "https://5e14.dnd.su/spells/true-polymorph/",
     summary:
-      "Постоянно превращает существо или объект в другое существо или объект при длительной концентрации.",
+      "Превращает существо или предмет в другую форму навсегда, если концентрация не прерывается достаточно долго.",
     saveAbility: "wisdom",
   }),
 
   createBardSpell({
-    id: "foresight-2024",
+    id: "mass-polymorph-2014",
+    level: 9,
+    name: "Множественное превращение",
+    originalName: "Mass Polymorph",
+    school: "Преобразование",
+    castingTime: "1 действие",
+    range: "120 футов",
+    rangeFeet: 120,
+    components: "В, С, М",
+    duration: "До 1 часа",
+    concentration: true,
+    sourceUrl: "https://5e14.dnd.su/spells/mass-polymorph/",
+    summary:
+      "Превращает до десяти видимых существ в других существ по вашему выбору на время действия.",
+    saveAbility: "wisdom",
+  }),
+
+  createBardSpell({
+    id: "foresight-2014",
     level: 9,
     name: "Предвидение",
     originalName: "Foresight",
     school: "Прорицание",
     castingTime: "1 минута",
     range: "Касание",
+    rangeFeet: null,
     components: "В, С, М",
     duration: "8 часов",
-    sourceUrl: "https://next.dnd.su/spells/10521-foresight",
+    sourceUrl: "https://5e14.dnd.su/spells/foresight/",
     summary:
-      "Дарует существу почти безошибочное предчувствие опасности, давая огромные преимущества в бою и вне его.",
+      "Даёт цели преимущество на атаки, проверки и спасброски, а противникам — помеху на атаки по ней.",
   }),
 
   createBardSpell({
-    id: "prismatic-wall-2024",
+    id: "psychic-scream-2014",
+    level: 9,
+    name: "Психический крик",
+    originalName: "Psychic Scream",
+    school: "Очарование",
+    castingTime: "1 действие",
+    range: "90 футов",
+    rangeFeet: 90,
+    components: "В",
+    duration: "Мгновенная",
+    sourceUrl: "https://5e14.dnd.su/spells/psychic-scream/",
+    summary:
+      "Наносит мощный психический урон до десяти существам, способный оглушить их разум.",
+    damage: {
+      dice: "14d6",
+      modifier: null,
+      type: "психический",
+    },
+    saveAbility: "intelligence",
+  }),
+
+  createBardSpell({
+    id: "prismatic-wall-2014",
     level: 9,
     name: "Радужная стена",
     originalName: "Prismatic Wall",
-    school: "Ограждение",
+    school: "Воплощение",
     castingTime: "1 действие",
     range: "60 футов",
     rangeFeet: 60,
-    components: "В, С",
+    components: "В, С, М",
     duration: "10 минут",
-    sourceUrl: "https://next.dnd.su/spells/10612-prismatic-wall",
+    sourceUrl: "https://5e14.dnd.su/spells/prismatic-wall/",
     summary:
-      "Создаёт многослойную магическую стену, каждый слой которой накладывает опасный эффект.",
+      "Создаёт непроходимую стену из семи разноцветных мерцающих слоёв, каждый со своим защитным эффектом.",
   }),
 
   createBardSpell({
-    id: "power-word-heal-2024",
+    id: "power-word-heal-2014",
     level: 9,
     name: "Слово силы: исцеление",
     originalName: "Power Word Heal",
     school: "Воплощение",
     castingTime: "1 действие",
     range: "Касание",
-    components: "В, С",
+    rangeFeet: null,
+    components: "В",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10606-power-word-heal",
+    sourceUrl: "https://5e14.dnd.su/spells/power-word-heal/",
     summary:
-      "Мгновенно восстанавливает огромное количество хитов и снимает ряд тяжёлых состояний.",
-    healing: {
-      dice: null,
-      modifier: 70,
-    },
+      "Мгновенно восстанавливает цели все хиты и снимает с неё большинство негативных состояний.",
   }),
 
   createBardSpell({
-    id: "power-word-kill-2024",
+    id: "power-word-kill-2014",
     level: 9,
     name: "Слово силы: смерть",
     originalName: "Power Word Kill",
@@ -2670,12 +2832,12 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 60,
     components: "В",
     duration: "Мгновенная",
-    sourceUrl: "https://next.dnd.su/spells/10607-power-word-kill",
+    sourceUrl: "https://5e14.dnd.su/spells/power-word-kill/",
     summary:
-      "Немедленно убивает существо, если его запас хитов достаточно низок.",
+      "Без спасброска мгновенно убивает цель, если её хиты не превышают заданный порог.",
   }),
 
-  // 3 УРОВЕНЬ — legacy 2014 (Magical Secrets)
+  // МАГИЧЕСКИЕ ТАЙНЫ (10 уровень)
 
   createBardSpell({
     id: "counterspell-2014",
@@ -2688,9 +2850,10 @@ export const RAW_BARD_SPELL_LIBRARY = [
     rangeFeet: 60,
     components: "С",
     duration: "Мгновенная",
-    sourceUrl: "https://5e14.dnd.su/spells/53-counterspell/",
+    sourceUrl: "https://5e14.dnd.su/spells/counterspell/",
     summary:
       "Реакцией прерывает накладывание заклинания другим существом, при успехе полностью отменяя его эффект.",
+    notes: "Получено через способность Магические тайны на 10 уровне барда.",
   }),
 
   createBardSpell({
@@ -2708,22 +2871,23 @@ export const RAW_BARD_SPELL_LIBRARY = [
     components: "В, С, М",
     duration: "До 10 минут",
     concentration: true,
-    sourceUrl: "https://5e14.dnd.su/spells/90-spirit-guardians/",
+    sourceUrl: "https://5e14.dnd.su/spells/spirit-guardians/",
     summary:
-      "Вызываете духов-хранителей, наносящих урон существам по вашему выбору в радиусе 15 футов и замедляющих их движение при провале спасброска.",
+      "Вызывает духов-хранителей, наносящих урон существам по вашему выбору в радиусе 15 футов и замедляющих их движение при провале спасброска.",
     damage: {
       dice: "3d8",
       modifier: null,
       type: "радиантный/некротический",
     },
     saveAbility: "wisdom",
+    notes: "Получено через способность Магические тайны на 10 уровне барда.",
   }),
 ];
 
-export const BARD_SPELL_LIBRARY = mergeSpellVersions(RAW_BARD_SPELL_LIBRARY);
+export const BARD_SPELL_LIBRARY = [...RAW_BARD_SPELL_LIBRARY].sort((a, b) => {
+  if (a.level !== b.level) {
+    return a.level - b.level;
+  }
 
-export const BARD_SPELL_LIBRARY_ALL_EDITIONS = [...RAW_BARD_SPELL_LIBRARY];
-
-export const BARD_SPELL_LIBRARY_2024_ONLY = BARD_SPELL_LIBRARY.filter(
-  (spell) => spell.edition === "2024",
-);
+  return a.name.localeCompare(b.name, "ru");
+});

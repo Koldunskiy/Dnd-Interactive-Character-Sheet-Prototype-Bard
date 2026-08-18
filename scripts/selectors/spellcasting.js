@@ -17,9 +17,12 @@ function mergeSpellWithOverrides(baseSpell, override = {}) {
 }
 
 function resolveSpellById(spellId) {
+  if (!spellId) {
+    return null;
+  }
+
   return (
     BARD_SPELL_LIBRARY_BY_ID[spellId] ??
-    BARD_SPELL_LIBRARY_BY_ID[`${spellId}-2024`] ??
     BARD_SPELL_LIBRARY_BY_ID[`${spellId}-2014`] ??
     null
   );
@@ -108,19 +111,28 @@ export function buildCharacterSpellCollections(character) {
   };
 }
 
+function isSpellIdSelected(selectedIds, spellId) {
+  const canonicalTarget = resolveSpellById(spellId)?.id ?? spellId;
+
+  return uniqueIds(selectedIds).some((id) => {
+    if (id === spellId || id === canonicalTarget) {
+      return true;
+    }
+
+    return resolveSpellById(id)?.id === canonicalTarget;
+  });
+}
+
 export function isCantripSelected(character, spellId) {
-  const cantripIds = uniqueIds(character?.spellcasting?.cantripIds);
-  return cantripIds.includes(spellId);
+  return isSpellIdSelected(character?.spellcasting?.cantripIds, spellId);
 }
 
 export function isPreparedSpellSelected(character, spellId) {
-  const preparedSpellIds = uniqueIds(character?.spellcasting?.preparedSpellIds);
-  return preparedSpellIds.includes(spellId);
+  return isSpellIdSelected(character?.spellcasting?.preparedSpellIds, spellId);
 }
 
 export function isGrantedSpell(character, spellId) {
-  const grantedSpellIds = uniqueIds(character?.spellcasting?.grantedSpellIds);
-  return grantedSpellIds.includes(spellId);
+  return isSpellIdSelected(character?.spellcasting?.grantedSpellIds, spellId);
 }
 
 export function findMissingSpellIds(character) {
@@ -131,5 +143,5 @@ export function findMissingSpellIds(character) {
     ...uniqueIds(spellcasting.grantedSpellIds),
   ];
 
-  return allIds.filter((spellId) => !BARD_SPELL_LIBRARY_BY_ID[spellId]);
+  return allIds.filter((spellId) => !resolveSpellById(spellId));
 }

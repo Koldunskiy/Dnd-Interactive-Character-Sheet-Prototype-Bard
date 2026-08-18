@@ -335,7 +335,7 @@ export const character = {
     },
 
     notes:
-      "Bard 2024, уровень 10: 4 заговора, 15 подготовленных заклинаний 1+ круга, кость Бардского вдохновения 1d10, Magical Secrets доступны для расширения набора заклинаний.",
+      "Bard 2014, уровень 10: 4 заговора, 15 подготовленных заклинаний 1+ круга, кость Бардского вдохновения 1d10, Magical Secrets доступны для расширения набора заклинаний.",
 
     cantripIds: [
       "mage-hand",
@@ -345,41 +345,45 @@ export const character = {
     ],
 
     cantripIds: [
-      "mage-hand-2024",
-      "vicious-mockery-2024",
-      "minor-illusion-2024",
-      "message-2024"
+      "mage-hand-2014",
+      "vicious-mockery-2014",
+      "minor-illusion-2014",
+      "message-2014",
+      "prestidigitation-2014",
     ],
 
     preparedSpellIds: [
-      "healing-word-2024",
-      "cure-wounds-2024",
-      "dissonant-whispers-2024",
-      "tashas-hideous-laughter-2024",
-      "faerie-fire-2024",
-      "mirror-image-2024",
-      "hold-person-2024",
-      "hypnotic-pattern-2024",
-      "greater-invisibility-2024",
-      "counterspell-2014",
-      "synaptic-static-2024",
-      "mass-healing-word-2024",
-      "spirit-guardians-2014",
+      "healing-word-2014",
+      "dissonant-whispers-2014",
+      "tashas-hideous-laughter-2014",
+      "cure-wounds-2014",
+      "hold-person-2014",
+      "see-invisibility-2014",
+      "crown-of-madness-2014",
+      "lesser-restoration-2014",
+      "hypnotic-pattern-2014",
+      "dispel-magic-2014",
+      "greater-invisibility-2014",
+      "dimension-door-2014",
+      "raulothims-psychic-lance-2014",
+      "synaptic-static-2014",
     ],
     grantedSpellIds: [
-      "minor-illusion-2024",
-      "disguise-self-2024",
-      "invisibility-2024",
+      "minor-illusion-2014",
+      "disguise-self-2014",
+      "invisibility-2014",
+      "spirit-guardians-2014",
+      "counterspell-2014",
     ],
 
     spellOverrides: {
-      "minor-illusion-2024": {
+      "minor-illusion-2014": {
         source: "racial",
         sourceLabel: "Расовое",
         notes:
           "Получено через наследие Малболга (Гласия). Базовая характеристика — Харизма."
       },
-      "disguise-self-2024": {
+      "disguise-self-2014": {
         source: "racial",
         sourceLabel: "Расовое",
         availableFromLevel: 3,
@@ -389,7 +393,7 @@ export const character = {
           refresh: "Долгий отдых"
         }
       },
-      "invisibility-2024": {
+      "invisibility-2014": {
         source: "racial",
         sourceLabel: "Расовое",
         availableFromLevel: 5,
@@ -403,7 +407,7 @@ export const character = {
         source: "magical-secret",
         sourceLabel: "Магические тайны"
       },
-      "spirit-guardians-2014": {
+      "mind-sliver-2014": {
         source: "magical-secret",
         sourceLabel: "Магические тайны"
       }
@@ -593,38 +597,6 @@ export const character = {
         charges: null
       },
       {
-        id: "ebony-dagger",
-        type: "weapon",
-        name: "Эбонитовый кинжал",
-        quantity: 1,
-        stackable: false,
-        equipped: true,
-        notes:
-          "Стилет использует параметры кинжала, но с костью урона 1к6. При использовании данного стилета критический удар считается при выпадении 19 и 20 на к20. А в случае критического провала вы получаете полный урон, который могла бы нанести данная атака если бы она была критической. По существу у которого находится стилет, атаки считаются критическими при выпадении 19 и 20 на к20.",
-        tags: ["боевое", "магическое"],
-        weapon: {
-          category: "simple-melee",
-          attackStat: "dexterity",
-          damageDice: "1d6",
-          damageType: "колющий",
-          properties: ["Фехтовальное", "Лёгкое", "Метательное (20/60)", "Магическое"],
-          range: {
-            normalFeet: 20,
-            longFeet: 60
-          },
-          twoHanded: false,
-          finesse: true,
-          thrown: true,
-          magicalBonusAttack: 0,
-          magicalBonusDamage: 0
-        },
-        armor: null,
-        focus: null,
-        consumable: null,
-        uses: null,
-        charges: null
-      },
-      {
         id: "serpent-scale-armor",
         type: "armor",
         name: "Доспех из змеиной чешуи",
@@ -642,6 +614,23 @@ export const character = {
           dexCap: null,
           magicalBonusAc: 0
         },
+        focus: null,
+        consumable: null,
+        uses: null,
+        charges: null
+      },
+      {
+        id: "living-gloves",
+        type: "misc",
+        name: "Живые перчатки",
+        quantity: 1,
+        stackable: false,
+        equipped: true,
+        notes:
+          "Симбиотические перчатки, вросшие в кожу через настройку. Выбранное владение при настройке: Ловкость рук. При проверках характеристики с этим владением добавляется удвоенный бонус мастерства вместо обычного. Перчатки нельзя снять и нельзя добровольно закончить настройку на них, пока действует симбиоз; настройка прерывается только заклинанием, снимающим проклятия.",
+        tags: ["магическое", "требует настройки", "удвоенный бонус мастерства"],
+        weapon: null,
+        armor: null,
         focus: null,
         consumable: null,
         uses: null,
