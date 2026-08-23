@@ -8,19 +8,45 @@ export function ensureUiState(draft) {
   }
 
   if (!draft.ui.spellLibrary || typeof draft.ui.spellLibrary !== "object") {
-    draft.ui.spellLibrary = {
-      selectedLevel: "all",
-      selectionFilter: "all",
-      expandedSpellIds: [],
-    };
+    draft.ui.spellLibrary = {};
   }
 
-  if (typeof draft.ui.spellLibrary.selectedLevel !== "string") {
-    draft.ui.spellLibrary.selectedLevel = "all";
+  const spellLibrary = draft.ui.spellLibrary;
+
+  if (typeof spellLibrary.selectedLevel !== "string") {
+    spellLibrary.selectedLevel = "all";
   }
 
-  if (typeof draft.ui.spellLibrary.selectionFilter !== "string") {
-    draft.ui.spellLibrary.selectionFilter = "all";
+  if (typeof spellLibrary.selectionFilter !== "string") {
+    spellLibrary.selectionFilter = "all";
+  }
+
+  if (typeof spellLibrary.schoolFilter !== "string") {
+    spellLibrary.schoolFilter = "all";
+  }
+
+  if (typeof spellLibrary.searchQuery !== "string") {
+    spellLibrary.searchQuery = "";
+  }
+
+  if (typeof spellLibrary.concentrationOnly !== "boolean") {
+    spellLibrary.concentrationOnly = false;
+  }
+
+  if (typeof spellLibrary.ritualOnly !== "boolean") {
+    spellLibrary.ritualOnly = false;
+  }
+
+  if (typeof spellLibrary.availableOnly !== "boolean") {
+    spellLibrary.availableOnly = false;
+  }
+
+  if (!Array.isArray(spellLibrary.expandedSpellIds)) {
+    spellLibrary.expandedSpellIds = [];
+  }
+
+  if (!Array.isArray(spellLibrary.expandedSpellIds)) {
+    spellLibrary.expandedSpellIds = [];
   }
 
   if (!Array.isArray(draft.ui.spellLibrary.expandedSpellIds)) {

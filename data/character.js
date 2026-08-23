@@ -372,8 +372,8 @@ export const character = {
       "minor-illusion-2014",
       "disguise-self-2014",
       "invisibility-2014",
-      "spirit-guardians-2014",
       "counterspell-2014",
+      "mind-sliver-2014",
     ],
 
     spellOverrides: {

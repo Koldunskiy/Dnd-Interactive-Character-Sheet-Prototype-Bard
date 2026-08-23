@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""Generate a functional 2-page A4 D&D 5e character sheet for Aurelia."""
-
 from __future__ import annotations
 
 from pathlib import Path

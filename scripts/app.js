@@ -215,6 +215,54 @@ function bindClickAction(root, selector, actionKey) {
   });
 }
 
+function bindSpellLibrarySearch(root = document) {
+  root
+    .querySelectorAll("[data-spell-library-search]")
+    .forEach((element) => {
+      if (element.dataset.bound === "true") {
+        return;
+      }
+
+      element.addEventListener("input", (event) => {
+        const target = event.currentTarget;
+        const handler = actionHandlers["spell-library-search"];
+
+        if (!handler) {
+          return;
+        }
+
+        const selectionStart = target.selectionStart ?? target.value.length;
+        const selectionEnd = target.selectionEnd ?? selectionStart;
+
+        updateState((draft) => {
+          handler(draft, target);
+          return draft;
+        });
+
+        requestAnimationFrame(() => {
+          const nextInput = document.querySelector(
+            "[data-spell-library-search]",
+          );
+
+          if (!(nextInput instanceof HTMLInputElement)) {
+            return;
+          }
+
+          nextInput.focus();
+
+          const maxPosition = nextInput.value.length;
+
+          nextInput.setSelectionRange(
+            Math.min(selectionStart, maxPosition),
+            Math.min(selectionEnd, maxPosition),
+          );
+        });
+      });
+
+      element.dataset.bound = "true";
+    });
+}
+
 function bindSpellLibraryControls(root = document) {
   bindClickAction(root, "[data-spell-library-level]", "spell-library-set-level");
   bindClickAction(
@@ -224,6 +272,19 @@ function bindSpellLibraryControls(root = document) {
   );
   bindClickAction(root, "[data-spell-library-toggle]", "spell-library-toggle-expand");
   bindClickAction(root, "[data-spell-library-select]", "spell-library-toggle-select");
+  bindSpellLibrarySearch(root);
+
+  bindClickAction(
+    root,
+    "[data-spell-library-school]",
+    "spell-library-set-school",
+  );
+
+  bindClickAction(
+    root,
+    "[data-spell-library-flag]",
+    "spell-library-toggle-flag",
+  );
 }
 
 function bindSpellsControls(root = document) {

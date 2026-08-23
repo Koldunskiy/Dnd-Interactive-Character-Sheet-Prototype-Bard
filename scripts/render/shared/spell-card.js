@@ -104,6 +104,60 @@ export function renderSpellSummaryLine(spell) {
   `;
 }
 
+export function renderSpellQuickFacts(spell) {
+  const components = String(spell.components ?? "")
+    .split(" (", 1)[0]
+    .trim();
+
+  const durationParts = [];
+
+  if (spell.concentration) {
+    durationParts.push("Конц.");
+  }
+
+  if (spell.ritual) {
+    durationParts.push("Ритуал");
+  }
+
+  if (spell.duration) {
+    durationParts.push(spell.duration);
+  }
+
+  const facts = [
+    {
+      label: "Время",
+      value: spell.castTime ?? spell.castingTime,
+    },
+    {
+      label: "Дистанция",
+      value: spell.range,
+    },
+    {
+      label: "Компоненты",
+      value: components,
+    },
+    {
+      label: "Длительность",
+      value: durationParts.join(" · "),
+    },
+  ].filter((fact) => fact.value);
+
+  return `
+    <dl class="spell-quick-facts">
+      ${facts
+        .map(
+          (fact) => `
+            <div class="spell-quick-fact">
+              <dt>${escapeHtml(fact.label)}</dt>
+              <dd>${escapeHtml(fact.value)}</dd>
+            </div>
+          `,
+        )
+        .join("")}
+    </dl>
+  `;
+}
+
 export function renderSpellMetaFacts(items, extraClassName = "") {
   const rows = items.filter((item) => item?.label && item?.value);
 

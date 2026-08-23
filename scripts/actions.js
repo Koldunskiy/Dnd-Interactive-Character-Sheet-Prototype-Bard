@@ -49,11 +49,13 @@ function resolveLibrarySpellById(spellId) {
     return null;
   }
 
+  const normalizedId = String(spellId);
+
   return (
-    BARD_SPELL_LIBRARY_BY_ID[spellId] ??
-    BARD_SPELL_LIBRARY_BY_ID[`${spellId}-2024`] ??
-    BARD_SPELL_LIBRARY_BY_ID[`${spellId}-2014`] ??
-    null
+    BARD_SPELL_LIBRARY_BY_ID[normalizedId]
+    ?? BARD_SPELL_LIBRARY_BY_ID[`${normalizedId}-2014`]
+    ?? BARD_SPELL_LIBRARY_BY_ID[`${normalizedId}-2024`]
+    ?? null
   );
 }
 
@@ -562,23 +564,13 @@ function handleSpellLibrarySetLevel(draft, target) {
 
 function handleSpellLibraryToggleExpand(draft, target) {
   const spellId = target.dataset.spellLibraryToggle;
-  const ui = ensureUiState(draft);
 
   if (!spellId) {
     return;
   }
 
-  if (!ui.spellLibrary || typeof ui.spellLibrary !== "object") {
-    ui.spellLibrary = {
-      selectedLevel: "all",
-      expandedSpellIds: [],
-    };
-  }
-
-  const expandedSpellIds = Array.isArray(ui.spellLibrary.expandedSpellIds)
-    ? ui.spellLibrary.expandedSpellIds
-    : [];
-
+  const ui = ensureUiState(draft);
+  const expandedSpellIds = ui.spellLibrary.expandedSpellIds;
   const alreadyExpanded = expandedSpellIds.includes(spellId);
 
   ui.spellLibrary.expandedSpellIds = alreadyExpanded
@@ -672,22 +664,50 @@ function handleSpellLibraryToggleSelect(draft, target) {
 }
 
 function handleSpellLibrarySetSelectionFilter(draft, target) {
-  const selectionValue = target.dataset.spellLibrarySelection;
+  const selectionValue = String(
+    target.dataset.spellLibrarySelection ?? "all",
+  );
+
+  const ui = ensureUiState(draft);
+  const currentValue = ui.spellLibrary.selectionFilter;
+
+  ui.spellLibrary.selectionFilter = (
+    currentValue === selectionValue
+      ? "all"
+      : selectionValue
+  );
+}
+
+function handleSpellLibrarySearch(draft, target) {
   const ui = ensureUiState(draft);
 
-  if (!ui.spellLibrary || typeof ui.spellLibrary !== "object") {
-    ui.spellLibrary = {
-      selectedLevel: "all",
-      selectionFilter: "all",
-      expandedSpellIds: [],
-    };
+  ui.spellLibrary.searchQuery = String(target.value ?? "");
+}
+
+function handleSpellLibrarySetSchool(draft, target) {
+  const ui = ensureUiState(draft);
+
+  ui.spellLibrary.schoolFilter = String(
+    target.dataset.spellLibrarySchool ?? "all",
+  );
+}
+
+function handleSpellLibraryToggleFlag(draft, target) {
+  const flag = String(target.dataset.spellLibraryFlag ?? "");
+
+  const allowedFlags = new Set([
+    "concentrationOnly",
+    "ritualOnly",
+    "availableOnly",
+  ]);
+
+  if (!allowedFlags.has(flag)) {
+    return;
   }
 
-  const currentValue = ui.spellLibrary.selectionFilter ?? "all";
-  const nextValue = selectionValue ?? "all";
+  const ui = ensureUiState(draft);
 
-  ui.spellLibrary.selectionFilter =
-    currentValue === nextValue ? "all" : nextValue;
+  ui.spellLibrary[flag] = !ui.spellLibrary[flag];
 }
 
 function handleSpellsToggleExpand(draft, target) {
@@ -805,5 +825,8 @@ export function createActionHandlers({ resetState }) {
     "melee-toggle-expand": handleMeleeToggleExpand,
     "inventory-toggle-equipped": handleInventoryToggleEquipped,
     "inventory-toggle-expand": handleInventoryToggleExpand,
+    "spell-library-search": handleSpellLibrarySearch,
+    "spell-library-set-school": handleSpellLibrarySetSchool,
+    "spell-library-toggle-flag": handleSpellLibraryToggleFlag,
   };
 }

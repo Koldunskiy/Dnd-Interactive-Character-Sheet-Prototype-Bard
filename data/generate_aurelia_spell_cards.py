@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""Generate printable A4 spell cards for Aurelia (D&D 5e 2014)."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass

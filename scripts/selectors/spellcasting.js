@@ -1,9 +1,10 @@
 import { getBardCantripLimit, getBardPreparedSpellLimit } from "../rules.js";
-import { BARD_SPELL_LIBRARY } from "../../data/bard-spells.js";
+import {
+  SPELL_LIBRARY,
+  SPELL_LIBRARY_BY_ID as SPELL_LIBRARY_INDEX,
+} from "../../data/spell-library.js";
 
-export const BARD_SPELL_LIBRARY_BY_ID = Object.fromEntries(
-  BARD_SPELL_LIBRARY.map((spell) => [spell.id, spell]),
-);
+export const BARD_SPELL_LIBRARY_BY_ID = SPELL_LIBRARY_INDEX;
 
 function uniqueIds(ids) {
   return [...new Set((Array.isArray(ids) ? ids : []).filter(Boolean))];

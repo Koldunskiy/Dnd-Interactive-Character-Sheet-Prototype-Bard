@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""Generate printer-friendly A4 bard spell cards from bard_spells.md.
-
-Layout: 6 monochrome cards per A4 page (2 columns × 3 rows), one-sided.
-"""
-
 from __future__ import annotations
 
 import argparse
