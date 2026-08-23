@@ -329,3 +329,42 @@
     gap: 12px;
   }
 }
+
+@media (max-width: 899px) {
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .app-shell,
+  .page,
+  .app-layout,
+  .content,
+  .content > .tab-panels,
+  .tab-panel,
+  .panel-section,
+  .spell-grid,
+  .spell-grid--library,
+  .spell-card,
+  .spell-card--library {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .page {
+    width: 100%;
+    overflow-x: clip;
+  }
+
+  .content {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .tab-panels {
+    min-width: 0;
+    overflow-x: clip;
+  }
+}

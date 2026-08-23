@@ -842,3 +842,42 @@
     font-size: 0.74rem;
   }
 }
+
+@media (max-width: 699px) {
+  .spell-grid--library {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .spell-card--library {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .spell-card--library .spell-card-header,
+  .spell-card--library .spell-card-footer,
+  .spell-card--library .spell-card-footer-actions {
+    min-width: 0;
+  }
+
+  .spell-card--library .spell-card-title,
+  .spell-card--library .spell-card-subtitle,
+  .spell-card--library .spell-description,
+  .spell-card--library .spell-library-status,
+  .spell-card--library .spell-quick-fact dd {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .spell-quick-facts {
+    display: none !important;
+  }
+
+  .spell-quick-facts-mobile {
+    display: grid !important;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+}
