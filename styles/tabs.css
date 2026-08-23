@@ -178,3 +178,76 @@
 .tab-btn:focus-visible::after {
   opacity: 1;
 }
+
+/* Tablet and mobile tab navigation ------------------------------------- */
+
+@media (max-width: 899px) {
+  .tabs {
+    position: static;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 0.55rem;
+    width: 100%;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.2rem 0 0.55rem;
+    border-radius: 0;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tab-btn {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 2.9rem;
+    min-height: 2.9rem;
+    padding: 0 0.8rem;
+    border-radius: 0.9rem;
+  }
+
+  .tab-btn.is-active {
+    transform: none;
+  }
+
+  .tab-btn.is-active::before {
+    inset: 4px;
+    border-radius: 0.65rem;
+  }
+
+  .tab-btn::after {
+    display: none;
+  }
+}
+
+
+@media (max-width: 699px) {
+  .tabs {
+    position: sticky;
+    z-index: 20;
+    top: 0;
+    margin-inline: -10px;
+    padding: 0.55rem 10px 0.65rem;
+    background:
+      linear-gradient(
+        180deg,
+        rgba(23, 9, 13, 0.98),
+        rgba(23, 9, 13, 0.92)
+      );
+    border-bottom: 1px solid rgba(214, 171, 146, 0.1);
+    backdrop-filter: blur(14px);
+  }
+
+  .tab-btn {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0 0.7rem;
+  }
+
+  .tab-btn__icon,
+  .tab-btn__icon svg {
+    width: 20px;
+    height: 20px;
+  }
+}

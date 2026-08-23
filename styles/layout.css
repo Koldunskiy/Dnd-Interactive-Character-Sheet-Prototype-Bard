@@ -225,3 +225,107 @@
   grid-row: 1;
   align-self: start;
 }
+
+/* Tablet and mobile layout --------------------------------------------- */
+
+@media (max-width: 899px) {
+  .page {
+    padding: 14px;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    margin-bottom: 14px;
+    padding: 14px;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .app-layout {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .sidebar {
+    position: static;
+    order: 2;
+    gap: 14px;
+  }
+
+  .content {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+
+  .content > .tabs {
+    order: 0;
+    width: 100%;
+  }
+
+  .content > .tab-panels {
+    order: 1;
+    min-width: 0;
+  }
+}
+
+
+/* Phone layout ---------------------------------------------------------- */
+
+@media (max-width: 699px) {
+  .page {
+    padding: 10px;
+  }
+
+  .topbar {
+    gap: 12px;
+    padding: 12px;
+    border-radius: 18px;
+  }
+
+  .brand-title {
+    font-size: 1.35rem;
+  }
+
+  .brand-subtitle {
+    font-size: 0.82rem;
+  }
+
+  .topbar-actions {
+    gap: 8px;
+  }
+
+  .section {
+    padding: 1rem;
+  }
+
+  .panel-section {
+    margin-bottom: 1rem;
+  }
+
+  .section-heading-row {
+    margin-bottom: 0.8rem;
+  }
+
+  .section-title {
+    font-size: 1.35rem;
+  }
+
+  .cards-grid,
+  .info-grid,
+  .feature-list,
+  .resource-grid,
+  .ability-grid,
+  .spell-grid {
+    grid-template-columns: 1fr;
+    gap: 0.8rem;
+  }
+
+  .sidebar {
+    gap: 12px;
+  }
+}
