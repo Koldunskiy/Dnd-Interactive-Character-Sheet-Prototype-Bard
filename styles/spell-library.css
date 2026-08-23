@@ -454,7 +454,20 @@
   }
 }
 
-@media (min-width: 1280px) {
+.spell-grid--library {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (min-width: 700px) {
+  .spell-grid--library {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1080px) {
   .spell-grid--library {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -591,9 +604,13 @@
 
 .spell-quick-facts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
   gap: 0.45rem;
   margin: 0 0 0.9rem;
+}
+
+.spell-quick-fact:last-child {
+  grid-column: span 1;
 }
 
 .spell-quick-fact {
@@ -804,5 +821,24 @@
   .spell-card-select,
   .spell-card-toggle {
     transition: none;
+  }
+}
+
+.spell-quick-fact {
+  min-width: 0;
+}
+
+.spell-quick-fact dd {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+@media (min-width: 700px) and (max-width: 1079px) {
+  .spell-quick-fact {
+    padding: 0.5rem 0.55rem;
+  }
+
+  .spell-quick-fact dd {
+    font-size: 0.74rem;
   }
 }
