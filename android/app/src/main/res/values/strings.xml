@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Аурелия</string>
+    <string name="title_activity_main">Аурелия</string>
+    <string name="package_name">local.aurelia.charactersheet</string>
+    <string name="custom_url_scheme">local.aurelia.charactersheet</string>
+</resources>
