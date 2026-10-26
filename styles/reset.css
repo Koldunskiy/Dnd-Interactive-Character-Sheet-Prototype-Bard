@@ -19,7 +19,7 @@ body {
     radial-gradient(circle at 82% 8%, rgba(214, 174, 96, 0.08), transparent 16%),
     radial-gradient(circle at 18% 22%, rgba(92, 20, 32, 0.2), transparent 22%),
     linear-gradient(180deg, #140a0d 0%, #090607 42%, #050304 100%);
-  background-attachment: fixed;
+  background-attachment: scroll;
 }
 
 img,

@@ -678,3 +678,220 @@
   width: 100%;
   max-width: none;
 }
+
+.profile-responsive-disclosure > summary {
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.profile-summary-disclosure {
+  width: 100%;
+}
+
+.profile-disclosure-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-feature-summary {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding-block: 6px;
+}
+
+.profile-feature-summary .feature-title {
+  display: block;
+}
+
+.profile-disclosure-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  padding-inline: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+#lorePanel .profile-responsive-disclosure > summary.info-card-title {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.sidebar .sidebar-disclosure-summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.sidebar-disclosure-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+@media (max-width: 899px) {
+  #profilePanel .profile-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #profilePanel .ability-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #profilePanel .profile-hero-main {
+    min-width: 0;
+  }
+
+  #profilePanel .profile-hero-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #profilePanel .hero-stat-label,
+  #profilePanel .ability-skill-name {
+    overflow-wrap: anywhere;
+  }
+
+  .sidebar .sidebar-section--portrait .portrait-toggle-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .sidebar .sidebar-section--portrait .portrait-controls .btn,
+  .sidebar .sidebar-section--portrait .portrait-controls .file-btn {
+    min-height: 44px;
+  }
+
+  #profilePanel .ability-adjust-btn,
+  #profilePanel .save-toggle-btn,
+  #profilePanel .skill-toggle-btn--compact,
+  #profilePanel .feature-toggle-btn,
+  #profilePanel .level-inline-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  #profilePanel .level-inline-btn {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+}
+
+@media (max-width: 560px) {
+  #profilePanel .profile-hero-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  #profilePanel .hero-stat-card {
+    min-height: 96px;
+    padding: 12px;
+  }
+
+  #profilePanel .level-stat-row {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 6px;
+  }
+
+  #profilePanel .level-stat-row__controls {
+    grid-template-rows: repeat(2, 44px);
+    gap: 4px;
+  }
+
+  #profilePanel .ability-card--detailed {
+    grid-template-rows: auto auto;
+    gap: 10px;
+    height: auto;
+  }
+
+  #profilePanel .ability-card-top {
+    grid-template-columns: minmax(124px, 1.1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "head head"
+      "score check"
+      "score save";
+    gap: 8px;
+  }
+
+  #profilePanel .ability-card-head {
+    grid-area: head;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    min-height: 56px;
+  }
+
+  #profilePanel .ability-card-title-block,
+  #profilePanel .ability-card-mod-block {
+    min-height: 56px;
+  }
+
+  #profilePanel .ability-card-mod-block {
+    justify-items: end;
+    align-content: center;
+    text-align: right;
+  }
+
+  #profilePanel .ability-card-mod {
+    min-width: 48px;
+    min-height: 48px;
+    padding: 8px;
+    font-size: 1.15rem;
+  }
+
+  #profilePanel .ability-card-summary-row {
+    grid-area: score;
+    align-self: stretch;
+  }
+
+  #profilePanel .ability-card-score-inline {
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    width: 100%;
+    padding: 6px;
+  }
+
+  #profilePanel .ability-adjust-btn {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+  }
+
+  #profilePanel .ability-card-score {
+    min-height: 44px;
+    padding: 4px;
+  }
+
+  #profilePanel .ability-card-top > .ability-card-stat-inline:not(.ability-card-stat-inline--save) {
+    grid-area: check;
+  }
+
+  #profilePanel .ability-card-top > .ability-card-stat-inline--save {
+    grid-area: save;
+  }
+
+  #profilePanel .ability-card-stat-inline {
+    min-height: 60px;
+    padding: 6px;
+  }
+
+  #profilePanel .ability-card-skills {
+    align-self: start;
+  }
+
+  #profilePanel .ability-card-skills-inner {
+    height: auto;
+  }
+}

@@ -137,14 +137,44 @@ function handleInventoryAddItem(draft) {
   });
 }
 
-function handleInventoryRemoveItem(draft, target) {
-  const itemId = target.dataset.itemId;
-  const inventory = ensureInventoryState(draft);
+function requestConfirmation(message) {
+  const browserWindow = globalThis.window;
+  if (!browserWindow || typeof browserWindow.confirm !== "function") {
+    throw new Error("Confirmation dialog is unavailable; the operation was cancelled.");
+  }
 
-  inventory.items = inventory.items.filter((item) => item.id !== itemId);
+  return Boolean(browserWindow.confirm(message));
+}
+
+function handleInventoryRemoveItem(draft, target) {
+  const itemId = String(target.dataset.itemId ?? "");
+  const items = draft.inventory?.items;
+
+  if (!itemId || !Array.isArray(items)) {
+    return;
+  }
+
+  const itemIndex = items.findIndex((item) => String(item.id ?? "") === itemId);
+  if (itemIndex < 0) {
+    return;
+  }
+
+  const item = items[itemIndex];
+  const itemName = String(item.name ?? "").trim() || "без названия";
+  if (!requestConfirmation(`Удалить «${itemName}» из инвентаря?`)) {
+    return;
+  }
+
+  items.splice(itemIndex, 1);
 }
 
 function handleLongRest(draft) {
+  if (!requestConfirmation(
+    "Долгий отдых установит хиты на максимум; сбросит временные хиты, концентрацию, эффекты и отметки хода (номер хода станет 1); восстановит ячейки, вдохновение и заряды заклинаний с собственным счётчиком. Продолжить?",
+  )) {
+    return;
+  }
+
   const combat = ensureCombatState(draft);
   const turn = ensureTurnState(draft);
   const spellcasting = ensureSpellcastingState(draft);
@@ -186,6 +216,12 @@ function handleResetRuntime(resetState) {
 }
 
 function handleShortRest(draft) {
+  if (!requestConfirmation(
+    "Короткий отдых вернёт действие, бонусное действие и реакцию; сбросит временные хиты и концентрацию; удалит эффекты до короткого отдыха. Продолжить?",
+  )) {
+    return;
+  }
+
   const combat = ensureCombatState(draft);
   const turn = ensureTurnState(draft);
   const effects = ensureEffectsState(draft);

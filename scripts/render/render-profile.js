@@ -49,6 +49,48 @@ const SKILL_TO_ABILITY = {
   persuasion: "cha",
 };
 
+let profileDisclosureMediaQuery = null;
+let profileDisclosuresInitialized = false;
+
+function getProfileDisclosureState() {
+  return new Map(
+    [...document.querySelectorAll("details[data-profile-disclosure]")].map(
+      (details) => [details.dataset.profileDisclosure, details.open],
+    ),
+  );
+}
+
+function applyProfileDisclosureState(previousState) {
+  if (!profileDisclosureMediaQuery) {
+    profileDisclosureMediaQuery = window.matchMedia("(max-width: 899px)");
+    const updateForViewport = (event) => {
+      document
+        .querySelectorAll("details[data-profile-disclosure]")
+        .forEach((details) => {
+          details.open = !event.matches;
+        });
+    };
+
+    if (typeof profileDisclosureMediaQuery.addEventListener === "function") {
+      profileDisclosureMediaQuery.addEventListener("change", updateForViewport);
+    } else {
+      profileDisclosureMediaQuery.addListener(updateForViewport);
+    }
+  }
+
+  const useDefaults = !profileDisclosuresInitialized;
+  document
+    .querySelectorAll("details[data-profile-disclosure]")
+    .forEach((details) => {
+      const key = details.dataset.profileDisclosure;
+      details.open =
+        !useDefaults && previousState.has(key)
+          ? previousState.get(key)
+          : !profileDisclosureMediaQuery.matches;
+    });
+  profileDisclosuresInitialized = true;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -269,7 +311,15 @@ function renderAbilityCard(card) {
         </div>
       </div>
 
-      <div class="ability-card-skills">
+      <details
+        class="ability-card-skills profile-responsive-disclosure"
+        data-profile-disclosure="ability-skills-${escapeHtml(card.id)}"
+        open
+      >
+        <summary class="profile-disclosure-summary">
+          Связанные навыки
+          <span class="profile-disclosure-count">${card.linkedSkills.length}</span>
+        </summary>
         <div class="ability-card-skills-inner">
           ${
             card.linkedSkills.length
@@ -277,7 +327,7 @@ function renderAbilityCard(card) {
               : `<p class="empty-copy ability-card-empty">Нет связанных навыков.</p>`
           }
         </div>
-      </div>
+      </details>
     </article>
   `;
 }
@@ -392,11 +442,17 @@ function renderRaceDetails(raceDetails) {
             <div class="feature-list">
               ${uniqueTraits
                 .map(
-                  (trait) => `
-                    <article class="feature-card">
-                      <h3 class="feature-title">${escapeHtml(trait.name)}</h3>
+                  (trait, index) => `
+                    <details
+                      class="feature-card profile-responsive-disclosure"
+                      data-profile-disclosure="race-trait-${index}"
+                      open
+                    >
+                      <summary class="profile-disclosure-summary profile-feature-summary">
+                        <span class="feature-title" role="heading" aria-level="3">${escapeHtml(trait.name)}</span>
+                      </summary>
                       <p class="feature-text">${escapeHtml(trait.text)}</p>
-                    </article>
+                    </details>
                   `,
                 )
                 .join("")}
@@ -432,10 +488,16 @@ function renderBackgroundDetails(backgroundDetails) {
         ${
           backgroundDetails.feature
             ? `
-              <p class="feature-text">
-                <strong>${escapeHtml(backgroundDetails.feature.name)}:</strong>
-                ${escapeHtml(backgroundDetails.feature.text)}
-              </p>
+              <details
+                class="profile-text-disclosure profile-responsive-disclosure"
+                data-profile-disclosure="background-feature"
+                open
+              >
+                <summary class="profile-disclosure-summary">
+                  <span class="feature-title" role="heading" aria-level="3">${escapeHtml(backgroundDetails.feature.name)}</span>
+                </summary>
+                <p class="feature-text">${escapeHtml(backgroundDetails.feature.text)}</p>
+              </details>
             `
             : ""
         }
@@ -445,28 +507,58 @@ function renderBackgroundDetails(backgroundDetails) {
         backgroundDetails.persona
           ? `
             <div class="feature-list">
-              <article class="feature-card">
-                <h3 class="feature-title">Амплуа</h3>
+              <details
+                class="feature-card profile-responsive-disclosure"
+                data-profile-disclosure="background-persona-routine"
+                open
+              >
+                <summary class="profile-disclosure-summary profile-feature-summary">
+                  <span class="feature-title" role="heading" aria-level="3">Амплуа</span>
+                </summary>
                 <p class="feature-text">${escapeHtml(
                   (backgroundDetails.persona.routine ?? []).join(", ") || "—",
                 )}</p>
-              </article>
-              <article class="feature-card">
-                <h3 class="feature-title">Черта</h3>
+              </details>
+              <details
+                class="feature-card profile-responsive-disclosure"
+                data-profile-disclosure="background-persona-trait"
+                open
+              >
+                <summary class="profile-disclosure-summary profile-feature-summary">
+                  <span class="feature-title" role="heading" aria-level="3">Черта</span>
+                </summary>
                 <p class="feature-text">${escapeHtml(backgroundDetails.persona.trait ?? "—")}</p>
-              </article>
-              <article class="feature-card">
-                <h3 class="feature-title">Идеал</h3>
+              </details>
+              <details
+                class="feature-card profile-responsive-disclosure"
+                data-profile-disclosure="background-persona-ideal"
+                open
+              >
+                <summary class="profile-disclosure-summary profile-feature-summary">
+                  <span class="feature-title" role="heading" aria-level="3">Идеал</span>
+                </summary>
                 <p class="feature-text">${escapeHtml(backgroundDetails.persona.ideal ?? "—")}</p>
-              </article>
-              <article class="feature-card">
-                <h3 class="feature-title">Привязанность</h3>
+              </details>
+              <details
+                class="feature-card profile-responsive-disclosure"
+                data-profile-disclosure="background-persona-bond"
+                open
+              >
+                <summary class="profile-disclosure-summary profile-feature-summary">
+                  <span class="feature-title" role="heading" aria-level="3">Привязанность</span>
+                </summary>
                 <p class="feature-text">${escapeHtml(backgroundDetails.persona.bond ?? "—")}</p>
-              </article>
-              <article class="feature-card">
-                <h3 class="feature-title">Слабость</h3>
+              </details>
+              <details
+                class="feature-card profile-responsive-disclosure"
+                data-profile-disclosure="background-persona-flaw"
+                open
+              >
+                <summary class="profile-disclosure-summary profile-feature-summary">
+                  <span class="feature-title" role="heading" aria-level="3">Слабость</span>
+                </summary>
                 <p class="feature-text">${escapeHtml(backgroundDetails.persona.flaw ?? "—")}</p>
-              </article>
+              </details>
             </div>
           `
           : ""
@@ -512,16 +604,22 @@ function renderClassFeatures(features, character) {
       <div class="feature-list">
         ${features
           .map(
-            (feature) => `
-              <article class="feature-card">
-                <div class="feature-topline">
-                  <span class="feature-badge">${escapeHtml(feature.category ?? "Черта")}</span>
-                  <span class="feature-level">Уровень ${escapeHtml(feature.level ?? "—")}</span>
-                </div>
-                <h3 class="feature-title">${escapeHtml(feature.name)}</h3>
-                <p class="feature-text">${escapeHtml(feature.text)}</p>
-                ${renderFeatureRulesToggle(feature, character)}
-              </article>
+            (feature, index) => `
+                <details
+                  class="feature-card profile-responsive-disclosure"
+                  data-profile-disclosure="class-feature-${index}"
+                  open
+                >
+                  <summary class="profile-disclosure-summary profile-feature-summary">
+                    <span class="feature-topline">
+                      <span class="feature-badge">${escapeHtml(feature.category ?? "Черта")}</span>
+                      <span class="feature-level">Уровень ${escapeHtml(feature.level ?? "—")}</span>
+                    </span>
+                    <span class="feature-title" role="heading" aria-level="3">${escapeHtml(feature.name)}</span>
+                  </summary>
+                  <p class="feature-text">${escapeHtml(feature.text)}</p>
+                  ${renderFeatureRulesToggle(feature, character)}
+                </details>
             `,
           )
           .join("")}
@@ -582,6 +680,7 @@ function renderHeroStat(label, value) {
 export function renderProfile(root, character, derived) {
   if (!root) return;
 
+  const disclosureState = getProfileDisclosureState();
   const profile = character.profile ?? {};
   const abilityCards = getAbilityCardsData(character, derived);
 
@@ -616,7 +715,20 @@ export function renderProfile(root, character, derived) {
             ${profile.alignment ? renderTag(profile.alignment) : ""}
           </div>
 
-          ${profile.summary ? `<p class="profile-summary">${escapeHtml(profile.summary)}</p>` : ""}
+          ${
+            profile.summary
+              ? `
+                <details
+                  class="profile-summary-disclosure profile-responsive-disclosure"
+                  data-profile-disclosure="hero-summary"
+                  open
+                >
+                  <summary class="profile-disclosure-summary">Описание персонажа</summary>
+                  <p class="profile-summary">${escapeHtml(profile.summary)}</p>
+                </details>
+              `
+              : ""
+          }
 
           <div class="profile-hero-stats">
             ${heroStats.join("")}
@@ -638,4 +750,6 @@ export function renderProfile(root, character, derived) {
     ${renderBackgroundDetails(character.backgroundDetails)}
     ${renderClassFeatures(character.classFeatures, character)}
   `;
+
+  applyProfileDisclosureState(disclosureState);
 }

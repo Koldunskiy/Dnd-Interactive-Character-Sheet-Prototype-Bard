@@ -20,7 +20,7 @@ function renderItemMetaRow(label, value) {
   `;
 }
 
-function renderItemResource(label, resource) {
+function formatItemResource(resource) {
   if (!resource || resource.max == null) {
     return "";
   }
@@ -29,7 +29,11 @@ function renderItemResource(label, resource) {
   const max = Number(resource.max ?? 0);
   const refresh = resource.refresh ? ` · ${resource.refresh}` : "";
 
-  return renderItemMetaRow(label, `${current}/${max}${refresh}`);
+  return `${current}/${max}${refresh}`;
+}
+
+function renderItemResource(label, resource) {
+  return renderItemMetaRow(label, formatItemResource(resource));
 }
 
 function renderWeaponSummary(item) {
@@ -73,11 +77,12 @@ function renderFocusSummary(item) {
   }
 
   const classes = Array.isArray(item.focus.classes) ? item.focus.classes.join(", ") : "";
+  const notes = item.focus.notes ? `<br>${escapeHtml(item.focus.notes)}` : "";
 
   return `
     <div class="info-card-text">
       Фокусировка для: <strong>${escapeHtml(classes || "—")}</strong><br>
-      ${item.focus.notes ? escapeHtml(item.focus.notes) : ""}
+      ${notes}
     </div>
   `;
 }
@@ -95,6 +100,16 @@ function renderConsumableSummary(item) {
   `;
 }
 
+function getItemNoteRows(note) {
+  const lines = String(note ?? "").split(/\r?\n/);
+  const estimatedRows = lines.reduce(
+    (total, line) => total + Math.max(1, Math.ceil(line.length / 18)),
+    0,
+  );
+
+  return Math.max(3, estimatedRows);
+}
+
 function renderItemDetails(item) {
   return [
     renderWeaponSummary(item),
@@ -106,49 +121,40 @@ function renderItemDetails(item) {
     .join("");
 }
 
+function renderItemSummary(item) {
+  const summaryParts = [
+    `Количество: ${item.quantity ?? 1}`,
+    typeof item.equipped === "boolean"
+      ? item.equipped
+        ? "Используется"
+        : "Не используется"
+      : null,
+    formatItemResource(item.uses)
+      ? `Применения: ${formatItemResource(item.uses)}`
+      : null,
+    formatItemResource(item.charges)
+      ? `Заряды: ${formatItemResource(item.charges)}`
+      : null,
+  ].filter(Boolean);
+
+  return summaryParts.map(escapeHtml).join(" · ");
+}
+
 function renderInventoryItemCard(item, expandedItemIds = []) {
   const itemId = String(item.id ?? "");
   const isExpanded = expandedItemIds.includes(itemId);
   const contentId = `inventory-item-content-${escapeHtml(itemId)}`;
   const toggleLabel = isExpanded ? "Свернуть" : "Подробнее";
 
-  const summaryParts = [
-    item.type ? `Тип: ${item.type}` : null,
-    item.equipped ? "Используется" : null,
-    Number(item.quantity ?? 1) > 1 ? `Кол-во: ${item.quantity}` : null,
-  ].filter(Boolean);
-
   return `
     <article class="inventory-item-card ${isExpanded ? "inventory-item-card--expanded" : "inventory-item-card--collapsed"}" data-item-id="${escapeHtml(itemId)}">
       <div class="inventory-item-main">
         <div class="inventory-item-main__title-wrap">
-          <input
-            class="inventory-input inventory-input--name"
-            type="text"
-            value="${escapeHtml(item.name)}"
-            data-bind-item-field="name"
-            data-item-id="${escapeHtml(itemId)}"
-            placeholder="Название предмета"
-          />
-          ${
-            summaryParts.length
-              ? `<div class="inventory-item-summary">${escapeHtml(summaryParts.join(" · "))}</div>`
-              : ""
-          }
+          <div class="inventory-item-title">${escapeHtml(item.name)}</div>
+          <div class="inventory-item-summary">${renderItemSummary(item)}</div>
         </div>
 
         <div class="inventory-item-main__controls">
-          <input
-            class="inventory-input inventory-input--qty"
-            type="number"
-            min="0"
-            step="1"
-            value="${escapeHtml(item.quantity ?? 1)}"
-            data-bind-item-field="quantity"
-            data-item-id="${escapeHtml(itemId)}"
-            placeholder="Кол-во"
-          />
-
           <label class="inventory-equip-toggle">
             <input
               type="checkbox"
@@ -177,26 +183,64 @@ function renderInventoryItemCard(item, expandedItemIds = []) {
         class="inventory-item-expandable"
         ${isExpanded ? "" : "hidden"}
       >
-        ${renderItemMetaRow("Тип", item.type ?? "misc")}
-        ${renderItemMetaRow("Стакуемый", item.stackable ? "Да" : "Нет")}
-        ${renderItemMetaRow(
-          "Теги",
-          Array.isArray(item.tags) && item.tags.length ? item.tags.join(", ") : "—",
-        )}
-        ${renderItemResource("Использования", item.uses)}
-        ${renderItemResource("Заряды", item.charges)}
+        <section class="inventory-item-details" aria-label="Подробности предмета">
+          ${renderItemMetaRow("Тип", item.type ?? "misc")}
+          ${renderItemMetaRow("Стакуемый", item.stackable ? "Да" : "Нет")}
+          ${renderItemMetaRow(
+            "Теги",
+            Array.isArray(item.tags) && item.tags.length ? item.tags.join(", ") : "—",
+          )}
+          ${renderItemResource("Использования", item.uses)}
+          ${renderItemResource("Заряды", item.charges)}
 
-        ${renderItemDetails(item)}
+          ${renderItemDetails(item)}
+        </section>
 
-        <textarea
-          class="inventory-textarea"
-          rows="2"
-          data-bind-item-field="notes"
-          data-item-id="${escapeHtml(itemId)}"
-          placeholder="Заметка по предмету"
-        >${escapeHtml(item.notes || "")}</textarea>
+        <section class="inventory-item-edit" aria-label="Редактирование предмета">
+          <h4 class="inventory-item-edit__title">Редактирование</h4>
+          <p class="inventory-item-edit__note">Изменения сохраняются сразу.</p>
 
-        <div class="resource-controls">
+          <div class="inventory-item-edit__fields">
+            <label class="inventory-edit-field inventory-edit-field--name">
+              <span>Название</span>
+              <input
+                class="inventory-input inventory-input--name"
+                type="text"
+                value="${escapeHtml(item.name)}"
+                data-bind-item-field="name"
+                data-item-id="${escapeHtml(itemId)}"
+                placeholder="Название предмета"
+              />
+            </label>
+
+            <label class="inventory-edit-field inventory-edit-field--quantity">
+              <span>Количество</span>
+              <input
+                class="inventory-input inventory-input--qty"
+                type="number"
+                min="0"
+                step="1"
+                value="${escapeHtml(item.quantity ?? 1)}"
+                data-bind-item-field="quantity"
+                data-item-id="${escapeHtml(itemId)}"
+                placeholder="Кол-во"
+              />
+            </label>
+
+            <label class="inventory-edit-field inventory-edit-field--notes">
+              <span>Заметки</span>
+              <textarea
+                class="inventory-textarea"
+                rows="${getItemNoteRows(item.notes)}"
+                data-bind-item-field="notes"
+                data-item-id="${escapeHtml(itemId)}"
+                placeholder="Заметка по предмету"
+              >${escapeHtml(item.notes || "")}</textarea>
+            </label>
+          </div>
+        </section>
+
+        <div class="resource-controls inventory-item-actions">
           <button
             type="button"
             class="btn btn--utility"
@@ -234,7 +278,7 @@ export function renderInventoryPanel(state) {
       Инвентарь хранит снаряжение, валюту и служит источником правды для оружия, брони, фокусов и расходников.
     </p>
 
-    <div style="height: 18px;"></div>
+    <div class="inventory-section-gap" aria-hidden="true"></div>
 
     <div class="cards-grid">
       <div class="info-card">
@@ -313,7 +357,7 @@ export function renderInventoryPanel(state) {
       </div>
     </div>
 
-    <div style="height: 18px;"></div>
+    <div class="inventory-section-gap" aria-hidden="true"></div>
 
     <div class="inventory-header-row">
       <h3>Снаряжение</h3>

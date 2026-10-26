@@ -8,7 +8,6 @@ import {
   renderSpellSummaryLine,
   renderSpellCombatStats,
   getSpellGeometryFactItem,
-  renderSpellQuickFacts,
 } from "./shared/spell-card.js";
 import { SPELL_LIBRARY } from "../../data/spell-library.js";
 import {
@@ -56,44 +55,6 @@ function getSpellFactItems(spell) {
 }
 
 
-function renderLibraryBadges(spell, state) {
-  const badges = [
-    `<span class="spell-badge spell-badge--level">${escapeHtml(
-      Number(spell.level) === 0 ? "Заговор" : `${spell.level} круг`,
-    )}</span>`,
-  ];
-
-
-  if (state.isGranted) {
-    badges.push(`<span class="spell-badge spell-badge--granted">Даровано</span>`);
-  } else if (state.isSelected) {
-    badges.push(`<span class="spell-badge spell-badge--selected">Выбрано</span>`);
-  }
-
-
-  if (spell.ritual) {
-    badges.push(`<span class="spell-badge">Ритуал</span>`);
-  }
-
-
-  if (spell.concentration) {
-    badges.push(`<span class="spell-badge">Концентрация</span>`);
-  }
-
-
-  if (!state.isAvailable) {
-    badges.push(
-      `<span class="spell-badge spell-badge--locked">С ${escapeHtml(
-        `${spell.availableFromLevel} уровня`,
-      )}</span>`,
-    );
-  }
-
-
-  return badges;
-}
-
-
 function getSpellSelectionState(character, spell) {
   const level = character?.profile?.level ?? 1;
   const granted = isGrantedSpell(character, spell.id);
@@ -114,34 +75,23 @@ function getSpellSelectionState(character, spell) {
 
 
 function renderSelectionStatus(spell, state) {
-  if (!state.isAvailable) {
-    return `<span class="spell-library-status spell-library-status--locked">Недоступно до ${escapeHtml(
-      `${spell.availableFromLevel} уровня`,
-    )}</span>`;
-  }
+  const statuses = [];
 
+  if (!state.isAvailable) {
+    statuses.push(
+      `<span class="spell-library-status spell-library-status--locked">Недоступно до ${escapeHtml(
+        `${spell.availableFromLevel} уровня`,
+      )}</span>`,
+    );
+  }
 
   if (state.isGranted) {
-    return `<span class="spell-library-status spell-library-status--granted">Получено от происхождения, наследия или особенности</span>`;
+    statuses.push(
+      `<span class="spell-library-status spell-library-status--granted">Получено от происхождения, наследия или особенности</span>`,
+    );
   }
 
-
-  if (state.isCantrip && state.isSelected) {
-    return `<span class="spell-library-status spell-library-status--selected">Выбран как заговор</span>`;
-  }
-
-
-  if (state.isPrepared && state.isSelected) {
-    return `<span class="spell-library-status spell-library-status--selected">Подготовлено</span>`;
-  }
-
-
-  if (state.isCantrip) {
-    return `<span class="spell-library-status">Доступен для выбора как заговор</span>`;
-  }
-
-
-  return `<span class="spell-library-status">Доступно для подготовки</span>`;
+  return statuses.join("");
 }
 
 
@@ -158,10 +108,10 @@ function renderSelectionAction(spell, state) {
 
   const buttonLabel = state.isCantrip
     ? state.isSelected
-      ? "Убрать заговор"
+      ? "Заговор выбран"
       : "Выбрать заговор"
     : state.isSelected
-      ? "Убрать из подготовленных"
+      ? "Подготовлено"
       : "Подготовить";
 
 
@@ -181,37 +131,73 @@ function renderSelectionAction(spell, state) {
   `;
 }
 
+function renderLibraryCompactMeta(spell, state) {
+  const facts = [
+    {
+      label: "Время",
+      value: spell.castTime ?? spell.castingTime,
+    },
+    {
+      label: "Дистанция",
+      value: getSpellGeometryFactItem(spell)?.value ?? spell.range,
+    },
+  ].filter((fact) => fact.value);
+
+  const items = [
+    `<span class="spell-library-compact-meta__item">${escapeHtml(
+      Number(spell.level) === 0 ? "Заговор" : `${spell.level} круг`,
+    )}</span>`,
+    ...facts.map(
+      (fact) => `
+        <span class="spell-library-compact-meta__item">
+          <strong>${escapeHtml(fact.label)}:</strong>
+          ${escapeHtml(fact.value)}
+        </span>
+      `,
+    ),
+    spell.concentration
+      ? `<span class="spell-library-compact-meta__item">Концентрация</span>`
+      : "",
+    spell.ritual
+      ? `<span class="spell-library-compact-meta__item">Ритуал</span>`
+      : "",
+    renderSelectionStatus(spell, state),
+  ].filter(Boolean);
+
+  return `
+    <div class="spell-library-compact-meta">
+      ${items.join("")}
+    </div>
+  `;
+}
+
 function renderSpellCard(spell, character, expandedSpellIds, spellStats) {
   const state = getSpellSelectionState(character, spell);
   const isExpanded = expandedSpellIds.includes(spell.id);
   const contentId = `spell-library-content-${String(spell.id)}`;
   const toggleLabel = isExpanded ? "Свернуть" : "Подробнее";
-  const badges = renderLibraryBadges(spell, state);
+  const summary = String(spell.summary ?? "").trim();
+  const description = String(spell.description ?? "").trim();
+  const distinctSummary =
+    summary && description && summary !== description
+      ? `
+        <section class="spell-library-summary-details">
+          <h4>Кратко</h4>
+          ${renderTextParagraph("spell-library-summary-details__text", summary)}
+        </section>
+      `
+      : "";
 
   return `
     <article class="spell-card spell-card--library ${isExpanded ? "spell-card--expanded" : "spell-card--collapsed"} ${state.isSelected ? "spell-card--selected" : ""} ${state.isGranted ? "spell-card--granted" : ""}">
       ${renderSpellCardHeader({
         name: spell.name,
         originalName: spell.originalName,
-        badges,
       })}
 
-      <div class="spell-library-card-meta">
-        <span>${escapeHtml(spell.school ?? "Школа не указана")}</span>
-        <span>${escapeHtml(spell.sourceBook ?? "Источник не указан")}</span>
-      </div>
-
-      ${renderSpellQuickFacts(spell)}
-
-      ${renderSpellBody(
-        renderTextParagraph("spell-description", spell.summary),
-      )}
+      ${renderLibraryCompactMeta(spell, state)}
 
       <div class="spell-card-footer">
-        <div class="spell-card-footer-meta">
-          ${renderSelectionStatus(spell, state)}
-        </div>
-
         <div class="spell-card-footer-actions">
           ${renderSelectionAction(spell, state)}
 
@@ -235,6 +221,11 @@ function renderSpellCard(spell, character, expandedSpellIds, spellStats) {
         ${
           isExpanded
             ? `
+              <div class="spell-library-card-meta">
+                <span>${escapeHtml(spell.school ?? "Школа не указана")}</span>
+                <span>${escapeHtml(spell.sourceBook ?? "Источник не указан")}</span>
+              </div>
+              ${distinctSummary}
               ${renderSpellFacts(getSpellFactItems(spell))}
               ${renderSpellCombatStats(spell, spellStats)}
 

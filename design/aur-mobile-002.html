@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AUR-MOBILE-002 — статический мобильный макет</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #10090b;
+      --surface: #211316;
+      --surface-raised: #2b191e;
+      --line: rgba(235, 205, 181, 0.14);
+      --text: #f4ece6;
+      --muted: #c2aca2;
+      --accent: #edc779;
+      --nav-height: 72px;
+      font-family: Inter, system-ui, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 12px;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        radial-gradient(circle at 50% 0, rgba(132, 20, 42, 0.22), transparent 28%),
+        linear-gradient(180deg, #140a0d 0%, #090607 42%, #050304 100%);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .mock {
+      width: min(100%, 440px);
+      min-height: 100vh;
+      margin-inline: auto;
+      padding: 10px 12px calc(var(--nav-height) + 20px);
+      background: rgba(12, 7, 9, 0.4);
+    }
+
+    .mock-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.3;
+    }
+
+    .mock-banner strong {
+      color: var(--accent);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 54px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(38, 20, 24, 0.96);
+    }
+
+    .character-name {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 23px;
+      line-height: 1.05;
+    }
+
+    .character-meta {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.25;
+    }
+
+    .mock-chip,
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 3px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.2;
+    }
+
+    .mock-section {
+      margin-top: 14px;
+      scroll-margin-top: 12px;
+    }
+
+    .section-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 0 2px 8px;
+    }
+
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h2 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 22px;
+      line-height: 1.1;
+    }
+
+    h3 {
+      font-size: 15px;
+      line-height: 1.25;
+    }
+
+    .section-note,
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .status {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(33, 19, 22, 0.9);
+    }
+
+    .status-item {
+      display: grid;
+      align-content: center;
+      gap: 3px;
+      min-width: 0;
+      min-height: 64px;
+      padding: 8px;
+      border-right: 1px solid var(--line);
+    }
+
+    .status-item:last-child {
+      border-right: 0;
+    }
+
+    .status-label {
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.2;
+    }
+
+    .status-value {
+      font-size: 17px;
+      font-weight: 750;
+      line-height: 1.1;
+      white-space: nowrap;
+    }
+
+    .hp-tools {
+      display: grid;
+      grid-template-columns: 78px minmax(0, 1fr);
+      align-items: end;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .field-label {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .field-label input {
+      width: 100%;
+      min-height: 44px;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--text);
+      background: var(--surface);
+      text-align: center;
+    }
+
+    .action-pair {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .mock-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      min-height: 44px;
+      padding: 8px 10px;
+      border: 1px solid rgba(237, 199, 121, 0.35);
+      border-radius: 11px;
+      color: var(--text);
+      background: rgba(237, 199, 121, 0.09);
+      font-size: 13px;
+      font-weight: 650;
+      line-height: 1.2;
+      text-align: center;
+    }
+
+    .resource-line,
+    .resource-summary,
+    .compact-row,
+    .edit-row,
+    .expanded-copy,
+    .reference-block {
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: rgba(33, 19, 22, 0.82);
+    }
+
+    .resource-line {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      padding: 9px 11px;
+    }
+
+    .resource-name {
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .resource-detail {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .pip-row {
+      display: inline-flex;
+      gap: 4px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
+    .pip {
+      width: 8px;
+      height: 8px;
+      border: 1px solid rgba(237, 199, 121, 0.55);
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .resource-summary {
+      margin-top: 8px;
+      padding: 9px 11px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .resource-summary strong {
+      color: var(--text);
+      font-weight: 650;
+    }
+
+    .turn-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .turn-state {
+      display: grid;
+      align-content: center;
+      min-height: 44px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.035);
+      font-size: 11px;
+      line-height: 1.2;
+      text-align: center;
+    }
+
+    .compact-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px 10px;
+      margin-top: 8px;
+      padding: 10px;
+    }
+
+    .row-main {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .row-title {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+
+    .row-meta {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .row-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .compact-row > .row-actions {
+      display: grid;
+      grid-column: 1 / -1;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .row-detail {
+      grid-column: 1 / -1;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .spell-list,
+    .inventory-list {
+      display: grid;
+      gap: 6px;
+    }
+
+    .spell-row,
+    .inventory-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      min-height: 62px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .spell-row:first-child,
+    .inventory-row:first-child {
+      border-top: 1px solid var(--line);
+    }
+
+    .spell-row-main,
+    .inventory-row-main {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .spell-row .row-title,
+    .inventory-row .row-title {
+      font-size: 14px;
+    }
+
+    .spell-row-meta,
+    .inventory-row-meta {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.3;
+    }
+
+    .compact-action {
+      min-width: 44px;
+      min-height: 44px;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.035);
+      font-size: 11px;
+      line-height: 1.2;
+      text-align: center;
+    }
+
+    .expanded-copy {
+      margin-top: 8px;
+      padding: 12px;
+    }
+
+    .expanded-copy .facts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 8px 0;
+    }
+
+    .expanded-copy p {
+      color: #e6d8d1;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .inventory-list {
+      margin-top: 8px;
+    }
+
+    .inventory-row > .row-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .edit-row {
+      display: grid;
+      gap: 10px;
+      margin-top: 8px;
+      padding: 12px;
+    }
+
+    .edit-row-footer {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .edit-row-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .edit-fields {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 76px;
+      gap: 8px;
+    }
+
+    .edit-note {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .reference-block {
+      margin-top: 8px;
+      padding: 12px;
+    }
+
+    .reference-block p {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .tab-nav {
+      position: fixed;
+      z-index: 10;
+      inset-inline: 0;
+      bottom: 0;
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 2px;
+      width: min(100%, 440px);
+      min-height: var(--nav-height);
+      margin-inline: auto;
+      padding: 6px 6px max(6px, env(safe-area-inset-bottom));
+      border: 1px solid var(--line);
+      border-radius: 15px 15px 0 0;
+      background: rgba(13, 8, 10, 0.97);
+      box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.32);
+    }
+
+    .tab-nav a {
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: 2px;
+      min-width: 0;
+      min-height: 44px;
+      border-radius: 10px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.1;
+      text-decoration: none;
+    }
+
+    .tab-nav a:first-child {
+      color: var(--accent);
+      background: rgba(237, 199, 121, 0.1);
+    }
+
+    @media (min-width: 700px) {
+      .mock {
+        padding-top: 18px;
+      }
+
+      .tab-nav {
+        border-radius: 15px 15px 0 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="mock">
+    <div class="mock-banner">
+      <strong>Статический макет</strong>
+      <span>Не подключён к production · игровые действия не работают</span>
+    </div>
+
+    <header class="topbar">
+      <div>
+        <h1 class="character-name">Аурелия</h1>
+        <p class="character-meta">12 уровень · Бард · Коллегия Мечей</p>
+      </div>
+      <span class="mock-chip">Макет UI</span>
+    </header>
+
+    <main>
+      <section class="mock-section" id="battle" aria-labelledby="battle-title">
+        <div class="section-heading">
+          <h2 id="battle-title">Бой</h2>
+          <span class="section-note">Ход 1</span>
+        </div>
+
+        <div class="status" aria-label="Состояние персонажа">
+          <div class="status-item">
+            <span class="status-label">Хиты</span>
+            <strong class="status-value">111/111</strong>
+          </div>
+          <div class="status-item">
+            <span class="status-label">КД</span>
+            <strong class="status-value">18</strong>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Инициатива</span>
+            <strong class="status-value">+6</strong>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Концентрация</span>
+            <strong class="status-value">—</strong>
+          </div>
+        </div>
+
+        <div class="hp-tools">
+          <label class="field-label">
+            Изменение HP
+            <input type="number" value="1" readonly aria-label="Количество хитов, макет">
+          </label>
+          <div class="action-pair" aria-label="Примеры действий, макет">
+            <span class="mock-action">Урон</span>
+            <span class="mock-action">Лечение</span>
+          </div>
+        </div>
+
+        <div class="turn-grid" aria-label="Состояние действий хода">
+          <span class="turn-state">Действие · готово</span>
+          <span class="turn-state">Бонусное · готово</span>
+          <span class="turn-state">Реакция · готова</span>
+        </div>
+
+        <div class="resource-line">
+          <div>
+            <span class="resource-name">Вдохновение</span>
+            <span class="pip-row" aria-hidden="true">
+              <i class="pip"></i><i class="pip"></i><i class="pip"></i><i class="pip"></i><i class="pip"></i>
+            </span>
+          </div>
+          <span class="resource-detail">5/5 · 1d10</span>
+        </div>
+
+        <p class="resource-summary">
+          Ячейки · <strong>1 круг 4/4</strong> · <strong>2 круг 3/3</strong> ·
+          <strong>3 круг 3/3</strong> · <strong>4 круг 3/3</strong> ·
+          <strong>5 круг 2/2</strong> · <strong>6 круг 1/1</strong>
+        </p>
+
+        <article class="compact-row">
+          <div class="row-main">
+            <h3 class="row-title">Солнечный клинок</h3>
+            <p class="row-meta">Атака +10 · урон 1d8+8 · излучение</p>
+          </div>
+          <div class="row-actions" aria-label="Примеры действий, макет">
+            <span class="mock-action">Атаковать</span>
+            <span class="compact-action">Подробнее</span>
+          </div>
+        </article>
+
+        <article class="compact-row">
+          <div class="row-main">
+            <h3 class="row-title">Оборонительный росчерк</h3>
+            <p class="row-meta">Цена: 1 использование Бардского вдохновения</p>
+          </div>
+          <div class="row-actions" aria-label="Примеры действий, макет">
+            <span class="mock-action">Потратить вдохновение</span>
+            <span class="compact-action">Подробнее</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="mock-section" id="spells" aria-labelledby="spells-title">
+        <div class="section-heading">
+          <h2 id="spells-title">Магия</h2>
+          <span class="section-note">Выбранные заклинания</span>
+        </div>
+        <p class="resource-summary">
+          СЛ 17 · атака заклинанием +9 · ячейки (только просмотр):
+          1 круг 4/4 · 2 круг 3/3 · 3 круг 3/3 · 4 круг 3/3 ·
+          5 круг 2/2 · 6 круг 1/1. Изменять ресурс можно только на вкладке «Бой».
+        </p>
+
+        <div class="spell-list" aria-label="Компактный список выбранных заклинаний">
+          <div class="spell-row">
+            <div class="spell-row-main">
+              <h3 class="row-title">Злая насмешка</h3>
+              <p class="spell-row-meta">Заговор · Очарование</p>
+            </div>
+            <span class="compact-action">Подробнее</span>
+          </div>
+          <div class="spell-row">
+            <div class="spell-row-main">
+              <h3 class="row-title">Диссонирующий шёпот</h3>
+              <p class="spell-row-meta">1 круг · Очарование · Подготовлено</p>
+            </div>
+            <span class="compact-action">Подробнее</span>
+          </div>
+          <div class="spell-row">
+            <div class="spell-row-main">
+              <h3 class="row-title">Лечащее слово</h3>
+              <p class="spell-row-meta">1 круг · Воплощение · Подготовлено</p>
+            </div>
+            <span class="compact-action">Подробнее</span>
+          </div>
+          <div class="spell-row">
+            <div class="spell-row-main">
+              <h3 class="row-title">Психическое копьё Раулотима</h3>
+              <p class="spell-row-meta">4 круг · Очарование · Подготовлено</p>
+            </div>
+            <span class="compact-action">Подробнее</span>
+          </div>
+        </div>
+
+        <div class="section-heading" style="margin-top: 14px">
+          <h3>Раскрыто: Диссонирующий шёпот</h3>
+          <span class="badge">1 круг</span>
+        </div>
+        <article class="expanded-copy" aria-label="Полное описание заклинания">
+          <div class="facts">
+            <span class="badge">1 действие</span>
+            <span class="badge">60 футов</span>
+            <span class="badge">Мгновенно</span>
+            <span class="badge">Спасбросок Мудрости</span>
+          </div>
+          <p>
+            Вы шёпотом пропеваете нестройную мелодию, которую слышит только
+            выбранное вами существо в пределах дистанции и которая причиняет ему
+            жуткую боль. Цель должна совершить спасбросок Мудрости. При провале
+            цель получает психический урон 3к6 и должна немедленно реакцией, если
+            она доступна, переместиться прочь от вас настолько далеко, насколько
+            позволяет её скорость. Существо не будет входить в очевидно опасные
+            места, такие как огонь или яма. При успехе цель получает половину
+            урона и не должна отходить. Глухое существо автоматически преуспевает
+            в спасброске.
+          </p>
+          <div class="row-actions" style="margin-top: 10px">
+            <span class="mock-action">Сотворить · 1 круг</span>
+            <span class="compact-action">Свернуть</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="mock-section" id="inventory" aria-labelledby="inventory-title">
+        <div class="section-heading">
+          <h2 id="inventory-title">Вещи</h2>
+          <span class="section-note">Компактный список</span>
+        </div>
+        <div class="inventory-list" aria-label="Реальные предметы Аурелии">
+          <div class="inventory-row">
+            <div class="inventory-row-main">
+              <h3 class="row-title">Солнечный клинок</h3>
+              <p class="inventory-row-meta">Оружие · Надет · 1 шт.</p>
+            </div>
+            <div class="row-actions" aria-label="Макет действий с предметом">
+              <span class="compact-action">Снять</span>
+              <span class="compact-action">Подробнее</span>
+            </div>
+          </div>
+          <div class="inventory-row">
+            <div class="inventory-row-main">
+              <h3 class="row-title">Доспех из змеиной чешуи</h3>
+              <p class="inventory-row-meta">Доспех · Надет · 1 шт.</p>
+            </div>
+            <span class="compact-action">Подробнее</span>
+          </div>
+          <div class="inventory-row">
+            <div class="inventory-row-main">
+              <h3 class="row-title">Костюм артиста</h3>
+              <p class="inventory-row-meta">Одежда · Не надет · 1 шт.</p>
+            </div>
+            <div class="row-actions" aria-label="Макет действий с предметом">
+              <span class="compact-action">Надеть</span>
+              <span class="compact-action">Подробнее</span>
+            </div>
+          </div>
+          <div class="inventory-row">
+            <div class="inventory-row-main">
+              <h3 class="row-title">Зелье лечения</h3>
+              <p class="inventory-row-meta">Расходник · 2 шт.</p>
+            </div>
+            <span class="compact-action">Подробнее</span>
+          </div>
+        </div>
+
+        <div class="section-heading" style="margin-top: 14px">
+          <h3>Состояние редактирования</h3>
+          <span class="badge">Зелье лечения</span>
+        </div>
+        <div class="edit-row">
+          <div class="edit-row-head">
+            <strong>Редактирование предмета</strong>
+            <span class="badge">Не надет</span>
+          </div>
+          <div class="edit-fields">
+            <label class="field-label">
+              Название
+              <input type="text" value="Зелье лечения" readonly>
+            </label>
+            <label class="field-label">
+              Количество
+              <input type="number" value="2" readonly>
+            </label>
+          </div>
+          <p class="edit-note">
+            Макет режима редактирования. В production значения здесь не меняются.
+          </p>
+          <div class="edit-row-footer">
+            <span class="mock-action">Готово</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="mock-section" id="profile" aria-labelledby="profile-title">
+        <div class="section-heading">
+          <h2 id="profile-title">Профиль</h2>
+          <span class="section-note">Справочная вкладка</span>
+        </div>
+        <div class="reference-block">
+          <h3>Портрет и подробности персонажа</h3>
+          <p>
+            Полный портрет, характеристики, наследие, предыстория и классные
+            особенности остаются в профиле, а не повторяются перед каждой вкладкой.
+            Короткий отдых и долгий отдых остаются отдельной явно обозначенной
+            группой профиля, не в боевых быстрых действиях.
+          </p>
+        </div>
+      </section>
+
+      <section class="mock-section" id="lore" aria-labelledby="lore-title">
+        <div class="section-heading">
+          <h2 id="lore-title">Лор</h2>
+          <span class="section-note">Справочная вкладка</span>
+        </div>
+        <div class="reference-block">
+          <h3>Внешний вид · Орден · Цель · Характер</h3>
+          <p>Полный текст сохраняется; раскрытие происходит inline.</p>
+        </div>
+      </section>
+
+      <section class="mock-section" id="library" aria-labelledby="library-title">
+        <div class="section-heading">
+          <h2 id="library-title">Книга</h2>
+          <span class="section-note">Библиотека заклинаний</span>
+        </div>
+        <div class="spell-row">
+          <div class="spell-row-main">
+            <h3 class="row-title">Диссонирующий шёпот</h3>
+            <p class="spell-row-meta">1 круг · Очарование · Player’s Handbook</p>
+          </div>
+          <span class="compact-action">Подробнее</span>
+        </div>
+        <div class="reference-block">
+          <p>Поиск и выбор остаются в библиотеке; отдельная панель или drawer в первый patch не добавляются.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <nav class="tab-nav" aria-label="Макет навигации">
+    <a href="#profile" aria-label="Профиль"><span aria-hidden="true">◈</span><span>Профиль</span></a>
+    <a href="#battle" aria-label="Бой"><span aria-hidden="true">⚔</span><span>Бой</span></a>
+    <a href="#spells" aria-label="Заклинания"><span aria-hidden="true">✦</span><span>Магия</span></a>
+    <a href="#inventory" aria-label="Инвентарь"><span aria-hidden="true">◇</span><span>Вещи</span></a>
+    <a href="#lore" aria-label="Лор"><span aria-hidden="true">▤</span><span>Лор</span></a>
+    <a href="#library" aria-label="Библиотека заклинаний"><span aria-hidden="true">▣</span><span>Книга</span></a>
+  </nav>
+</body>
+</html>

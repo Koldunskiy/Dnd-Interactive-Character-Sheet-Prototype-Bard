@@ -43,15 +43,26 @@
       </div>
 
       <div class="topbar-actions">
-        <button class="btn" type="button" data-action="short-rest">Short Rest</button>
-        <button class="btn" type="button" data-action="long-rest">Long Rest</button>
+        <button class="btn" type="button" data-action="short-rest">Короткий отдых</button>
+        <button class="btn" type="button" data-action="long-rest">Долгий отдых</button>
       </div>
     </header>
 
     <main class="app-layout">
       <aside class="sidebar">
-        <section class="card section">
-          <h2>Портрет</h2>
+        <section class="card section sidebar-section--quick-stats">
+          <h2>Быстрые параметры</h2>
+          <div class="quick-stats" id="quickStats"></div>
+        </section>
+
+        <details
+          class="card section sidebar-section--portrait profile-responsive-disclosure"
+          data-profile-disclosure="sidebar-portrait"
+          open
+        >
+          <summary class="profile-disclosure-summary sidebar-disclosure-summary">
+            <span class="sidebar-disclosure-title" role="heading" aria-level="2">Портрет</span>
+          </summary>
 
           <div class="portrait-stage" id="portraitStage">
             <button class="portrait-toggle-btn" id="togglePortraitMotionBtn" type="button" aria-label="Пауза или запуск анимации">
@@ -73,17 +84,18 @@
           <!-- <div class="hint">
             Можно выбрать локальный PNG, JPG, GIF, MP4 или WebM. После обновления страницы выбранный локальный файл не сохраняется, его нужно будет выбрать заново.
           </div> -->
-        </section>
+        </details>
 
-        <section class="card section">
-          <h2>Быстрые параметры</h2>
-          <div class="quick-stats" id="quickStats"></div>
-        </section>
-
-        <section class="card section">
-          <h2>Кратко</h2>
+        <details
+          class="card section sidebar-section--summary profile-responsive-disclosure"
+          data-profile-disclosure="sidebar-summary"
+          open
+        >
+          <summary class="profile-disclosure-summary sidebar-disclosure-summary">
+            <span class="sidebar-disclosure-title" role="heading" aria-level="2">Кратко</span>
+          </summary>
           <p class="panel-text" id="sidebarSummary"></p>
-        </section>
+        </details>
       </aside>
 
       <section class="content">
@@ -102,6 +114,7 @@
                 <path d="M8.7 16.2c.7-1.8 2-2.7 3.3-2.7s2.6.9 3.3 2.7"></path>
               </svg>
             </span>
+            <span class="tab-btn__label">Профиль</span>
           </button>
 
           <button
@@ -120,6 +133,7 @@
                 <path d="M5 15l4 4"></path>
               </svg>
             </span>
+            <span class="tab-btn__label">Бой</span>
           </button>
 
           <button
@@ -135,6 +149,7 @@
                 <path d="M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9L18 15Z"></path>
               </svg>
             </span>
+            <span class="tab-btn__label">Магия</span>
           </button>
 
           <button
@@ -151,6 +166,7 @@
                 <path d="M10 12h4"></path>
               </svg>
             </span>
+            <span class="tab-btn__label">Вещи</span>
           </button>
 
           <button
@@ -168,6 +184,7 @@
                 <path d="M9 12h4"></path>
               </svg>
             </span>
+            <span class="tab-btn__label">Лор</span>
           </button>
 
           <button
@@ -186,6 +203,7 @@
                 <path d="M9 15.5h3"></path>
               </svg>
             </span>
+            <span class="tab-btn__label">Книга</span>
           </button>
         </nav>
 

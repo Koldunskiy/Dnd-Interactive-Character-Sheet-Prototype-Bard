@@ -1,10 +1,15 @@
 const ACTIVE_TAB_STORAGE_KEY = "aurelia-character-sheet:active-tab";
 
-export function initTabs() {
+export function initTabs(onActivate) {
   const tabButtons = document.querySelectorAll("[data-tab]");
   const tabPanels = document.querySelectorAll("[data-panel]");
+  const appRoot = document.querySelector(".page");
 
-  const activateTab = (tabId) => {
+  if (!(appRoot instanceof HTMLElement)) {
+    throw new Error("Application root was not found");
+  }
+
+  const activateTab = (tabId, notifyActivation = false) => {
     tabButtons.forEach((button) => {
       const isActive = button.dataset.tab === tabId;
       button.classList.toggle("is-active", isActive);
@@ -17,7 +22,12 @@ export function initTabs() {
       panel.hidden = !isActive;
     });
 
+    appRoot.dataset.activeTab = tabId;
     window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, tabId);
+
+    if (notifyActivation && typeof onActivate === "function") {
+      onActivate(tabId);
+    }
   };
 
   const savedTab = window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
@@ -37,7 +47,7 @@ export function initTabs() {
     }
 
     button.addEventListener("click", () => {
-      activateTab(button.dataset.tab);
+      activateTab(button.dataset.tab, true);
     });
 
     button.dataset.bound = "true";

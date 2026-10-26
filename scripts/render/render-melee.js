@@ -394,7 +394,16 @@ function getCombatCardRuntimeId(card, index = 0) {
 }
 
 function renderExpandableCombatCard(
-  { card, title, summary = "", badges = "", details = "", actions = "", index = 0 },
+  {
+    card,
+    title,
+    summary = "",
+    compactMeta = "",
+    badges = "",
+    details = "",
+    actions = "",
+    index = 0,
+  },
   expandedCardIds = [],
 ) {
   const cardId = getCombatCardRuntimeId(card, index);
@@ -409,6 +418,7 @@ function renderExpandableCombatCard(
           <div class="combat-expandable-card__title">${title}</div>
           ${summary ? `<div class="combat-expandable-card__summary">${summary}</div>` : ""}
         </div>
+        ${compactMeta ? `<div class="combat-expandable-card__meta">${compactMeta}</div>` : ""}
         ${badges ? `<div class="combat-expandable-card__badges">${badges}</div>` : ""}
       </div>
 
@@ -431,8 +441,9 @@ function renderExpandableCombatCard(
         class="combat-card-expandable"
         ${isExpanded ? "" : "hidden"}
       >
-        ${isExpanded ? `${details}${actions}` : ""}
+        ${isExpanded ? details : ""}
       </div>
+      ${actions}
     </article>
   `;
 }
@@ -453,6 +464,16 @@ function renderCombatSpellCard(card, expandedCardIds = [], index = 0) {
   }
 
   const geometryItem = getSpellGeometryFactItem(card);
+  const compactFacts = [
+    formatSpellLevel(card.level),
+    card.castTime ? `Накладывание: ${card.castTime}` : "",
+    geometryItem
+      ? `${geometryItem.label}: ${geometryItem.value}`
+      : card.range
+        ? `Дистанция: ${card.range}`
+        : "",
+    card.concentration ? "Концентрация" : "",
+  ].filter(Boolean);
 
   const factItems = [
     card.castTime ? { label: "Накладывание", value: card.castTime } : null,
@@ -473,6 +494,7 @@ function renderCombatSpellCard(card, expandedCardIds = [], index = 0) {
       index,
       title: escapeHtml(card.title || "Заклинание"),
       summary: escapeHtml(card.summary || ""),
+      compactMeta: compactFacts.map(escapeHtml).join(" · "),
       badges: badges.join(""),
       details: `
         ${renderSpellSummaryLine({
@@ -500,16 +522,18 @@ function renderCombatActionCard(card, expandedCardIds = [], index = 0) {
   const actions = renderCardActions(card);
 
   if (card.kind === "weapon") {
+    const damage = String(card.damage || "—").replace(/\s*\+\s*/g, "+");
+
     return renderExpandableCombatCard(
       {
         card,
         index,
         title: escapeHtml(card.title || "Оружие"),
-        summary: `Атака: ${escapeHtml(card.attack || "—")} · Урон: ${escapeHtml(card.damage || "—")}`,
+        summary: `Атака: ${escapeHtml(card.attack || "—")} · Урон: ${escapeHtml(damage)}`,
         details: `
           <div class="info-card-text">
             Атака: <strong>${escapeHtml(card.attack || "—")}</strong><br>
-            Урон: <strong>${escapeHtml(card.damage || "—")}</strong><br>
+            Урон: <strong>${escapeHtml(damage)}</strong><br>
             Тип урона: ${escapeHtml(card.damageType || "—")}<br>
             ${card.notes ? `${escapeHtml(card.notes)}<br>` : ""}
             ${tagsMarkup}

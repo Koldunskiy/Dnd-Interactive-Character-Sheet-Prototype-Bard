@@ -7,21 +7,29 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function renderInfoCard(title, text, fallback = "—") {
+function renderInfoCard(key, title, text, fallback = "—") {
   if (!text && text !== 0) {
     return `
-      <div class="info-card">
-        <div class="info-card-title">${escapeHtml(title)}</div>
+      <details
+        class="info-card profile-responsive-disclosure"
+        data-profile-disclosure="lore-${escapeHtml(key)}"
+        open
+      >
+        <summary class="info-card-title">${escapeHtml(title)}</summary>
         <div class="info-card-text">${escapeHtml(fallback)}</div>
-      </div>
+      </details>
     `;
   }
 
   return `
-    <div class="info-card">
-      <div class="info-card-title">${escapeHtml(title)}</div>
+    <details
+      class="info-card profile-responsive-disclosure"
+      data-profile-disclosure="lore-${escapeHtml(key)}"
+      open
+    >
+      <summary class="info-card-title">${escapeHtml(title)}</summary>
       <div class="info-card-text">${escapeHtml(text)}</div>
-    </div>
+    </details>
   `;
 }
 
@@ -31,27 +39,33 @@ export function renderLorePanel(state) {
     return;
   }
 
+  const disclosureState = new Map(
+    [...lorePanel.querySelectorAll("details[data-profile-disclosure]")].map(
+      (details) => [details.dataset.profileDisclosure, details.open],
+    ),
+  );
+  const compact = window.matchMedia("(max-width: 899px)").matches;
   const lore = state.lore ?? {};
 
   const primaryCards = [
-    renderInfoCard("Внешний вид", lore.appearance),
-    renderInfoCard("Орден", lore.order),
-    renderInfoCard("Цель", lore.motivation),
-    renderInfoCard("Характер", lore.personality),
+    renderInfoCard("appearance", "Внешний вид", lore.appearance),
+    renderInfoCard("order", "Орден", lore.order),
+    renderInfoCard("motivation", "Цель", lore.motivation),
+    renderInfoCard("personality", "Характер", lore.personality),
   ].join("");
 
   const extraCards = [
     lore.racePerspective
-      ? renderInfoCard("Расовая перспектива", lore.racePerspective)
+      ? renderInfoCard("race-perspective", "Расовая перспектива", lore.racePerspective)
       : "",
     lore.performerIdentity
-      ? renderInfoCard("Сценический образ", lore.performerIdentity)
+      ? renderInfoCard("performer-identity", "Сценический образ", lore.performerIdentity)
       : "",
     lore.trauma
-      ? renderInfoCard("Травма", lore.trauma)
+      ? renderInfoCard("trauma", "Травма", lore.trauma)
       : "",
     lore.gmTriggers
-      ? renderInfoCard("Триггеры для мастера", lore.gmTriggers)
+      ? renderInfoCard("gm-triggers", "Триггеры для мастера", lore.gmTriggers)
       : "",
   ]
     .filter(Boolean)
@@ -67,14 +81,27 @@ export function renderLorePanel(state) {
 
     <div style="height: 18px;"></div>
 
-    <div class="info-card">
-      <div class="info-card-title">Заметки</div>
+    <details
+      class="info-card profile-responsive-disclosure"
+      data-profile-disclosure="lore-notes"
+      open
+    >
+      <summary class="info-card-title">Заметки</summary>
       <textarea
         class="lore-notes-textarea"
         rows="10"
         data-bind="lore.notes"
         placeholder="Любые дополнительные заметки: связи, сцены из прошлого, манеры речи, секреты, отношение к союзникам, планы, зацепки для отыгрыша..."
       >${escapeHtml(lore.notes || "")}</textarea>
-    </div>
+    </details>
   `;
+
+  lorePanel
+    .querySelectorAll("details[data-profile-disclosure]")
+    .forEach((details) => {
+      const key = details.dataset.profileDisclosure;
+      details.open = disclosureState.has(key)
+        ? disclosureState.get(key)
+        : !compact;
+    });
 }

@@ -881,3 +881,196 @@
     box-sizing: border-box;
   }
 }
+
+#spellLibraryPanel .spell-library-compact-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 4px;
+  color: rgba(240, 227, 217, 0.78);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+#spellLibraryPanel .spell-library-compact-meta__item {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#spellLibraryPanel .spell-library-compact-meta__item strong {
+  color: rgba(233, 222, 215, 0.56);
+  font-weight: 600;
+}
+
+#spellLibraryPanel .spell-library-summary-details {
+  margin-bottom: 0.8rem;
+}
+
+#spellLibraryPanel .spell-library-summary-details h4 {
+  margin: 0 0 0.35rem;
+  color: rgba(233, 222, 215, 0.72);
+  font-size: 0.82rem;
+}
+
+#spellLibraryPanel .spell-library-summary-details__text {
+  margin: 0;
+}
+
+#spellLibraryPanel .spell-card--library .spell-card-select,
+#spellLibraryPanel .spell-card--library .spell-card-toggle {
+  box-sizing: border-box;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+#spellLibraryPanel .spell-library-toolbar {
+  box-sizing: border-box;
+  contain: inline-size;
+  gap: 0.45rem;
+  margin-bottom: 0.65rem;
+  min-width: 0;
+  width: 100%;
+}
+
+#spellLibraryPanel .spell-library-search .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+#spellLibraryPanel .spell-card--library .spell-badges {
+  display: none;
+}
+
+#spellLibraryPanel .spell-library-filters,
+#spellLibraryPanel .spell-library-selection-filters {
+  box-sizing: border-box;
+  flex-wrap: nowrap;
+  gap: 6px;
+  max-width: 100%;
+  margin-bottom: 0;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 0.1rem 0 0.35rem;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+}
+
+#spellLibraryPanel .spell-filter-chip {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+#spellLibraryPanel .spell-card--library .spell-card-expandable {
+  max-height: none;
+  overflow: visible;
+}
+
+@media (max-width: 899px) {
+  #spellLibraryPanel .section-heading-row {
+    margin-bottom: 0.5rem;
+  }
+
+  #spellLibraryPanel .section-title {
+    margin-bottom: 0.25rem;
+  }
+
+  #spellLibraryPanel .section-subtitle {
+    margin-top: 0;
+  }
+
+  #spellLibraryPanel .spell-library-search {
+    width: 100%;
+    max-width: none;
+  }
+
+  #spellLibraryPanel .spell-library-search input {
+    min-height: 44px;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.92rem;
+  }
+
+  #spellLibraryPanel .spell-grid--library {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  #spellLibraryPanel .spell-card--library {
+    gap: 0;
+    padding: 10px 12px;
+  }
+
+  #spellLibraryPanel .spell-card--library .spell-card-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  #spellLibraryPanel .spell-card--library .spell-card-heading {
+    min-width: 0;
+  }
+
+  #spellLibraryPanel .spell-card--library .spell-card-title {
+    font-size: 1rem;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  #spellLibraryPanel .spell-card--library .spell-badges {
+    justify-content: flex-start;
+  }
+
+  #spellLibraryPanel .spell-card--library > .spell-card-footer {
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 4px;
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  #spellLibraryPanel .spell-card--library .spell-card-footer-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+  }
+
+  #spellLibraryPanel .spell-card--library .spell-card-footer-actions > :only-child {
+    grid-column: 1 / -1;
+  }
+
+  #spellLibraryPanel .spell-card--library .spell-card-select,
+  #spellLibraryPanel .spell-card--library .spell-card-toggle {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0.55rem 0.6rem;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 699px) {
+  #spellLibraryPanel .spell-library-toolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #spellLibraryPanel .spell-library-search,
+  #spellLibraryPanel .spell-library-selection-filters {
+    grid-column: 1 / -1;
+  }
+
+  #spellLibraryPanel .spell-library-filters {
+    min-width: 0;
+  }
+}

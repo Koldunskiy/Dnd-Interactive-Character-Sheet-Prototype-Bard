@@ -68,14 +68,27 @@
 }
 
 .resource-pip {
+  display: grid;
+  flex: 0 0 44px;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  transition: transform 160ms ease;
+}
+
+.resource-pip::before {
+  content: "";
   width: 16px;
   height: 16px;
-  border-radius: 999px;
   border: 1px solid rgba(213, 171, 146, 0.16);
+  border-radius: 999px;
   background: rgba(255, 245, 239, 0.04);
-  cursor: pointer;
   transition:
-    transform 160ms ease,
     background-color 160ms ease,
     border-color 160ms ease,
     box-shadow 160ms ease;
@@ -83,13 +96,21 @@
 
 .resource-pip:hover {
   transform: translateY(-1px);
+}
+
+.resource-pip:hover::before {
   border-color: rgba(214, 174, 96, 0.34);
 }
 
-.resource-pip--active {
+.resource-pip--active::before {
   background: rgba(214, 174, 96, 0.88);
   border-color: rgba(214, 174, 96, 0.98);
   box-shadow: 0 0 0 3px rgba(214, 174, 96, 0.12);
+}
+
+.resource-pip:focus-visible {
+  outline: 2px solid rgba(240, 201, 123, 0.7);
+  outline-offset: 1px;
 }
 
 .resource-card--hp .resource-card-value {
@@ -500,6 +521,10 @@
   gap: 0.35rem;
 }
 
+.combat-expandable-card__meta {
+  display: none;
+}
+
 .combat-card-footer {
   display: flex;
   justify-content: flex-end;
@@ -555,4 +580,110 @@
   margin-top: 0.7rem;
   padding-top: 0.7rem;
   border-top: 1px solid rgba(213, 171, 146, 0.08);
+}
+
+@media (max-width: 899px) {
+  .combat-card-group .combat-expandable-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "header header"
+      "action toggle"
+      "details details";
+    align-content: start;
+    gap: 8px;
+    height: auto;
+    padding: 12px;
+  }
+
+  .combat-card-group .combat-expandable-card__header {
+    grid-area: header;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .combat-card-group .combat-expandable-card__title-wrap {
+    min-width: 0;
+  }
+
+  .combat-card-group .combat-expandable-card__title {
+    overflow-wrap: anywhere;
+  }
+
+  .combat-card-group .combat-expandable-card__summary,
+  .combat-card-group .combat-expandable-card__meta {
+    font-size: 0.82rem;
+    line-height: 1.35;
+  }
+
+  .combat-card-group .combat-expandable-card__meta {
+    display: block;
+    color: var(--muted);
+  }
+
+  .combat-card-group .combat-expandable-card--collapsed .combat-expandable-card__badges {
+    display: none;
+  }
+
+  .combat-card-group .combat-expandable-card--expanded .combat-expandable-card__summary {
+    display: none;
+  }
+
+  .combat-card-group .combat-card-footer,
+  .combat-card-group .combat-card-footer-actions {
+    display: contents;
+  }
+
+  .combat-card-group .combat-card-actions {
+    grid-area: action;
+    display: flex;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .combat-card-group .combat-card-actions .btn--utility {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 8px 10px;
+    font-size: 0.84rem;
+    line-height: 1.2;
+    white-space: normal;
+  }
+
+  .combat-card-group .combat-card-toggle {
+    grid-area: toggle;
+    align-self: stretch;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 8px 10px;
+    font-size: 0.82rem;
+    line-height: 1.15;
+    white-space: normal;
+  }
+
+  .combat-card-group .combat-expandable-card__meta,
+  .combat-card-group .combat-expandable-card__badges {
+    grid-column: 1 / -1;
+  }
+
+  .combat-card-group .combat-expandable-card--expanded .combat-expandable-card__meta {
+    display: none;
+  }
+
+  .combat-card-group .combat-card-expandable {
+    grid-area: details;
+    min-width: 0;
+    margin-top: 0;
+    padding-top: 10px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 899px) {
+  .combat-card-group .cards-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

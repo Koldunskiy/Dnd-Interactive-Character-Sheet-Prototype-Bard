@@ -101,6 +101,40 @@ function renderSpellStats(spell, spellStats = null) {
   return renderSpellFacts(items);
 }
 
+function renderSpellCompactMeta(spell) {
+  const items = [];
+  const castTime = spell.castTime ?? spell.castingTime;
+
+  if (castTime) {
+    items.push(`Время: ${castTime}`);
+  }
+
+  const geometry = getSpellGeometryFactItem(spell);
+  const range = geometry?.value ?? spell.range;
+  if (range) {
+    items.push(`${geometry ? "Дистанция / зона" : "Дистанция"}: ${range}`);
+  }
+
+  if (
+    spell.uses?.current !== null &&
+    spell.uses?.current !== undefined &&
+    spell.uses?.max !== null &&
+    spell.uses?.max !== undefined &&
+    Number(spell.uses.max) > 0
+  ) {
+    items.push(`Применения: ${spell.uses.current}/${spell.uses.max}`);
+  }
+
+  if (!items.length) {
+    return "";
+  }
+
+  return `
+    <div class="spell-card-compact-meta">
+      ${items.map(escapeHtml).join(" · ")}
+    </div>
+  `;
+}
 
 function renderSourceBadge(spell) {
   const source = spell.source ?? "class";
@@ -131,11 +165,13 @@ function buildSpellBadges(spell, options = {}) {
   }
 
   if (spell.ritual) {
-    badges.push(`<span class="spell-badge">Ритуал</span>`);
+    badges.push(`<span class="spell-badge spell-badge--ritual">Ритуал</span>`);
   }
 
   if (spell.concentration) {
-    badges.push(`<span class="spell-badge">Концентрация</span>`);
+    badges.push(
+      `<span class="spell-badge spell-badge--concentration">Концентрация</span>`,
+    );
   }
 
   if (spell.availableFromLevel && options.characterLevel && spell.availableFromLevel > options.characterLevel) {
@@ -173,6 +209,7 @@ function getSpellFactItems(spell) {
 
 function renderSpellCard(spell, spellStats, options = {}) {
   const badges = buildSpellBadges(spell, options);
+  const compactMeta = renderSpellCompactMeta(spell);
   const combatStatsHtml = renderSpellCombatStats(spell, spellStats);
   const expandedSpellIds = Array.isArray(options.expandedSpellIds)
     ? options.expandedSpellIds
@@ -190,6 +227,7 @@ function renderSpellCard(spell, spellStats, options = {}) {
         badges,
       })}
 
+      ${compactMeta}
       ${renderSpellSummaryLine(spell)}
 
       <div class="spell-card-footer">
@@ -214,6 +252,16 @@ function renderSpellCard(spell, spellStats, options = {}) {
         ${
           isExpanded
             ? `
+              ${
+                spell.originalName
+                  ? `<p class="spell-card-original-name">Оригинальное название: ${escapeHtml(spell.originalName)}</p>`
+                  : ""
+              }
+              ${
+                spell.school
+                  ? `<p class="spell-card-school">Школа: ${escapeHtml(spell.school)}</p>`
+                  : ""
+              }
               ${renderSpellFacts(getSpellFactItems(spell))}
               ${renderSpellStats(spell, spellStats)}
               ${combatStatsHtml}

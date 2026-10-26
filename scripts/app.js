@@ -19,6 +19,7 @@ import {
 } from "./state-helpers.js";
 
 const actionHandlers = createActionHandlers({ resetState });
+let spellLibraryDirty = true;
 
 function parseInputValue(input) {
   if (input.type === "number") {
@@ -300,18 +301,40 @@ function bindUi(root = document) {
   bindActionButtons(root);
   bindInventoryFields(root);
   bindEffectFields(root);
-  bindSpellLibraryControls(root);
   bindSpellsControls(root);
   bindMeleeControls(root);
 }
 
+function renderSpellLibraryIfNeeded(state, derived) {
+  const panel = document.getElementById("spellLibraryPanel");
+  const tabPanel = panel?.closest('[data-panel="spell-library"]');
+
+  if (!panel || !tabPanel || tabPanel.hidden) {
+    spellLibraryDirty = true;
+    return;
+  }
+
+  renderSpellLibrary(panel, state, derived);
+  bindSpellLibraryControls(panel);
+  spellLibraryDirty = false;
+}
+
+function handleTabActivation(tabId) {
+  if (tabId !== "spell-library" || !spellLibraryDirty) {
+    return;
+  }
+
+  const state = getState();
+  renderSpellLibraryIfNeeded(state, getDerivedStats(state));
+}
+
 function renderApp() {
+  spellLibraryDirty = true;
   const state = getState();
   const derived = getDerivedStats(state);
 
   const profilePanel = document.getElementById("profilePanel");
   const spellsPanel = document.getElementById("spellsPanel");
-  const spellLibraryPanel = document.getElementById("spellLibraryPanel");
 
   renderHeader(state);
   renderPortraitMedia(state);
@@ -321,7 +344,7 @@ function renderApp() {
   renderProfile(profilePanel, state, derived);
   renderMeleePanel(state, derived);
   renderSpells(spellsPanel, state, derived);
-  renderSpellLibrary(spellLibraryPanel, state, derived);
+  renderSpellLibraryIfNeeded(state, derived);
   renderInventoryPanel(state);
   renderLorePanel(state);
 
@@ -363,7 +386,7 @@ function initTelegramWebApp() {
 
 function initApp() {
   initTelegramWebApp();
-  initTabs();
+  initTabs(handleTabActivation);
   renderApp();
 }
 
