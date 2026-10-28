@@ -188,23 +188,41 @@
 
   #spellsPanel .spell-card {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
     gap: 6px;
     padding: 10px;
   }
 
-  #spellsPanel .spell-card-header {
+  #spellsPanel .spell-card > .spell-card-header,
+  #spellsPanel .spell-card > .spell-card-compact-meta,
+  #spellsPanel .spell-card > .spell-personal-hint,
+  #spellsPanel .spell-card > .spell-card-footer,
+  #spellsPanel .spell-card > .spell-card-expandable {
     grid-column: 1 / -1;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  #spellsPanel .spell-card-header {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;
   }
 
   #spellsPanel .spell-card-compact-meta {
-    grid-column: 1;
-    align-self: center;
-    min-width: 0;
+    max-height: none;
+    height: auto;
+    line-height: 1.3;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  #spellsPanel .spell-personal-hint {
+    max-height: none;
+    height: auto;
+    line-height: 1.3;
+    white-space: normal;
   }
 
   #spellsPanel .spell-card-title,
@@ -264,19 +282,11 @@
   }
 
   #spellsPanel .spell-card-footer {
-    grid-column: 2;
-    align-self: center;
-    justify-self: end;
     justify-content: flex-start;
     gap: 0;
     margin: 0;
     padding: 0;
     border: 0;
-  }
-
-  #spellsPanel .spell-card--expanded .spell-card-footer {
-    grid-column: 1 / -1;
-    justify-self: start;
   }
 
   #spellsPanel .spell-card-footer-actions {
@@ -290,7 +300,6 @@
   }
 
   #spellsPanel .spell-card-expandable {
-    grid-column: 1 / -1;
     margin-top: 0;
     padding-top: 8px;
     max-height: none;
@@ -366,7 +375,7 @@
   #spellsPanel .spell-apply-btn,
   #spellsPanel .spell-card-toggle,
   #spellsPanel .spell-slot-select {
-    min-width: 0;
+    min-width: 44px;
     min-height: 44px;
     white-space: normal;
     overflow-wrap: anywhere;
