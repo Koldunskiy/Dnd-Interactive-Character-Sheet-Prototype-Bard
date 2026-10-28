@@ -1,3 +1,5 @@
+import { migrateLoreNotes } from "./lore-notes.js";
+
 const STORAGE_KEY = "aurelia-character-sheet:v2";
 
 const SKILL_LABELS = {
@@ -158,8 +160,10 @@ export function loadPersistedState() {
 export function savePersistedState(state) {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    return { ok: true };
   } catch (error) {
     console.warn("Не удалось сохранить состояние листа", error);
+    return { ok: false, error };
   }
 }
 
@@ -179,6 +183,11 @@ export function buildInitialState(baseState) {
     if (Array.isArray(baseClone.skills)) {
       baseClone.skills = normalizeSkills(baseClone.skills);
     }
+    const migratedLore = migrateLoreNotes(baseClone.lore);
+    baseClone.lore = migratedLore.lore;
+    if (migratedLore.issue && baseClone.lore && typeof baseClone.lore === "object" && !Array.isArray(baseClone.lore)) {
+      baseClone.lore.notesMigrationIssue = migratedLore.issue;
+    }
     return baseClone;
   }
 
@@ -188,5 +197,11 @@ export function buildInitialState(baseState) {
     merged.skills = normalizeSkills(merged.skills);
   }
 
+  const migratedLore = migrateLoreNotes(merged.lore);
+  merged.lore = migratedLore.lore;
+  if (merged.lore && typeof merged.lore === "object" && !Array.isArray(merged.lore)) {
+    if (migratedLore.issue) merged.lore.notesMigrationIssue = migratedLore.issue;
+    else delete merged.lore.notesMigrationIssue;
+  }
   return merged;
 }

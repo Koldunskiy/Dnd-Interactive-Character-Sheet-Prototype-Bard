@@ -332,7 +332,10 @@
   }
 
   #spellsPanel .panel-section--spells .resource-pip-track {
-    flex-wrap: nowrap;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 4px;
   }
 
@@ -340,5 +343,39 @@
     flex: 0 0 44px;
     width: 44px;
     height: 44px;
+  }
+
+  #spellsPanel .spell-card {
+    min-width: 0;
+  }
+
+  #spellsPanel .spell-card-footer {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    min-width: 0;
+  }
+
+  #spellsPanel .spell-card-footer-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+    width: 100%;
+    min-width: 0;
+    gap: 8px;
+  }
+
+  #spellsPanel .spell-apply-btn,
+  #spellsPanel .spell-card-toggle,
+  #spellsPanel .spell-slot-select {
+    min-width: 0;
+    min-height: 44px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  #spellsPanel .spell-slot-select-label {
+    display: grid;
+    grid-column: 1 / -1;
+    gap: 4px;
+    min-width: 0;
   }
 }

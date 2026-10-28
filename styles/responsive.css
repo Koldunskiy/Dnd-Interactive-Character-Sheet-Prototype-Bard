@@ -1,4 +1,18 @@
 @media (max-width: 899px) {
+  .page[data-active-tab="profile"] .app-layout {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .page[data-active-tab="profile"] .content {
+    order: 1;
+    min-width: 0;
+  }
+
+  .page[data-active-tab="profile"] .sidebar {
+    order: 2;
+  }
+
   .page:not([data-active-tab="profile"]) .sidebar {
     display: none;
   }

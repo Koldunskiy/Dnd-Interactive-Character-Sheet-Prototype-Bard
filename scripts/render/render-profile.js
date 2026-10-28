@@ -1,3 +1,5 @@
+import { getFeatureReference, getRaceTraitReference } from "../rule-reference.js";
+
 const ABILITY_META = {
   strength: { key: "str", short: "STR", label: "Сила" },
   dexterity: { key: "dex", short: "DEX", label: "Ловкость" },
@@ -26,27 +28,6 @@ const SKILL_LABELS = {
   intimidation: "Запугивание",
   performance: "Выступление",
   persuasion: "Убеждение",
-};
-
-const SKILL_TO_ABILITY = {
-  athletics: "str",
-  acrobatics: "dex",
-  sleightOfHand: "dex",
-  stealth: "dex",
-  arcana: "int",
-  history: "int",
-  investigation: "int",
-  nature: "int",
-  religion: "int",
-  animalHandling: "wis",
-  insight: "wis",
-  medicine: "wis",
-  perception: "wis",
-  survival: "wis",
-  deception: "cha",
-  intimidation: "cha",
-  performance: "cha",
-  persuasion: "cha",
 };
 
 let profileDisclosureMediaQuery = null;
@@ -112,27 +93,6 @@ function renderTag(text) {
   return `<span class="profile-tag">${escapeHtml(text)}</span>`;
 }
 
-function renderSkillBadges(skill) {
-  const badges = [];
-
-  if (skill.proficient) badges.push("Владение");
-  if (skill.expertise) badges.push("Компетентность");
-  if (skill.source === "background") badges.push("Предыстория");
-  if (skill.source === "class") badges.push("Класс");
-
-  if (!badges.length) {
-    return "";
-  }
-
-  return `
-    <div class="skill-badges skill-badges--soft">
-      ${badges
-        .map((badge) => `<span class="skill-badge">${escapeHtml(badge)}</span>`)
-        .join("")}
-    </div>
-  `;
-}
-
 function getDerivedSkillMap(derived) {
   if (!derived || typeof derived !== "object") {
     return {};
@@ -148,15 +108,6 @@ function getDerivedSkillMap(derived) {
 }
 
 function getAbilityCardsData(character, derived) {
-  const characterSkills = Array.isArray(character.skills) ? character.skills : [];
-  const derivedSkillMap = getDerivedSkillMap(derived);
-
-  const skillsById = new Map(
-    characterSkills
-      .filter((skill) => skill?.id)
-      .map((skill) => [skill.id, skill]),
-  );
-
   return Object.entries(ABILITY_META).map(([abilityId, meta]) => {
     const score = character.abilities?.[abilityId] ?? null;
     const mod =
@@ -164,28 +115,6 @@ function getAbilityCardsData(character, derived) {
       derived?.abilityMods?.[abilityId] ??
       null;
     const save = derived?.savingThrows?.[abilityId] ?? null;
-
-    const linkedSkills = Object.entries(SKILL_TO_ABILITY)
-      .filter(([, abilityKey]) => abilityKey === meta.key)
-      .map(([skillId]) => {
-        const existingSkill = skillsById.get(skillId);
-        const skillName = SKILL_LABELS[skillId] ?? skillId;
-
-        const derivedValue =
-          derivedSkillMap?.[skillId] ??
-          derivedSkillMap?.[skillName] ??
-          mod;
-
-        return {
-          id: skillId,
-          name: skillName,
-          value: derivedValue,
-          proficient: Boolean(existingSkill?.proficient),
-          expertise: Boolean(existingSkill?.expertise),
-          source: existingSkill?.source ?? null,
-        };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name, "ru"));
 
     return {
       id: abilityId,
@@ -197,54 +126,13 @@ function getAbilityCardsData(character, derived) {
       saveValue: save,
       saveProficient: Boolean(character.savingThrows?.[abilityId]?.proficient),
       editable: Boolean(character.ui?.abilitiesEditable),
-      linkedSkills,
     };
   });
 }
 
-function renderAbilitySkillRow(skill) {
-  return `
-    <div class="ability-skill-row">
-      <div class="ability-skill-main">
-        <span class="ability-skill-name">${escapeHtml(skill.name)}</span>
-
-        <div class="skill-toggle-group" aria-label="Уровень владения навыком ${escapeHtml(skill.name)}">
-          <button
-            type="button"
-            class="skill-toggle-btn skill-toggle-btn--compact ${skill.proficient ? "skill-toggle-btn--active" : ""}"
-            data-action="skill-toggle"
-            data-skill-id="${escapeHtml(skill.id)}"
-            data-toggle="proficient"
-            aria-pressed="${skill.proficient ? "true" : "false"}"
-            aria-label="Владение: ${escapeHtml(skill.name)}"
-            title="Владение"
-          >
-            В
-          </button>
-
-          <button
-            type="button"
-            class="skill-toggle-btn skill-toggle-btn--compact skill-toggle-btn--expertise ${skill.expertise ? "skill-toggle-btn--active" : ""}"
-            data-action="skill-toggle"
-            data-skill-id="${escapeHtml(skill.id)}"
-            data-toggle="expertise"
-            aria-pressed="${skill.expertise ? "true" : "false"}"
-            aria-label="Экспертиза: ${escapeHtml(skill.name)}"
-            title="Экспертиза"
-          >
-            Э
-          </button>
-        </div>
-      </div>
-
-      <span class="ability-skill-value">${escapeHtml(formatSigned(skill.value))}</span>
-    </div>
-  `;
-}
-
 function renderAbilityCard(card) {
   return `
-    <article class="ability-card ability-card--detailed${card.editable ? " stat-card--editable" : ""}">
+    <article class="ability-card profile-ability-card">
       <div class="ability-card-top">
         <div class="ability-card-head">
           <div class="ability-card-title-block">
@@ -253,6 +141,7 @@ function renderAbilityCard(card) {
           </div>
 
           <div class="ability-card-mod-block">
+            <span class="ability-card-mod-label">Модификатор</span>
             <div class="ability-card-mod" aria-label="Модификатор ${escapeHtml(card.label)}">
               ${escapeHtml(formatSigned(card.mod))}
             </div>
@@ -261,31 +150,13 @@ function renderAbilityCard(card) {
 
         <div class="ability-card-summary-row">
           <div class="ability-card-score-inline">
-            <button
-              type="button"
-              class="ability-adjust-btn"
-              data-action="ability-adjust"
-              data-ability-id="${escapeHtml(card.id)}"
-              data-delta="-1"
-              aria-label="Уменьшить ${escapeHtml(card.label)}"
-            >
-              −
-            </button>
+            ${card.editable ? `<button type="button" class="ability-adjust-btn" data-action="ability-adjust" data-ability-id="${escapeHtml(card.id)}" data-delta="-1" aria-label="Уменьшить ${escapeHtml(card.label)}">−</button>` : ""}
 
             <div class="ability-card-score" aria-label="Значение ${escapeHtml(card.label)}">
               ${escapeHtml(card.score)}
             </div>
 
-            <button
-              type="button"
-              class="ability-adjust-btn"
-              data-action="ability-adjust"
-              data-ability-id="${escapeHtml(card.id)}"
-              data-delta="1"
-              aria-label="Увеличить ${escapeHtml(card.label)}"
-            >
-              +
-            </button>
+            ${card.editable ? `<button type="button" class="ability-adjust-btn" data-action="ability-adjust" data-ability-id="${escapeHtml(card.id)}" data-delta="1" aria-label="Увеличить ${escapeHtml(card.label)}">+</button>` : ""}
           </div>
         </div>
 
@@ -297,6 +168,9 @@ function renderAbilityCard(card) {
         <div class="ability-card-stat-inline ability-card-stat-inline--save">
           <span class="ability-card-stat-label">Спасбросок</span>
           <strong class="ability-card-stat-value">${escapeHtml(formatSigned(card.saveValue))}</strong>
+          ${
+            card.editable
+              ? `
           <button
             type="button"
             class="save-toggle-btn ${card.saveProficient ? "save-toggle-btn--active" : ""}"
@@ -308,26 +182,11 @@ function renderAbilityCard(card) {
           >
             В
           </button>
-        </div>
-      </div>
-
-      <details
-        class="ability-card-skills profile-responsive-disclosure"
-        data-profile-disclosure="ability-skills-${escapeHtml(card.id)}"
-        open
-      >
-        <summary class="profile-disclosure-summary">
-          Связанные навыки
-          <span class="profile-disclosure-count">${card.linkedSkills.length}</span>
-        </summary>
-        <div class="ability-card-skills-inner">
-          ${
-            card.linkedSkills.length
-              ? `<div class="ability-skill-list">${card.linkedSkills.map(renderAbilitySkillRow).join("")}</div>`
-              : `<p class="empty-copy ability-card-empty">Нет связанных навыков.</p>`
+              `
+              : `<span class="save-proficiency-indicator">${card.saveProficient ? "Владение" : ""}</span>`
           }
         </div>
-      </details>
+      </div>
     </article>
   `;
 }
@@ -361,15 +220,73 @@ function renderAbilitiesSection(character, derived) {
   return `
     <section class="panel-section">
       <div class="section-heading-row">
-        <div>
-          <h2 class="section-title">Характеристики</h2>
-          <p class="section-subtitle">Базовые значения, спасброски и связанные навыки.</p>
-        </div>
+        <h2 class="section-title">Характеристики</h2>
       </div>
 
-      <div class="ability-grid">
+      <div class="profile-ability-grid">
         ${cards.map(renderAbilityCard).join("")}
       </div>
+    </section>
+  `;
+}
+
+const SKILL_GROUPS = [
+  ["strength", "Сила", ["athletics"]],
+  ["dexterity", "Ловкость", ["acrobatics", "sleightOfHand", "stealth"]],
+  ["intelligence", "Интеллект", ["arcana", "history", "investigation", "nature", "religion"]],
+  ["wisdom", "Мудрость", ["animalHandling", "insight", "medicine", "perception", "survival"]],
+  ["charisma", "Харизма", ["deception", "intimidation", "performance", "persuasion"]],
+];
+
+function renderSkillCard(skillId, character, derived) {
+  const skill = (character.skills ?? []).find((entry) => entry.id === skillId) ?? {};
+  const skillValues = getDerivedSkillMap(derived);
+  const value = skillValues[skillId] ?? skillValues[SKILL_LABELS[skillId]] ?? 0;
+  const editable = Boolean(character.ui?.abilitiesEditable);
+  const status = skill.expertise ? "Экспертность" : skill.proficient ? "Владение" : "";
+  return `
+    <article class="profile-skill-card">
+      <div class="profile-skill-card-main">
+        <span class="profile-skill-name">${escapeHtml(SKILL_LABELS[skillId])}</span>
+        ${status ? `<span class="profile-skill-status">${escapeHtml(status)}</span>` : ""}
+      </div>
+      <strong class="profile-skill-value">${escapeHtml(formatSigned(value))}</strong>
+      ${editable ? `
+        <div class="profile-skill-controls">
+          <button type="button" class="skill-toggle-btn ${skill.proficient ? "skill-toggle-btn--active" : ""}" data-action="skill-toggle" data-skill-id="${escapeHtml(skillId)}" data-toggle="proficient" aria-pressed="${Boolean(skill.proficient)}" aria-label="Владение: ${escapeHtml(SKILL_LABELS[skillId])}">Владение</button>
+          <button type="button" class="skill-toggle-btn ${skill.expertise ? "skill-toggle-btn--active" : ""}" data-action="skill-toggle" data-skill-id="${escapeHtml(skillId)}" data-toggle="expertise" aria-pressed="${Boolean(skill.expertise)}" aria-label="Экспертность: ${escapeHtml(SKILL_LABELS[skillId])}">Экспертность</button>
+        </div>
+      ` : ""}
+    </article>
+  `;
+}
+
+function renderSkillsSection(character, derived) {
+  const skillValues = getDerivedSkillMap(derived);
+  const passiveValue = (id) => 10 + Number(skillValues[id] ?? 0);
+  const editable = Boolean(character.ui?.abilitiesEditable);
+  return `
+    <section class="panel-section profile-skills-panel">
+      <div class="section-heading-row">
+        <div><h2 class="section-title">Навыки</h2><p class="section-subtitle">Все навыки персонажа</p></div>
+        <button type="button" class="btn btn--utility profile-edit-toggle" data-action="toggle-abilities-edit">${editable ? "Готово" : "Изменить"}</button>
+      </div>
+      <div class="profile-skill-groups">
+        ${SKILL_GROUPS.map(([id, label, skillIds]) => `
+          <section class="profile-skill-group" aria-labelledby="skill-group-${id}">
+            <h3 id="skill-group-${id}">${label}</h3>
+            <div class="profile-skill-grid">${skillIds.map((skillId) => renderSkillCard(skillId, character, derived)).join("")}</div>
+          </section>
+        `).join("")}
+      </div>
+      <section class="profile-passives">
+        <h3>Пассивные проверки</h3>
+        <div class="profile-passive-grid">
+          <div><span>Восприятие</span><strong>${passiveValue("perception")}</strong></div>
+          <div><span>Проницательность</span><strong>${passiveValue("insight")}</strong></div>
+          <div><span>Расследование</span><strong>${passiveValue("investigation")}</strong></div>
+        </div>
+      </section>
     </section>
   `;
 }
@@ -377,25 +294,7 @@ function renderAbilitiesSection(character, derived) {
 function renderRaceDetails(raceDetails) {
   if (!raceDetails) return "";
 
-  const summaryTraitNames = new Set();
-
-  if (raceDetails.darkvision?.rangeMeters) {
-    summaryTraitNames.add("Тёмное зрение");
-  }
-
-  if (Array.isArray(raceDetails.resistances) && raceDetails.resistances.length) {
-    summaryTraitNames.add("Адское сопротивление");
-    summaryTraitNames.add("Сопротивление");
-    summaryTraitNames.add("Сопротивления");
-  }
-
-  if (raceDetails.lineage) {
-    summaryTraitNames.add(raceDetails.lineage);
-  }
-
-  const uniqueTraits = (Array.isArray(raceDetails.traits) ? raceDetails.traits : []).filter(
-    (trait) => !summaryTraitNames.has(trait?.name),
-  );
+  const traits = Array.isArray(raceDetails.traits) ? raceDetails.traits : [];
 
   return `
     <section class="panel-section">
@@ -425,7 +324,7 @@ function renderRaceDetails(raceDetails) {
           <div class="info-value">${
             escapeHtml(
               raceDetails.darkvision?.rangeMeters
-                ? `${raceDetails.darkvision.rangeMeters} м`
+                ? `${raceDetails.darkvision.rangeFeet ?? 60} футов / ${raceDetails.darkvision.rangeMeters} м. ${raceDetails.darkvision.notes ?? ""}`
                 : "—",
             )
           }</div>
@@ -437,12 +336,14 @@ function renderRaceDetails(raceDetails) {
       </div>
 
       ${
-        uniqueTraits.length
+        traits.length
           ? `
             <div class="feature-list">
-              ${uniqueTraits
+              ${traits
                 .map(
-                  (trait, index) => `
+                  (trait, index) => {
+                    const reference = getRaceTraitReference(trait);
+                    return `
                     <details
                       class="feature-card profile-responsive-disclosure"
                       data-profile-disclosure="race-trait-${index}"
@@ -451,9 +352,11 @@ function renderRaceDetails(raceDetails) {
                       <summary class="profile-disclosure-summary profile-feature-summary">
                         <span class="feature-title" role="heading" aria-level="3">${escapeHtml(trait.name)}</span>
                       </summary>
-                      <p class="feature-text">${escapeHtml(trait.text)}</p>
+                      <p class="feature-text">${escapeHtml(reference ?? trait.text)}</p>
+                      ${reference && trait.text ? `<details class="profile-text-disclosure"><summary>Текст записи</summary><p class="feature-text">${escapeHtml(trait.text)}</p></details>` : ""}
                     </details>
-                  `,
+                    `;
+                  },
                 )
                 .join("")}
             </div>
@@ -496,7 +399,11 @@ function renderBackgroundDetails(backgroundDetails) {
                 <summary class="profile-disclosure-summary">
                   <span class="feature-title" role="heading" aria-level="3">${escapeHtml(backgroundDetails.feature.name)}</span>
                 </summary>
-                <p class="feature-text">${escapeHtml(backgroundDetails.feature.text)}</p>
+                ${
+                  backgroundDetails.feature.name === "По многочисленным просьбам"
+                    ? `<p class="feature-text">Может найти место для выступления. Если выступает каждый вечер, обычно получает бесплатную скромную или комфортную пищу и ночлег в зависимости от заведения, местную узнаваемость и доброжелательное отношение. Это не гарантирует проверок общения и не создаёт автоматический доход.</p><details class="profile-text-disclosure"><summary>Текст записи</summary><p class="feature-text">${escapeHtml(backgroundDetails.feature.text)}</p></details>`
+                    : `<p class="feature-text">${escapeHtml(backgroundDetails.feature.text)}</p>`
+                }
               </details>
             `
             : ""
@@ -592,8 +499,21 @@ function renderFeatureRulesToggle(feature, character) {
   return "";
 }
 
-function renderClassFeatures(features, character) {
-  if (!Array.isArray(features) || !features.length) return "";
+function renderClassFeatures(features, character, derived) {
+  const projectedFeatures = Array.isArray(features) ? [...features] : [];
+  const level = Number(character.profile?.level ?? 1);
+  if (level >= 6 && !projectedFeatures.some((feature) =>
+    ["Контрчары", "Countercharm"].includes(feature.name),
+  )) {
+    projectedFeatures.push({
+      id: "countercharm-reference",
+      level: 6,
+      category: "Класс",
+      name: "Контрчары",
+      text: "",
+    });
+  }
+  if (!projectedFeatures.length) return "";
 
   return `
     <section class="panel-section">
@@ -602,9 +522,11 @@ function renderClassFeatures(features, character) {
       </div>
 
       <div class="feature-list">
-        ${features
+        ${projectedFeatures
           .map(
-            (feature, index) => `
+            (feature, index) => {
+              const reference = getFeatureReference(feature, character, derived);
+              return `
                 <details
                   class="feature-card profile-responsive-disclosure"
                   data-profile-disclosure="class-feature-${index}"
@@ -617,10 +539,15 @@ function renderClassFeatures(features, character) {
                     </span>
                     <span class="feature-title" role="heading" aria-level="3">${escapeHtml(feature.name)}</span>
                   </summary>
-                  <p class="feature-text">${escapeHtml(feature.text)}</p>
+                  ${
+                    reference
+                      ? `<p class="feature-text"><strong>${escapeHtml(reference.headline)}</strong></p><details class="profile-text-disclosure"><summary>Правило</summary><p class="feature-text">${escapeHtml(reference.details)}</p></details>${feature.text ? `<details class="profile-text-disclosure"><summary>Сохранённый текст записи</summary><p class="feature-text">${escapeHtml(feature.text)}</p></details>` : ""}`
+                      : `<p class="feature-text">${escapeHtml(feature.text)}</p>`
+                  }
                   ${renderFeatureRulesToggle(feature, character)}
                 </details>
-            `,
+              `;
+            },
           )
           .join("")}
       </div>
@@ -682,7 +609,6 @@ export function renderProfile(root, character, derived) {
 
   const disclosureState = getProfileDisclosureState();
   const profile = character.profile ?? {};
-  const abilityCards = getAbilityCardsData(character, derived);
 
   const heroStats = [
     renderLevelControl(profile.level),
@@ -715,21 +641,6 @@ export function renderProfile(root, character, derived) {
             ${profile.alignment ? renderTag(profile.alignment) : ""}
           </div>
 
-          ${
-            profile.summary
-              ? `
-                <details
-                  class="profile-summary-disclosure profile-responsive-disclosure"
-                  data-profile-disclosure="hero-summary"
-                  open
-                >
-                  <summary class="profile-disclosure-summary">Описание персонажа</summary>
-                  <p class="profile-summary">${escapeHtml(profile.summary)}</p>
-                </details>
-              `
-              : ""
-          }
-
           <div class="profile-hero-stats">
             ${heroStats.join("")}
           </div>
@@ -737,18 +648,17 @@ export function renderProfile(root, character, derived) {
       </div>
     </section>
 
-    <section class="panel-section">
-      <div class="section-heading-row">
-        <h2 class="section-title">Характеристики</h2>
-      </div>
-      <div class="ability-grid">
-        ${abilityCards.map(renderAbilityCard).join("")}
-      </div>
-    </section>
+    ${renderAbilitiesSection(character, derived)}
+    ${renderSkillsSection(character, derived)}
+    ${
+      profile.summary
+        ? `<details class="profile-summary-disclosure profile-responsive-disclosure" data-profile-disclosure="hero-summary" open><summary class="profile-disclosure-summary">Описание персонажа</summary><p class="profile-summary">${escapeHtml(profile.summary)}</p></details>`
+        : ""
+    }
 
     ${renderRaceDetails(character.raceDetails)}
     ${renderBackgroundDetails(character.backgroundDetails)}
-    ${renderClassFeatures(character.classFeatures, character)}
+    ${renderClassFeatures(character.classFeatures, character, derived)}
   `;
 
   applyProfileDisclosureState(disclosureState);

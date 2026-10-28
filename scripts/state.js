@@ -8,8 +8,8 @@ import {
 let state = buildInitialState(character);
 const listeners = new Set();
 
-function notify() {
-  listeners.forEach((listener) => listener(state));
+function notify(metadata = null) {
+  listeners.forEach((listener) => listener(state, metadata));
 }
 
 function cloneState(value) {
@@ -35,10 +35,11 @@ function setByPath(obj, path, value) {
   current[lastKey] = value;
 }
 
-function commit(nextState) {
+function commit(nextState, metadata = null) {
   state = nextState;
-  savePersistedState(state);
-  notify();
+  const persistenceResult = savePersistedState(state);
+  notify(metadata ? { ...metadata, persistenceResult } : null);
+  return persistenceResult;
 }
 
 export function getState() {
@@ -58,10 +59,10 @@ export function setValue(path, value) {
   commit(draft);
 }
 
-export function updateState(updater) {
+export function updateState(updater, metadata = null) {
   const draft = cloneState(state);
   const nextDraft = updater(draft) ?? draft;
-  commit(nextDraft);
+  return commit(nextDraft, metadata);
 }
 
 export function resetState() {

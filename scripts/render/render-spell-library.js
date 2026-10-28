@@ -58,16 +58,25 @@ function getSpellFactItems(spell) {
 function getSpellSelectionState(character, spell) {
   const level = character?.profile?.level ?? 1;
   const granted = isGrantedSpell(character, spell.id);
+  const collections = buildCharacterSpellCollections(character);
   const cantripSelected = Number(spell.level) === 0 && isCantripSelected(character, spell.id);
   const preparedSelected =
     Number(spell.level) > 0 && isPreparedSpellSelected(character, spell.id);
-
+  const isSelected = granted || cantripSelected || preparedSelected;
+  const currentCount = Number(spell.level) === 0
+    ? collections.counts.classCantrips
+    : collections.counts.knownSpells;
+  const limit = Number(spell.level) === 0
+    ? collections.limits.classCantrips
+    : collections.limits.knownSpells;
 
   return {
     isGranted: granted,
-    isSelected: granted || cantripSelected || preparedSelected,
+    isSelected,
     isCantrip: Number(spell.level) === 0,
     isPrepared: Number(spell.level) > 0,
+    cannotAdd: !isSelected && currentCount >= limit,
+    overLimit: Math.max(0, currentCount - limit),
     isAvailable:
       !spell.availableFromLevel || Number(spell.availableFromLevel) <= Number(level),
   };
@@ -96,23 +105,17 @@ function renderSelectionStatus(spell, state) {
 
 
 function renderSelectionAction(spell, state) {
-  if (!state.isAvailable) {
-    return "";
-  }
-
-
   if (state.isGranted) {
     return "";
   }
 
+  if (!state.isSelected && !state.isAvailable) {
+    return "";
+  }
 
-  const buttonLabel = state.isCantrip
-    ? state.isSelected
-      ? "Заговор выбран"
-      : "Выбрать заговор"
-    : state.isSelected
-      ? "Подготовлено"
-      : "Подготовить";
+  const buttonLabel = state.isSelected
+    ? state.isCantrip ? "Убрать заговор" : "Убрать из известных"
+    : state.isCantrip ? "Выбрать заговор" : "Выбрать заклинание";
 
 
   const mode = state.isCantrip ? "cantrip" : "prepared";
@@ -125,8 +128,9 @@ function renderSelectionAction(spell, state) {
       data-spell-library-select="${escapeHtml(spell.id)}"
       data-spell-library-mode="${escapeHtml(mode)}"
       aria-pressed="${state.isSelected ? "true" : "false"}"
+      ${!state.isSelected && state.cannotAdd ? "disabled" : ""}
     >
-      ${escapeHtml(buttonLabel)}
+      ${escapeHtml(state.cannotAdd ? state.overLimit ? "Превышен лимит" : "Лимит заполнен" : buttonLabel)}
     </button>
   `;
 }
@@ -278,11 +282,10 @@ function renderToolbar(character) {
       <div>
         <h2 class="section-title">Библиотека заклинаний</h2>
         <p class="section-subtitle">
-          Заговоры: ${escapeHtml(collections.counts.cantrips)}/${escapeHtml(
-            collections.limits.cantrips,
-          )}, подготовленные: ${escapeHtml(collections.counts.preparedSpells)}/${escapeHtml(
-            collections.limits.preparedSpells,
-          )}, дарованные: ${escapeHtml(collections.counts.grantedSpells)}.
+          Заговоры: ${escapeHtml(collections.counts.cantrips)} всего, ${escapeHtml(collections.counts.classCantrips)}/${escapeHtml(collections.limits.classCantrips)} классовых; известных заклинаний: ${escapeHtml(collections.counts.knownSpells)}/${escapeHtml(collections.limits.knownSpells)}.
+          ${collections.counts.classCantrips > collections.limits.classCantrips || collections.counts.knownSpells > collections.limits.knownSpells
+            ? `<strong class="spell-limit-warning">Превышен лимит: заговоры +${Math.max(0, collections.counts.classCantrips - collections.limits.classCantrips)}, заклинания +${Math.max(0, collections.counts.knownSpells - collections.limits.knownSpells)}.</strong>`
+            : ""}
         </p>
       </div>
     </div>

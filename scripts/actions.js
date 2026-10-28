@@ -13,16 +13,13 @@ import {
   ensureInventoryUiState,
 } from "./state-helpers.js";
 import {
-  isCantripSelected,
-  isPreparedSpellSelected,
   isGrantedSpell,
+  resolveSpellById,
 } from "./selectors/spellcasting.js";
 import {
-  getBardCantripLimit,
-  getBardPreparedSpellLimit,
   SKILL_ID_META,
 } from "./rules.js";
-import { buildCharacterSpellCollections, BARD_SPELL_LIBRARY_BY_ID } from "./selectors/spellcasting.js";
+import { buildCharacterSpellCollections } from "./selectors/spellcasting.js";
 
 
 export const STATELESS_ACTIONS = new Set(["print-sheet", "reset-runtime"]);
@@ -45,22 +42,11 @@ function getMaxHp(derived) {
 }
 
 function resolveLibrarySpellById(spellId) {
-  if (!spellId) {
-    return null;
-  }
-
-  const normalizedId = String(spellId);
-
-  return (
-    BARD_SPELL_LIBRARY_BY_ID[normalizedId]
-    ?? BARD_SPELL_LIBRARY_BY_ID[`${normalizedId}-2014`]
-    ?? BARD_SPELL_LIBRARY_BY_ID[`${normalizedId}-2024`]
-    ?? null
-  );
+  return resolveSpellById(String(spellId ?? ""));
 }
 
-function findSpellByActionId(spells, spellId) {
-  return spells.find((entry) => String(entry.id) === String(spellId));
+function resolveSelectedSpell(collections, spellId) {
+  return collections.spells.find((entry) => entry.id === spellId);
 }
 
 function spendSpellSlotIfAvailable(draft, spellLevel) {
@@ -68,30 +54,48 @@ function spendSpellSlotIfAvailable(draft, spellLevel) {
     return true;
   }
 
-  const spellcasting = ensureSpellcastingState(draft);
   const derived = getDerivedStats(draft);
   const slotState = (derived.spellSlots || []).find(
-    (slot) => Number(slot.level) === Number(spellLevel)
+    (slot) => Number(slot.level) === spellLevel,
   );
 
-  if (!slotState || Number(slotState.available) <= 0) {
+  const available = Number(slotState?.available);
+  const rawUsed = draft.spellcasting?.slotsUsed?.[spellLevel] ?? 0;
+  const used = Number(rawUsed);
+  if (!slotState || !Number.isFinite(available) || !Number.isInteger(available) ||
+      available <= 0 || !Number.isFinite(used) || !Number.isInteger(used) || used < 0) {
     return false;
   }
 
-  const used = Number(spellcasting.slotsUsed[spellLevel] || 0);
+  const spellcasting = ensureSpellcastingState(draft);
   spellcasting.slotsUsed[spellLevel] = used + 1;
   return true;
 }
 
-function markTurnConsumption(draft, castTime) {
-  const turn = ensureTurnState(draft);
+function getTurnFlag(castTime) {
+  const normalized = String(castTime ?? "").trim().toLowerCase();
+  if (normalized === "1 бонусное действие") return "bonusActionUsed";
+  if (normalized === "1 действие") return "actionUsed";
+  if (normalized === "1 реакция") return "reactionUsed";
+  return null;
+}
 
-  if (String(castTime || "").toLowerCase().includes("бонусное действие")) {
-    turn.bonusActionUsed = true;
-    return;
+function rejectSpellApplication(reason) {
+  if (typeof globalThis.window?.alert === "function") {
+    globalThis.window.alert(reason);
   }
+}
 
-  turn.actionUsed = true;
+function spellHasMembershipForMode(spell, mode) {
+  const isClassLevelled = spell.memberships.includes("known") ||
+    (spell.memberships.includes("granted") && spell.source === "magical-secret");
+  if (mode === "cantrip") {
+    return spell.level === 0 &&
+      (spell.memberships.includes("cantrip") || spell.memberships.includes("granted"));
+  }
+  if (mode === "racial") return spell.source === "racial" && spell.memberships.includes("granted");
+  if (mode === "slot") return spell.level > 0 && isClassLevelled;
+  return false;
 }
 
 function handleHpChange(draft, target) {
@@ -170,7 +174,7 @@ function handleInventoryRemoveItem(draft, target) {
 
 function handleLongRest(draft) {
   if (!requestConfirmation(
-    "Долгий отдых установит хиты на максимум; сбросит временные хиты, концентрацию, эффекты и отметки хода (номер хода станет 1); восстановит ячейки, вдохновение и заряды заклинаний с собственным счётчиком. Продолжить?",
+    "Долгий отдых восстановит хиты до максимума, сбросит временные хиты и концентрацию, отметки хода и номер хода (до 1), восстановит ячейки, вдохновение и собственные применения заклинаний, а также удалит эффекты до короткого или долгого отдыха. Продолжить?",
   )) {
     return;
   }
@@ -208,7 +212,11 @@ function handleLongRest(draft) {
   }
   spellcasting.slotsUsed = nextSlotsUsed;
 
+  const retainedEffects = effects.filter(
+    (effect) => !["until-short-rest", "until-long-rest"].includes(effect?.durationType),
+  );
   effects.length = 0;
+  effects.push(...retainedEffects);
 }
 
 function handleResetRuntime(resetState) {
@@ -217,7 +225,7 @@ function handleResetRuntime(resetState) {
 
 function handleShortRest(draft) {
   if (!requestConfirmation(
-    "Короткий отдых вернёт действие, бонусное действие и реакцию; сбросит временные хиты и концентрацию; удалит эффекты до короткого отдыха. Продолжить?",
+    "Короткий отдых (не менее 1 часа) вернёт действие, бонусное действие и реакцию, очистит концентрацию и удалит эффекты до короткого отдыха. Потраченные кости хитов и Песнь отдыха учитываются вручную; хиты этой кнопкой не восстанавливаются. При доступной Черте вдохновения восстановится Бардское вдохновение. Продолжить?",
   )) {
     return;
   }
@@ -230,12 +238,23 @@ function handleShortRest(draft) {
   turn.bonusActionUsed = false;
   turn.reactionUsed = false;
 
-  combat.hp.temp = 0;
   combat.concentration = "";
 
-  const retained = effects.filter((effect) => effect.durationType !== "until-short-rest");
+  const retained = effects.filter((effect) => effect?.durationType !== "until-short-rest");
   effects.length = 0;
   effects.push(...retained);
+
+  const level = Number(draft.profile?.level ?? 1);
+  const hasFontOfInspiration = level >= 5 &&
+    (Array.isArray(draft.classFeatures) ? draft.classFeatures : []).some((feature) =>
+      Number(feature?.level ?? 0) <= level &&
+      (feature?.id === "font-of-inspiration" ||
+        ["Font of Inspiration", "Источник вдохновения"].includes(feature?.name)),
+    );
+  if (hasFontOfInspiration && combat.bardicInspiration) {
+    const derived = getDerivedStats(draft);
+    combat.bardicInspiration.current = Number(derived.bardicInspiration?.max ?? 0);
+  }
 }
 
 function handleConcentrationClear(draft) {
@@ -267,6 +286,7 @@ function handleEffectRemove(draft, target) {
 }
 
 function handleAbilityAdjust(draft, target) {
+  if (!draft.ui?.abilitiesEditable) return;
   const abilityId = target.dataset.abilityId;
   const delta = Number(target.dataset.delta || 0);
 
@@ -278,6 +298,7 @@ function handleAbilityAdjust(draft, target) {
 }
 
 function handleSkillToggle(draft, target) {
+  if (!draft.ui?.abilitiesEditable) return;
   const skillId = String(target.dataset.skillId ?? "");
   const toggle = String(target.dataset.toggle ?? "");
 
@@ -329,6 +350,7 @@ function handleSkillToggle(draft, target) {
 }
 
 function handleSavingThrowToggle(draft, target) {
+  if (!draft.ui?.abilitiesEditable) return;
   const abilityId = String(target.dataset.abilityId ?? "");
 
   if (!abilityId) {
@@ -475,59 +497,91 @@ function handleWeaponAttack(draft) {
 }
 
 function handleSpellCast(draft, target) {
-  const spellId = target.dataset.spellId;
-  const spellLevel = Number(target.dataset.spellLevel || 0);
-  const castTime = String(target.dataset.castTime || "").toLowerCase();
-  const setsConcentration = target.dataset.setsConcentration === "true";
-
+  if (target.isConnected === false || target.dataset.processing !== "true") return;
+  const spellId = String(target.dataset.spellId ?? "");
+  const mode = String(target.dataset.spellMode ?? "");
+  const requestedSlotLevel = target.dataset.slotLevel;
   if (!spellId) {
+    rejectSpellApplication("Некорректный выбор заклинания.");
     return;
   }
 
   const collections = buildCharacterSpellCollections(draft);
-  const allAvailableSpells = [
-    ...collections.cantrips,
-    ...collections.preparedSpells,
-    ...collections.grantedSpells,
-  ];
-
-  const spell = findSpellByActionId(allAvailableSpells, spellId);
-
-  if (!spell) {
+  const spell = resolveSelectedSpell(collections, spellId);
+  if (!spell || !spellHasMembershipForMode(spell, mode)) {
+    rejectSpellApplication("Заклинание недоступно для выбранного способа применения.");
+    return;
+  }
+  if (Number(spell.availableFromLevel ?? 1) > Number(draft.profile?.level ?? 1)) {
+    rejectSpellApplication("Заклинание пока недоступно по уровню.");
+    return;
+  }
+  if (spell.locked) {
+    rejectSpellApplication("Заклинание заблокировано.");
     return;
   }
 
-  if (spell.uses?.max != null) {
-    const currentUses = Number(spell.uses.current || 0);
-
-    if (currentUses > 0) {
-      const spellcasting = ensureSpellcastingState(draft);
-      if (!spellcasting.spellOverrides || typeof spellcasting.spellOverrides !== "object") {
-        spellcasting.spellOverrides = {};
-      }
-
-      const currentOverride = spellcasting.spellOverrides[spell.id] ?? {};
-      spellcasting.spellOverrides[spell.id] = {
-        ...currentOverride,
-        uses: {
-          ...(currentOverride.uses ?? spell.uses),
-          current: currentUses - 1,
-          max: Number(spell.uses.max || 0),
-          refresh: spell.uses.refresh,
-        },
-      };
-    } else if (!spendSpellSlotIfAvailable(draft, spellLevel)) {
+  let slotLevel = null;
+  if (mode === "slot") {
+    slotLevel = Number(requestedSlotLevel);
+    if (!Number.isFinite(slotLevel) || !Number.isInteger(slotLevel) || slotLevel < spell.level) {
+      rejectSpellApplication("Некорректно выбран круг ячейки.");
       return;
     }
-  } else if (!spendSpellSlotIfAvailable(draft, spellLevel)) {
+    const availableSlot = getDerivedStats(draft).spellSlots?.find(
+      (slot) => Number(slot.level) === slotLevel,
+    );
+    const available = Number(availableSlot?.available);
+    if (!availableSlot || !Number.isFinite(available) || !Number.isInteger(available) || available <= 0) {
+      rejectSpellApplication("Нет доступных ячеек выбранного круга.");
+      return;
+    }
+  }
+
+  const isConcentration = Boolean(spell.concentration);
+  const combatBefore = draft.combat ?? {};
+  const currentConcentration = String(combatBefore.concentration ?? "");
+  if (isConcentration && currentConcentration) {
+    if (!requestConfirmation(`Заменить концентрацию «${currentConcentration}» заклинанием «${spell.name}»?`)) {
+      return;
+    }
+  }
+
+  const currentSpell = resolveSelectedSpell(
+    buildCharacterSpellCollections(draft),
+    spellId,
+  );
+  if (!currentSpell || !spellHasMembershipForMode(currentSpell, mode) ||
+      currentSpell.locked ||
+      Number(currentSpell.availableFromLevel ?? 1) > Number(draft.profile?.level ?? 1)) {
+    rejectSpellApplication("Заклинание стало недоступно для выбранного способа применения.");
     return;
   }
 
-  markTurnConsumption(draft, castTime);
+  if (mode === "racial") {
+    const currentUses = Number(currentSpell.uses?.current);
+    if (!Number.isFinite(currentUses) || currentUses <= 0) {
+      rejectSpellApplication("Расовое применение этого заклинания израсходовано.");
+      return;
+    }
+    const spellcasting = ensureSpellcastingState(draft);
+    const previousOverride = spellcasting.spellOverrides?.[currentSpell.id] ?? {};
+    spellcasting.spellOverrides[currentSpell.id] = {
+      ...previousOverride,
+      uses: { ...(previousOverride.uses ?? currentSpell.uses), current: currentUses - 1 },
+    };
+  } else if (mode === "slot" && !spendSpellSlotIfAvailable(draft, slotLevel)) {
+    rejectSpellApplication("Нет доступных ячеек выбранного круга.");
+    return;
+  }
 
-  const combat = ensureCombatState(draft);
-  if (setsConcentration) {
-    combat.concentration = spell.name || "";
+  const castTime = String(currentSpell.castTime ?? currentSpell.castingTime ?? "");
+  const turnFlag = getTurnFlag(castTime);
+  if (turnFlag) {
+    ensureTurnState(draft)[turnFlag] = true;
+  }
+  if (Boolean(currentSpell.concentration)) {
+    ensureCombatState(draft).concentration = currentSpell.name ?? "";
   }
 }
 
@@ -617,10 +671,7 @@ function handleSpellLibraryToggleExpand(draft, target) {
 function handleSpellLibraryToggleSelect(draft, target) {
   const rawSpellId = target.dataset.spellLibrarySelect;
   const mode = target.dataset.spellLibraryMode;
-  const level = Number(draft.profile?.level ?? 1);
-  const spellcasting = ensureSpellcastingState(draft);
-
-  if (!rawSpellId || !mode) {
+  if (!rawSpellId || (mode !== "cantrip" && mode !== "prepared")) {
     return;
   }
 
@@ -631,72 +682,47 @@ function handleSpellLibraryToggleSelect(draft, target) {
   }
 
   const spellId = resolvedSpell.id;
-
-  if (
-    resolvedSpell.availableFromLevel &&
-    Number(resolvedSpell.availableFromLevel) > level
-  ) {
-    return;
-  }
-
   if (isGrantedSpell(draft, spellId)) {
     return;
   }
 
-  if (!Array.isArray(spellcasting.cantripIds)) {
-    spellcasting.cantripIds = [];
-  }
+  const spellLevel = Number(resolvedSpell.level);
+  if (
+    (mode === "cantrip" && spellLevel !== 0) ||
+    (mode === "prepared" && (!Number.isInteger(spellLevel) || spellLevel <= 0))
+  ) return;
 
-  if (!Array.isArray(spellcasting.preparedSpellIds)) {
-    spellcasting.preparedSpellIds = [];
-  }
+  const selectedIds = mode === "cantrip"
+    ? draft.spellcasting?.cantripIds
+    : draft.spellcasting?.preparedSpellIds;
+  if (!Array.isArray(selectedIds)) return;
 
-  const cantripIds = [...new Set(spellcasting.cantripIds.filter(Boolean))];
-  const preparedSpellIds = [...new Set(spellcasting.preparedSpellIds.filter(Boolean))];
+  const removeCanonical = (ids, canonicalId) =>
+    ids.filter((id) => resolveSpellById(id)?.id !== canonicalId);
+  const hasCanonical = (ids) =>
+    ids.some((id) => resolveSpellById(id)?.id === spellId);
 
-  if (mode === "cantrip") {
-    const grantedSpellIdSet = new Set(
-      Array.isArray(spellcasting.grantedSpellIds)
-        ? spellcasting.grantedSpellIds.filter(Boolean)
-        : [],
-    );
-
-    const selected = cantripIds.includes(spellId);
-    const classCantripIds = cantripIds.filter((id) => !grantedSpellIdSet.has(id));
-
-    if (grantedSpellIdSet.has(spellId)) {
-      return;
-    }
-
-    if (selected) {
-      spellcasting.cantripIds = cantripIds.filter((id) => id !== spellId);
-      return;
-    }
-
-    const limit = getBardCantripLimit(level);
-    if (classCantripIds.length >= limit) {
-      return;
-    }
-
-    spellcasting.cantripIds = [...cantripIds, spellId];
+  if (hasCanonical(selectedIds)) {
+    draft.spellcasting[mode === "cantrip" ? "cantripIds" : "preparedSpellIds"] =
+      removeCanonical(selectedIds, spellId);
     return;
   }
 
-  if (mode === "prepared") {
-    const selected = preparedSpellIds.includes(spellId);
-
-    if (selected) {
-      spellcasting.preparedSpellIds = preparedSpellIds.filter((id) => id !== spellId);
-      return;
-    }
-
-    const limit = getBardPreparedSpellLimit(level);
-    if (preparedSpellIds.length >= limit) {
-      return;
-    }
-
-    spellcasting.preparedSpellIds = [...preparedSpellIds, spellId];
+  const level = Number(draft.profile?.level ?? 1);
+  const availableFromLevel = Number(resolvedSpell.availableFromLevel ?? 1);
+  if (!Number.isFinite(level) || !Number.isFinite(availableFromLevel) || availableFromLevel > level) {
+    return;
   }
+
+  const collection = buildCharacterSpellCollections(draft);
+  if (mode === "cantrip") {
+    if (collection.counts.classCantrips >= collection.limits.classCantrips) return;
+    selectedIds.push(spellId);
+    return;
+  }
+
+  if (collection.counts.knownSpells >= collection.limits.knownSpells) return;
+  selectedIds.push(spellId);
 }
 
 function handleSpellLibrarySetSelectionFilter(draft, target) {

@@ -1,3 +1,5 @@
+import { getItemRuleReference } from "../rule-reference.js";
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -111,11 +113,18 @@ function getItemNoteRows(note) {
 }
 
 function renderItemDetails(item) {
+  const reference = getItemRuleReference(item);
   return [
     renderWeaponSummary(item),
     renderArmorSummary(item),
     renderFocusSummary(item),
     renderConsumableSummary(item),
+    reference
+      ? `<section class="inventory-rule-reference"><h4>Справка предмета</h4><p class="info-card-text">${escapeHtml(reference)}</p></section>`
+      : "",
+    item.notes
+      ? `<section class="inventory-item-notes"><h4>Заметки предмета</h4><p class="info-card-text">${escapeHtml(item.notes)}</p></section>`
+      : "",
   ]
     .filter(Boolean)
     .join("");

@@ -11,6 +11,22 @@ import { renderSpells } from "./render/render-spells.js";
 import { renderLorePanel } from "./render/render-lore.js";
 import { renderInventoryPanel } from "./render/render-inventory.js";
 import { renderSpellLibrary } from "./render/render-spell-library.js";
+import {
+  setSpellSlotChoice,
+} from "./render/render-spells.js";
+import {
+  clearLoreNoteStatus,
+  setLoreNoteExpanded,
+  updateLoreNoteEditView,
+} from "./render/render-lore.js";
+import {
+  createNoteEntry,
+  deleteNoteEntry,
+  updateNoteEntry,
+  validateNoteEntries,
+} from "./lore-notes.js";
+import { getSpellPersonalHint } from "./rule-reference.js";
+import { buildCharacterSpellCollections } from "./selectors/spellcasting.js";
 
 import { createActionHandlers, STATELESS_ACTIONS } from "./actions.js";
 import {
@@ -20,6 +36,7 @@ import {
 
 const actionHandlers = createActionHandlers({ resetState });
 let spellLibraryDirty = true;
+const failedLoreNoteIds = new Set();
 
 function parseInputValue(input) {
   if (input.type === "number") {
@@ -97,6 +114,12 @@ function bindActionButtons(root = document) {
 
       if (!handler) {
         return;
+      }
+
+      if (action === "spell-cast") {
+        if (target.dataset.processing === "true") return;
+        target.dataset.processing = "true";
+        target.disabled = true;
       }
 
       if (STATELESS_ACTIONS.has(action)) {
@@ -296,6 +319,140 @@ function bindMeleeControls(root = document) {
   bindClickAction(root, "[data-melee-toggle]", "melee-toggle-expand");
 }
 
+function persistLoreNoteField(input) {
+  const noteId = input.dataset.noteId;
+  const field = input.dataset.noteField;
+  if (!noteId || !["title", "text"].includes(field)) return;
+  const value = input.value;
+  const current = getState().lore?.noteEntries?.find((note) => note.id === noteId);
+  if (!current || (current[field] === value && !failedLoreNoteIds.has(noteId))) return;
+  updateState((draft) => {
+    const updated = updateNoteEntry(draft.lore.noteEntries, noteId, field, value);
+    if (!updated.issue) draft.lore.noteEntries = updated.entries;
+    return draft;
+  }, { kind: "lore-note-edit", noteId, field });
+}
+
+function flushLoreNotes() {
+  document.querySelectorAll("#loreNotesRoot [data-note-field]").forEach((input) => {
+    persistLoreNoteField(input);
+  });
+}
+
+function bindLoreNoteControls() {
+  const root = document.getElementById("loreNotesRoot");
+  if (!root || root.dataset.bound === "true") return;
+  root.addEventListener("input", (event) => {
+    const input = event.target.closest?.("[data-note-field]");
+    if (!input || !root.contains(input) || input.dataset.composing === "true") return;
+    persistLoreNoteField(input);
+  });
+  root.addEventListener("change", (event) => {
+    const input = event.target.closest?.("[data-note-field]");
+    if (input && root.contains(input)) persistLoreNoteField(input);
+  });
+  root.addEventListener("blur", (event) => {
+    const input = event.target.closest?.("[data-note-field]");
+    if (input && root.contains(input)) persistLoreNoteField(input);
+  }, true);
+  root.addEventListener("compositionstart", (event) => {
+    const input = event.target.closest?.("[data-note-field]");
+    if (input) input.dataset.composing = "true";
+  });
+  root.addEventListener("compositionend", (event) => {
+    const input = event.target.closest?.("[data-note-field]");
+    if (!input) return;
+    input.dataset.composing = "false";
+    persistLoreNoteField(input);
+  });
+  root.addEventListener("click", (event) => {
+    const target = event.target.closest?.("button");
+    if (!target || !root.contains(target)) return;
+    const card = target.closest("[data-note-id]");
+    if (target.matches("[data-note-add]")) {
+      const entries = getState().lore?.noteEntries;
+      if (validateNoteEntries(entries)) return;
+      const id = globalThis.crypto?.randomUUID?.() ??
+        `note-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      setLoreNoteExpanded(id, true);
+      updateState((draft) => {
+        const created = createNoteEntry(draft.lore.noteEntries, {
+          id,
+          title: "Новая заметка",
+          text: "",
+        });
+        if (!created.issue) draft.lore.noteEntries = created.entries;
+        return draft;
+      });
+      [...document.querySelectorAll("#loreNotesRoot [data-note-id]")].find((entry) => entry.dataset.noteId === id)
+        ?.querySelector('[data-note-field="title"]')?.focus();
+      return;
+    }
+    if (!card) return;
+    const noteId = card.dataset.noteId;
+    if (target.matches("[data-note-toggle]")) {
+      const opening = target.getAttribute("aria-expanded") !== "true";
+      if (!opening) flushLoreNotes();
+      setLoreNoteExpanded(noteId, opening);
+      const entry = getState().lore.noteEntries.find((note) => note.id === noteId);
+      if (entry) {
+        const editor = card.querySelector(".lore-note-editor");
+        editor.hidden = !opening;
+        target.textContent = opening ? "Свернуть" : "Открыть";
+        target.setAttribute("aria-expanded", String(opening));
+      }
+      return;
+    }
+    if (target.matches("[data-note-collapse]")) {
+      flushLoreNotes();
+      setLoreNoteExpanded(noteId, false);
+      card.querySelector(".lore-note-editor").hidden = true;
+      const toggle = card.querySelector("[data-note-toggle]");
+      toggle.textContent = "Открыть";
+      toggle.setAttribute("aria-expanded", "false");
+      return;
+    }
+    if (target.matches("[data-note-delete]")) {
+      flushLoreNotes();
+      const entry = getState().lore.noteEntries.find((note) => note.id === noteId);
+      const title = entry?.title.trim() || "Без названия";
+      if (!window.confirm(`Удалить заметку «${title}»?`)) return;
+      updateState((draft) => {
+        const deleted = deleteNoteEntry(draft.lore.noteEntries, noteId);
+        if (!deleted.issue) draft.lore.noteEntries = deleted.entries;
+        return draft;
+      });
+      setLoreNoteExpanded(noteId, false);
+      clearLoreNoteStatus(noteId);
+      failedLoreNoteIds.delete(noteId);
+    }
+  });
+  root.querySelectorAll("[data-note-field]").forEach((input) => {
+    input.dataset.noteId = input.closest("[data-note-id]").dataset.noteId;
+  });
+  root.dataset.bound = "true";
+}
+
+function bindSpellSlotSelectors() {
+  document.querySelectorAll("[data-spell-slot-select]").forEach((select) => {
+    if (select.dataset.bound === "true") return;
+    select.addEventListener("change", () => {
+      const spellId = select.dataset.spellSlotSelect;
+      const slotLevel = Number(select.value);
+      setSpellSlotChoice(spellId, slotLevel);
+      const button = select.closest(".spell-card")?.querySelector('[data-action="spell-cast"][data-spell-mode="slot"]');
+      if (button) button.dataset.slotLevel = String(slotLevel);
+      const state = getState();
+      const spell = buildCharacterSpellCollections(state).spells.find((entry) => entry.id === spellId);
+      const hint = select.closest(".spell-card")?.querySelector(".spell-personal-hint");
+      if (spell && hint) {
+        hint.textContent = getSpellPersonalHint(spell, getDerivedStats(state), slotLevel) ?? "";
+      }
+    });
+    select.dataset.bound = "true";
+  });
+}
+
 function bindUi(root = document) {
   bindEditableFields(root);
   bindActionButtons(root);
@@ -303,6 +460,8 @@ function bindUi(root = document) {
   bindEffectFields(root);
   bindSpellsControls(root);
   bindMeleeControls(root);
+  bindLoreNoteControls();
+  bindSpellSlotSelectors();
 }
 
 function renderSpellLibraryIfNeeded(state, derived) {
@@ -386,7 +545,7 @@ function initTelegramWebApp() {
 
 function initApp() {
   initTelegramWebApp();
-  initTabs(handleTabActivation);
+  initTabs(handleTabActivation, { beforeActivate: flushLoreNotes });
   renderApp();
 }
 
@@ -413,8 +572,19 @@ window.debug = {
   subscribe: (listener) => subscribe(listener),
 };
 
-subscribe(() => {
+subscribe((_state, metadata) => {
+  if (metadata?.kind === "lore-note-edit") {
+    if (metadata.persistenceResult?.ok) failedLoreNoteIds.delete(metadata.noteId);
+    else failedLoreNoteIds.add(metadata.noteId);
+    updateLoreNoteEditView(metadata);
+    return;
+  }
   renderApp();
+});
+
+window.addEventListener("pagehide", flushLoreNotes);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushLoreNotes();
 });
 
 initApp();

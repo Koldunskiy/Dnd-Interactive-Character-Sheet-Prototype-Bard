@@ -42,6 +42,105 @@
   background: rgba(255, 245, 239, 0.04);
 }
 
+.lore-notes {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+  min-width: 0;
+}
+
+.lore-note-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+.lore-note-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(213, 171, 146, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 245, 239, 0.035);
+}
+
+.lore-note-heading,
+.lore-note-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lore-note-title,
+.lore-note-preview {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.lore-note-title {
+  margin: 0;
+}
+
+.lore-note-preview {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  color: rgba(242, 232, 225, 0.78);
+}
+
+.lore-note-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  min-width: 0;
+}
+
+.lore-note-editor[hidden] {
+  display: none;
+}
+
+.lore-note-text {
+  min-height: 140px;
+  resize: vertical;
+  white-space: pre-wrap;
+}
+
+.lore-note-status,
+.lore-notes-issue {
+  margin: 0;
+  color: rgba(240, 201, 123, 0.9);
+}
+
+.lore-notes-issue {
+  color: #ffb6a8;
+}
+
+.lore-note-actions {
+  flex-wrap: wrap;
+}
+
+.spell-personal-hint,
+.spell-diagnostic,
+.spell-limit-warning {
+  display: block;
+  min-width: 0;
+  margin: 8px 0;
+  color: #f0d39a;
+  overflow-wrap: anywhere;
+}
+
+.spell-diagnostic {
+  color: #ffb6a8;
+}
+
+@media (max-width: 899px) {
+  .lore-note-heading .btn,
+  .lore-note-actions .btn {
+    min-height: 44px;
+  }
+}
+
 .file-input-hidden {
   position: absolute;
   opacity: 0;

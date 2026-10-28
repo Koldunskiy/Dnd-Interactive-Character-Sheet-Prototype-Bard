@@ -5,7 +5,6 @@ import {
   BARD_PROGRESSION,
   TURN_TRACKER_META,
 } from "./rules.js";
-import { buildCharacterSpellCollections } from "./selectors/spellcasting.js";
 
 function getAbilityModifier(score = 10) {
   return Math.floor((Number(score) - 10) / 2);
@@ -347,104 +346,6 @@ function formatDiceWithModifier(dice, modifier) {
   return `${dice} ${formatSigned(numericModifier)}`;
 }
 
-function isSpellAvailable(character, spell) {
-  const level = getLevel(character);
-
-  if (spell?.availableFromLevel && level < Number(spell.availableFromLevel)) {
-    return false;
-  }
-
-  if (spell?.locked) {
-    return false;
-  }
-
-  return true;
-}
-
-function inferCombatRole(spell) {
-  if (spell?.combatRole) {
-    return spell.combatRole;
-  }
-
-  if (spell?.damage || spell?.healing) {
-    return "combat";
-  }
-
-  if (spell?.concentration) {
-    return "combat";
-  }
-
-  const originalName = String(spell?.originalName || "").toLowerCase();
-  const name = String(spell?.name || "").toLowerCase();
-
-  const knownCombatSpells = [
-    "vicious mockery",
-    "tasha’s hideous laughter",
-    "tasha's hideous laughter",
-    "dissonant whispers",
-    "cure wounds",
-    "healing word",
-    "mirror image",
-    "язвительная насмешка",
-    "безудержный смех",
-    "диссонирующий шёпот",
-    "исцеление ран",
-    "исцеляющее слово",
-    "зеркальное отражение",
-  ];
-
-  if (knownCombatSpells.includes(originalName) || knownCombatSpells.includes(name)) {
-    return "combat";
-  }
-
-  return "utility";
-}
-
-function getCombatSpells(character, spellStats) {
-  const collections = buildCharacterSpellCollections(character);
-  const spells = [
-    ...(collections.cantrips || []),
-    ...(collections.preparedSpells || []),
-    ...(collections.grantedSpells || []),
-  ];
-
-  return spells
-    .filter((spell) => isSpellAvailable(character, spell))
-    .filter((spell) => inferCombatRole(spell) !== "utility")
-    .map((spell) => ({
-      id: `spell-${String(spell.originalName ?? spell.name ?? "")
-        .toLowerCase()
-        .replaceAll(" ", "-")}`,
-      spellId: spell.id ?? null,
-      kind: "spell",
-      title: spell.name ?? "",
-      originalName: spell.originalName ?? null,
-      level: Number(spell.level ?? 0),
-      school: spell.school ?? null,
-      attack: spell.attackBonus ?? (spell.attackType ? spellStats.formattedSpellAttackBonus : null),
-      save: formatSpellSave(spell, spellStats.spellSaveDc),
-      damage:
-        formatSpellDamage(spell, spellStats.spellcastingModifier) ??
-        formatHealing(spell, spellStats.spellcastingModifier),
-      concentration: Boolean(spell.concentration),
-      castTime: spell.castTime ?? spell.castingTime ?? "",
-      range: spell.range ?? "",
-      rangeFeet:
-        spell.rangeFeet !== null && spell.rangeFeet !== undefined
-          ? Number(spell.rangeFeet)
-          : null,
-      areaShape: spell.areaShape ?? null,
-      areaSizeFeet:
-        spell.areaSizeFeet !== null && spell.areaSizeFeet !== undefined
-          ? Number(spell.areaSizeFeet)
-          : null,
-      areaType: spell.areaType ?? null,
-      duration: spell.duration ?? "",
-      tags: [spell.sourceLabel, spell.school, spell.combatRole ?? inferCombatRole(spell)].filter(Boolean),
-      notes: spell.vibe ?? spell.description ?? spell.notes ?? "",
-    }));
-}
-
 function getCombatFeatures(character) {
   const flourishes = Array.isArray(character.combat?.flourishes) ? character.combat.flourishes : [];
 
@@ -473,7 +374,7 @@ function getCombatCards(character, derivedBase) {
   return {
     weapons,
     features: getCombatFeatures(character),
-    spells: getCombatSpells(character, derivedBase.spellStats),
+    spells: [],
   };
 }
 
