@@ -31,7 +31,8 @@ const SKILL_LABELS = {
 };
 
 let profileDisclosureMediaQuery = null;
-let profileDisclosuresInitialized = false;
+let currentDisclosureCharacterId = null;
+const profileDisclosureStates = new Map();
 
 function getProfileDisclosureState() {
   return new Map(
@@ -41,7 +42,7 @@ function getProfileDisclosureState() {
   );
 }
 
-function applyProfileDisclosureState(previousState) {
+function applyProfileDisclosureState(previousState, characterId) {
   if (!profileDisclosureMediaQuery) {
     profileDisclosureMediaQuery = window.matchMedia("(max-width: 899px)");
     const updateForViewport = (event) => {
@@ -59,7 +60,7 @@ function applyProfileDisclosureState(previousState) {
     }
   }
 
-  const useDefaults = !profileDisclosuresInitialized;
+  const useDefaults = !profileDisclosureStates.has(characterId);
   document
     .querySelectorAll("details[data-profile-disclosure]")
     .forEach((details) => {
@@ -69,7 +70,11 @@ function applyProfileDisclosureState(previousState) {
           ? previousState.get(key)
           : !profileDisclosureMediaQuery.matches;
     });
-  profileDisclosuresInitialized = true;
+  profileDisclosureStates.set(characterId, new Map(
+    [...document.querySelectorAll("details[data-profile-disclosure]")].map((details) =>
+      [details.dataset.profileDisclosure, details.open]),
+  ));
+  currentDisclosureCharacterId = characterId;
 }
 
 function escapeHtml(value) {
@@ -121,16 +126,20 @@ function getAbilityCardsData(character, derived) {
       short: meta.short,
       label: meta.label,
       score,
+      effectiveScore: derived?.abilities?.[abilityId] ?? score,
       mod,
       checkValue: derived?.abilityChecks?.[abilityId] ?? mod,
       saveValue: save,
       saveProficient: Boolean(character.savingThrows?.[abilityId]?.proficient),
       editable: Boolean(character.ui?.abilitiesEditable),
+      characterId: character.profile?.id,
     };
   });
 }
 
 function renderAbilityCard(card) {
+  const canEdit = card.editable &&
+    (card.characterId !== "sara-velaris" || card.id === "constitution");
   return `
     <article class="ability-card profile-ability-card">
       <div class="ability-card-top">
@@ -150,13 +159,16 @@ function renderAbilityCard(card) {
 
         <div class="ability-card-summary-row">
           <div class="ability-card-score-inline">
-            ${card.editable ? `<button type="button" class="ability-adjust-btn" data-action="ability-adjust" data-ability-id="${escapeHtml(card.id)}" data-delta="-1" aria-label="Уменьшить ${escapeHtml(card.label)}">−</button>` : ""}
+            ${canEdit ? `<button type="button" class="ability-adjust-btn" data-action="ability-adjust" data-ability-id="${escapeHtml(card.id)}" data-delta="-1" aria-label="Уменьшить ${escapeHtml(card.label)}">−</button>` : ""}
 
             <div class="ability-card-score" aria-label="Значение ${escapeHtml(card.label)}">
               ${escapeHtml(card.score)}
             </div>
+            ${card.effectiveScore !== card.score
+              ? `<span class="ability-card-stat-label">С учётом предмета: ${escapeHtml(card.effectiveScore)}</span>`
+              : ""}
 
-            ${card.editable ? `<button type="button" class="ability-adjust-btn" data-action="ability-adjust" data-ability-id="${escapeHtml(card.id)}" data-delta="1" aria-label="Увеличить ${escapeHtml(card.label)}">+</button>` : ""}
+            ${canEdit ? `<button type="button" class="ability-adjust-btn" data-action="ability-adjust" data-ability-id="${escapeHtml(card.id)}" data-delta="1" aria-label="Увеличить ${escapeHtml(card.label)}">+</button>` : ""}
           </div>
         </div>
 
@@ -607,7 +619,11 @@ function renderHeroStat(label, value) {
 export function renderProfile(root, character, derived) {
   if (!root) return;
 
-  const disclosureState = getProfileDisclosureState();
+  if (currentDisclosureCharacterId) {
+    profileDisclosureStates.set(currentDisclosureCharacterId, getProfileDisclosureState());
+  }
+  const characterId = character.profile?.id ?? "aurelia";
+  const disclosureState = profileDisclosureStates.get(characterId) ?? new Map();
   const profile = character.profile ?? {};
 
   const heroStats = [
@@ -661,5 +677,5 @@ export function renderProfile(root, character, derived) {
     ${renderClassFeatures(character.classFeatures, character, derived)}
   `;
 
-  applyProfileDisclosureState(disclosureState);
+  applyProfileDisclosureState(disclosureState, characterId);
 }

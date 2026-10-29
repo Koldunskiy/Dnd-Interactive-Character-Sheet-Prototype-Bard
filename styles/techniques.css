@@ -1,0 +1,47 @@
+.technique-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.technique-list {
+  display: grid;
+  gap: 10px;
+}
+
+.technique-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 245, 239, 0.035);
+}
+
+.technique-card h3 {
+  margin: 0 0 6px;
+}
+
+.technique-card__meta,
+.technique-card__status {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.technique-card[data-available="false"] {
+  opacity: 0.72;
+}
+
+.technique-card__description {
+  line-height: 1.55;
+}
+
+.sara-ki-note {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 540px) {
+  .character-setup__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

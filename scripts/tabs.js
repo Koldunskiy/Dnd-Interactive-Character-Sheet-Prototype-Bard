@@ -35,24 +35,34 @@ function instantScrollTop(offset) {
   window.scrollTo({ top, behavior: "instant" });
 }
 
+function readLegacySavedTab() {
+  try {
+    return window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+  } catch (error) {
+    console.warn("Не удалось прочитать старую вкладку Аурелии", error);
+    return null;
+  }
+}
+
 export function initTabs(onActivate, options = {}) {
-  const tabButtons = [...document.querySelectorAll("[data-tab]")];
-  const tabPanels = [...document.querySelectorAll("[data-panel]")];
+  const allTabButtons = [...document.querySelectorAll("[data-tab]")];
+  const allTabPanels = [...document.querySelectorAll("[data-panel]")];
   const appRoot = document.querySelector(".page");
   const swipeRoot = document.querySelector(".tab-panels");
 
   if (!(appRoot instanceof HTMLElement)) throw new Error("Application root was not found");
   const existing = controllers.get(appRoot);
   if (existing) {
-    existing.onActivate = onActivate;
-    existing.beforeActivate = options.beforeActivate;
+    existing.configure(onActivate, options);
     return existing.activate;
   }
 
-  const validTabs = tabButtons.map((button) => button.dataset.tab).filter((tabId) =>
-    tabPanels.some((panel) => panel.dataset.panel === tabId),
-  );
-  const panelFor = (tabId) => tabPanels.find((panel) => panel.dataset.panel === tabId);
+  let tabButtons = [];
+  let tabPanels = [];
+  let validTabs = [];
+  let characterId = options.characterId ?? "aurelia";
+  let sessionGeneration = options.sessionGeneration ?? 0;
+  let onTabChange = options.onTabChange;
   const scrollOffsets = new Map();
   let generation = 0;
   let activeTab = null;
@@ -65,13 +75,26 @@ export function initTabs(onActivate, options = {}) {
     onActivate: onActivateCallback,
     beforeActivate,
     activate: null,
+    configure: null,
+  };
+  const panelFor = (tabId) => tabPanels.find((panel) => panel.dataset.panel === tabId);
+  const activateForCurrentCharacter = (tabId) => {
+    if (characterId === "aurelia") {
+      try {
+        window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, tabId);
+      } catch (error) {
+        console.warn("Не удалось сохранить вкладку Аурелии", error);
+      }
+    }
+    onTabChange?.(characterId, tabId, sessionGeneration);
   };
   const activateTab = (tabId, notifyActivation = false) => {
-    if (!validTabs.includes(tabId) || !panelFor(tabId) || tabId === activeTab) return false;
+    if (appRoot.dataset.screen !== "sheet" ||
+        !validTabs.includes(tabId) || !panelFor(tabId) || tabId === activeTab) return false;
     const previousTab = activeTab;
     if (previousTab) {
       controller.beforeActivate?.(previousTab, tabId);
-      scrollOffsets.set(previousTab, document.scrollingElement?.scrollTop ?? 0);
+      scrollOffsets.set(`${characterId}:${previousTab}`, document.scrollingElement?.scrollTop ?? 0);
     }
 
     activeTab = tabId;
@@ -88,7 +111,7 @@ export function initTabs(onActivate, options = {}) {
       panel.hidden = !selected;
     });
     appRoot.dataset.activeTab = tabId;
-    window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, tabId);
+    activateForCurrentCharacter(tabId);
     if (notifyActivation && typeof controller.onActivate === "function") {
       controller.onActivate(tabId);
     } else if (!notifyActivation && previousTab === null && typeof controller.onActivate === "function") {
@@ -96,25 +119,62 @@ export function initTabs(onActivate, options = {}) {
     }
 
     const requestedGeneration = generation;
+    const requestedCharacter = characterId;
+    const requestedSessionGeneration = sessionGeneration;
     requestAnimationFrame(() => {
       if (!isCurrentScrollRestore({
         requestedGeneration,
         currentGeneration: generation,
         requestedTab: tabId,
         activeTab,
-      })) return;
-      instantScrollTop(scrollOffsets.get(tabId) ?? 0);
+      }) || requestedCharacter !== characterId ||
+          requestedSessionGeneration !== sessionGeneration) return;
+      instantScrollTop(scrollOffsets.get(`${characterId}:${tabId}`) ?? 0);
     });
     return true;
+  };
+  controller.configure = (nextOnActivate, nextOptions = {}) => {
+    onActivateCallback = nextOnActivate;
+    controller.onActivate = nextOnActivate;
+    controller.beforeActivate = nextOptions.beforeActivate;
+    onTabChange = nextOptions.onTabChange;
+    if (activeTab) {
+      scrollOffsets.set(`${characterId}:${activeTab}`, document.scrollingElement?.scrollTop ?? 0);
+    }
+    characterId = nextOptions.characterId ?? characterId;
+    sessionGeneration = nextOptions.sessionGeneration ?? sessionGeneration;
+    const allowed = nextOptions.tabs ? new Set(nextOptions.tabs) : null;
+    tabButtons = allTabButtons.filter((button) => !allowed || allowed.has(button.dataset.tab));
+    tabPanels = allTabPanels.filter((panel) => !allowed || allowed.has(panel.dataset.panel));
+    validTabs = tabButtons.map((button) => button.dataset.tab).filter((tabId) =>
+      tabPanels.some((panel) => panel.dataset.panel === tabId));
+    appRoot.style.setProperty("--tab-count", String(validTabs.length));
+    allTabButtons.forEach((button) => {
+      button.hidden = !validTabs.includes(button.dataset.tab);
+      button.disabled = button.hidden;
+    });
+    allTabPanels.forEach((panel) => {
+      if (!validTabs.includes(panel.dataset.panel)) {
+        panel.hidden = true;
+        panel.classList.remove("is-active");
+      }
+    });
+    activeTab = null;
+    gesture = null;
+    generation += 1;
+    const savedTab = nextOptions.initialTab ?? nextOptions.getLastTab?.(characterId);
+    const legacyTab = characterId === "aurelia" ? readLegacySavedTab() : null;
+    const initialTab = validTabs.includes(savedTab)
+      ? savedTab
+      : validTabs.includes(legacyTab) ? legacyTab : validTabs[0];
+    if (initialTab) activateTab(initialTab);
   };
   controller.activate = activateTab;
   controllers.set(appRoot, controller);
 
-  const savedTab = window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
-  const initialTab = validTabs.includes(savedTab) ? savedTab : validTabs[0];
-  if (initialTab) activateTab(initialTab);
+  controller.configure(onActivate, options);
 
-  tabButtons.forEach((button) => {
+  allTabButtons.forEach((button) => {
     if (button.dataset.bound === "true") return;
     button.addEventListener("click", () => activateTab(button.dataset.tab, true));
     button.dataset.bound = "true";

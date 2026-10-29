@@ -19,10 +19,15 @@ import {
 import { renderSpellSlotPips } from "./shared/resource-pips.js";
 import { getSpellPersonalHint } from "../rule-reference.js";
 
-const slotChoiceBySpellId = new Map();
+const slotChoiceByCharacter = new Map();
 
-export function setSpellSlotChoice(spellId, slotLevel) {
-  slotChoiceBySpellId.set(spellId, slotLevel);
+function getSlotChoices(characterId = "aurelia") {
+  if (!slotChoiceByCharacter.has(characterId)) slotChoiceByCharacter.set(characterId, new Map());
+  return slotChoiceByCharacter.get(characterId);
+}
+
+export function setSpellSlotChoice(spellId, slotLevel, characterId = "aurelia") {
+  getSlotChoices(characterId).set(spellId, slotLevel);
 }
 
 function clamp(value, min, max) {
@@ -236,11 +241,12 @@ function renderSpellCard(spell, spellStats, options = {}) {
   const usableSlots = slots.filter((slot) =>
     Number(slot.level) >= Number(spell.level) && Number(slot.available) > 0,
   );
-  const previousChoice = slotChoiceBySpellId.get(spell.id);
+  const choices = getSlotChoices(options.characterId);
+  const previousChoice = choices.get(spell.id);
   const selectedSlotLevel = usableSlots.some((slot) => Number(slot.level) === Number(previousChoice))
     ? Number(previousChoice)
     : usableSlots[0]?.level;
-  if (selectedSlotLevel != null) slotChoiceBySpellId.set(spell.id, Number(selectedSlotLevel));
+  if (selectedSlotLevel != null) choices.set(spell.id, Number(selectedSlotLevel));
   const personalHint = getSpellPersonalHint(
     spell,
     options.personalStats,
@@ -387,6 +393,7 @@ export function renderSpells(root, character, derived) {
 
   const slots = Array.isArray(derived.spellSlots) ? derived.spellSlots : [];
   const cardsOptions = {
+    characterId: character.profile?.id ?? "aurelia",
     characterLevel: level,
     showSource: true,
     spellStats: sharedSpellStats,

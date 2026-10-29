@@ -138,6 +138,7 @@ function renderItemSummary(item) {
         ? "Используется"
         : "Не используется"
       : null,
+    item.attuned ? "Настроен" : null,
     formatItemResource(item.uses)
       ? `Применения: ${formatItemResource(item.uses)}`
       : null,
@@ -235,6 +236,11 @@ function renderInventoryItemCard(item, expandedItemIds = []) {
                 placeholder="Кол-во"
               />
             </label>
+            ${item.id === "amulet-of-health" ? `
+              <label class="inventory-edit-field">
+                <input type="checkbox" data-bind-item-field="attuned" data-item-id="${escapeHtml(itemId)}" ${item.attuned ? "checked" : ""}>
+                <span>Настроен</span>
+              </label>` : ""}
 
             <label class="inventory-edit-field inventory-edit-field--notes">
               <span>Заметки</span>
@@ -272,7 +278,18 @@ export function renderInventoryPanel(state) {
 
   const inventory = state.inventory ?? {};
   const itemsList = Array.isArray(inventory.items) ? inventory.items : [];
+  const attunedCount = itemsList.filter((item) => item?.attuned === true).length;
   const currency = inventory.currency ?? { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+  const currencyMarkup = inventory.currencyStatus === "Не заполнено"
+    ? `<p class="panel-text">Не заполнено</p>`
+    : `<div class="currency-grid">
+        ${["cp", "sp", "ep", "gp", "pp"].map((coin) => `
+          <label class="currency-field">
+            <span>${coin.toUpperCase()}</span>
+            <input class="inventory-input" type="number" min="0" step="1"
+              value="${escapeHtml(currency[coin] ?? 0)}" data-bind="inventory.currency.${coin}">
+          </label>`).join("")}
+      </div>`;
   const expandedItemIds = Array.isArray(state?.ui?.inventory?.expandedItemIds)
     ? state.ui.inventory.expandedItemIds
     : [];
@@ -283,6 +300,7 @@ export function renderInventoryPanel(state) {
 
   inventoryPanel.innerHTML = `
     <h2>Инвентарь</h2>
+    ${state.profile?.id === "sara-velaris" ? `<p class="panel-text">Настроенные предметы: ${attunedCount}/3 ячеек.</p>` : ""}
     <p class="panel-text">
       Инвентарь хранит снаряжение, валюту и служит источником правды для оружия, брони, фокусов и расходников.
     </p>
@@ -292,67 +310,7 @@ export function renderInventoryPanel(state) {
     <div class="cards-grid">
       <div class="info-card">
         <div class="info-card-title">Деньги</div>
-        <div class="currency-grid">
-          <label class="currency-field">
-            <span>CP</span>
-            <input
-              class="inventory-input"
-              type="number"
-              min="0"
-              step="1"
-              value="${escapeHtml(currency.cp)}"
-              data-bind="inventory.currency.cp"
-            />
-          </label>
-
-          <label class="currency-field">
-            <span>SP</span>
-            <input
-              class="inventory-input"
-              type="number"
-              min="0"
-              step="1"
-              value="${escapeHtml(currency.sp)}"
-              data-bind="inventory.currency.sp"
-            />
-          </label>
-
-          <label class="currency-field">
-            <span>EP</span>
-            <input
-              class="inventory-input"
-              type="number"
-              min="0"
-              step="1"
-              value="${escapeHtml(currency.ep)}"
-              data-bind="inventory.currency.ep"
-            />
-          </label>
-
-          <label class="currency-field">
-            <span>GP</span>
-            <input
-              class="inventory-input"
-              type="number"
-              min="0"
-              step="1"
-              value="${escapeHtml(currency.gp)}"
-              data-bind="inventory.currency.gp"
-            />
-          </label>
-
-          <label class="currency-field">
-            <span>PP</span>
-            <input
-              class="inventory-input"
-              type="number"
-              min="0"
-              step="1"
-              value="${escapeHtml(currency.pp)}"
-              data-bind="inventory.currency.pp"
-            />
-          </label>
-        </div>
+        ${currencyMarkup}
       </div>
 
       <div class="info-card">
@@ -369,7 +327,7 @@ export function renderInventoryPanel(state) {
     <div class="inventory-section-gap" aria-hidden="true"></div>
 
     <div class="inventory-header-row">
-      <h3>Снаряжение</h3>
+      <h3>Снаряжение · ${escapeHtml(inventory.otherItemsStatus === "Не заполнено" ? "остальные предметы не заполнены" : "")}</h3>
       <button type="button" class="btn" data-action="inventory-add-item">Добавить предмет</button>
     </div>
 

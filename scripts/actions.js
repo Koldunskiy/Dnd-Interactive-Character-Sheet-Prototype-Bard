@@ -173,10 +173,70 @@ function handleInventoryRemoveItem(draft, target) {
 }
 
 function handleLongRest(draft) {
+  if (draft.profile?.id === "sara-velaris") {
+    if (!requestConfirmation("Долгий отдых восстановит HP, временные HP, practised uses, Suggestion, кости хитов и отметки хода. Ци восстанавливается только после подтверждения 30 минут медитации. Снять концентрацию Suggestion/другого эффекта? Продолжить?")) return false;
+    const meditate = requestConfirmation("Подтвердите, что Сара посвятила не менее 30 минут долгого отдыха медитации для восстановления ци.");
+    const practice = Number(draft.profile.level) >= 10 &&
+      requestConfirmation("Подтвердите 10 минут практики для одной замены обычной техники Open Hand.");
+    const combat = ensureCombatState(draft);
+    const turn = ensureTurnState(draft);
+    const effects = ensureEffectsState(draft);
+    draft.monk.techniqueRuntime ??= {};
+    const thirdEye = draft.monk.techniqueRuntime["ll-monk:awaken-the-third-eye"];
+    if (thirdEye) {
+      thirdEye.awakenThirdEyeActive = false;
+      thirdEye.awakenThirdEyePending = false;
+    }
+    const derived = getDerivedStats(draft);
+    turn.actionUsed = false;
+    turn.bonusActionUsed = false;
+    turn.reactionUsed = false;
+    combat.hp.current = derived.maxHitPoints;
+    combat.hp.temp = 0;
+    combat.hitDice ??= { total: Number(draft.profile.level), remaining: Number(draft.profile.level) };
+    const diceTotal = Math.max(1, Number(draft.profile.level));
+    combat.hitDice.total = diceTotal;
+    combat.hitDice.remaining = clamp(
+      Number(combat.hitDice.remaining ?? diceTotal) + Math.max(1, Math.floor(Number(draft.profile.level) / 2)),
+      0,
+      diceTotal
+    );
+    combat.practiced ??= { current: 0 };
+    combat.practiced.current = derived.monk.practicedMaximum;
+    if (meditate) combat.ki.current = derived.monk.kiMaximum;
+    draft.spellcasting.racialSpells?.forEach((spell) => {
+      if (spell.id === "suggestion-2014" && spell.uses) spell.uses.current = spell.uses.max;
+    });
+    combat.concentration = "";
+    effects.splice(0, effects.length, ...effects.filter((effect) =>
+      !["until-short-rest", "until-long-rest"].includes(effect?.durationType)));
+    draft.monk.techniqueRuntime ??= {};
+    for (const runtime of Object.values(draft.monk.techniqueRuntime)) {
+      if (runtime && typeof runtime === "object") {
+        if (runtime.cooldown === "long-rest") runtime.used = false;
+        delete runtime.usedUntilRest;
+      }
+    }
+    delete draft.monk.techniqueRuntime.practicedUsedThisTurn;
+    draft.monk.ordinaryReplacementCredit = practice ? 1 : 0;
+    draft.monk.replacementEntitlements = (draft.monk.replacementEntitlements ?? [])
+      .filter((event) => event.type !== "rest");
+    if (practice) {
+      draft.monk.replacementEntitlements.push({
+        id: `rest:${globalThis.crypto?.randomUUID?.() ?? Date.now()}`,
+        type: "rest",
+        createdAtLevel: Number(draft.profile.level),
+        consumed: false
+      });
+    }
+    draft.monk.techniqueRuntime.deflectContinuation = null;
+    return;
+  }
+
   if (!requestConfirmation(
     "Долгий отдых восстановит хиты до максимума, сбросит временные хиты и концентрацию, отметки хода и номер хода (до 1), восстановит ячейки, вдохновение и собственные применения заклинаний, а также удалит эффекты до короткого или долгого отдыха. Продолжить?",
   )) {
-    return;
+    return false;
   }
 
   const combat = ensureCombatState(draft);
@@ -224,10 +284,44 @@ function handleResetRuntime(resetState) {
 }
 
 function handleShortRest(draft) {
+  if (draft.profile?.id === "sara-velaris") {
+    const level = Number(draft.profile.level);
+    const hasPuritySpirit = level >= 20;
+    if (!requestConfirmation(hasPuritySpirit
+      ? "Короткий отдых (обычно не менее 1 часа; Purity Spirit позволяет 1 минуту) сбросит отметки действий и эффекты до короткого отдыха. Подтвердить отдых?"
+      : "Короткий отдых (обычно не менее 1 часа) сбросит отметки действий и эффекты до короткого отдыха; хиты и временные хиты не меняются. Подтвердить отдых?")) return false;
+    const meditate = requestConfirmation(hasPuritySpirit
+      ? "Подтвердите восстановление ци через 1-минутный отдых Purity Spirit; это отдельный режим, не 30-минутная медитация."
+      : "Подтвердите 30 минут медитации внутри короткого отдыха для восстановления ци.");
+    const combat = ensureCombatState(draft);
+    const turn = ensureTurnState(draft);
+    const effects = ensureEffectsState(draft);
+    const thirdEye = draft.monk?.techniqueRuntime?.["ll-monk:awaken-the-third-eye"];
+    if (thirdEye?.awakenThirdEyePending) thirdEye.awakenThirdEyePending = false;
+    turn.actionUsed = false;
+    turn.bonusActionUsed = false;
+    turn.reactionUsed = false;
+    if (meditate) {
+      const derived = getDerivedStats(draft);
+      combat.ki.current = derived.monk.kiMaximum;
+    }
+    effects.splice(0, effects.length, ...effects.filter((effect) => effect?.durationType !== "until-short-rest"));
+    draft.monk.techniqueRuntime ??= {};
+    for (const runtime of Object.values(draft.monk.techniqueRuntime)) {
+      if (runtime && typeof runtime === "object") {
+        if (runtime.cooldown === "short-rest") runtime.used = false;
+        delete runtime.usedUntilRest;
+      }
+    }
+    delete draft.monk.techniqueRuntime.practicedUsedThisTurn;
+    draft.monk.techniqueRuntime.deflectContinuation = null;
+    return;
+  }
+
   if (!requestConfirmation(
     "Короткий отдых (не менее 1 часа) вернёт действие, бонусное действие и реакцию, очистит концентрацию и удалит эффекты до короткого отдыха. Потраченные кости хитов и Песнь отдыха учитываются вручную; хиты этой кнопкой не восстанавливаются. При доступной Черте вдохновения восстановится Бардское вдохновение. Продолжить?",
   )) {
-    return;
+    return false;
   }
 
   const combat = ensureCombatState(draft);
@@ -290,11 +384,16 @@ function handleAbilityAdjust(draft, target) {
   const abilityId = target.dataset.abilityId;
   const delta = Number(target.dataset.delta || 0);
 
+  if (draft.profile?.id === "sara-velaris" && abilityId !== "constitution") return;
   if (!abilityId || typeof draft.abilities?.[abilityId] !== "number") {
     return;
   }
 
-  draft.abilities[abilityId] = clamp((draft.abilities[abilityId] || 0) + delta, 8, 30);
+  draft.abilities[abilityId] = clamp(
+    (draft.abilities[abilityId] || 0) + delta,
+    draft.profile?.id === "sara-velaris" ? 1 : 8,
+    30
+  );
 }
 
 function handleSkillToggle(draft, target) {
@@ -464,6 +563,20 @@ function handleTurnEnd(draft) {
   turn.bonusActionUsed = false;
   turn.reactionUsed = false;
   turn.turnNumber = Number(turn.turnNumber || 1) + 1;
+  if (draft.profile?.id === "sara-velaris") {
+    for (const runtime of Object.values(draft.monk?.techniqueRuntime ?? {})) {
+      if (runtime && typeof runtime === "object") delete runtime.usedThisTurn;
+    }
+    if (draft.monk?.techniqueRuntime) {
+      delete draft.monk.techniqueRuntime.practicedUsedThisTurn;
+    }
+    if (draft.monk?.techniqueRuntime) draft.monk.techniqueRuntime.deflectContinuation = null;
+  }
+}
+
+function handleMonkAttack(draft) {
+  if (draft.profile?.id !== "sara-velaris") return;
+  ensureTurnState(draft).actionUsed = true;
 }
 
 function handleBardicUse(draft, target) {
@@ -630,6 +743,10 @@ function handleLevelAdjust(draft, target) {
     return;
   }
 
+  if (draft.profile?.id === "sara-velaris" && (!Number.isInteger(delta) || Math.abs(delta) !== 1)) {
+    return;
+  }
+
   if (!draft.profile || typeof draft.profile !== "object") {
     draft.profile = {};
   }
@@ -641,8 +758,25 @@ function handleLevelAdjust(draft, target) {
     return;
   }
 
+  if (draft.profile?.id === "sara-velaris" && nextLevel > currentLevel) {
+    const pending = (draft.monk.replacementEntitlements ?? []).some((event) =>
+      event.type === "level-up" && !event.consumed);
+    if (pending) return;
+  }
+
   draft.profile.level = nextLevel;
   normalizeLevelDependentState(draft);
+  if (draft.profile?.id === "sara-velaris" &&
+      nextLevel > Number(draft.monk.processedLevel ?? currentLevel) &&
+      nextLevel === Number(draft.monk.processedLevel ?? currentLevel) + 1) {
+    draft.monk.replacementEntitlements ??= [];
+    draft.monk.replacementEntitlements.push({
+      id: `level:${nextLevel}:${globalThis.crypto?.randomUUID?.() ?? Date.now()}`,
+      type: "level-up",
+      level: nextLevel,
+      consumed: false
+    });
+  }
 }
 
 function handleSpellLibrarySetLevel(draft, target) {
@@ -873,6 +1007,7 @@ export function createActionHandlers({ resetState }) {
     "turn-toggle-bonus-action": handleTurnToggleBonusAction,
     "turn-toggle-reaction": handleTurnToggleReaction,
     "turn-end": handleTurnEnd,
+    "monk-attack": handleMonkAttack,
     "bardic-use": handleBardicUse,
     "weapon-attack": handleWeaponAttack,
     "spell-cast": handleSpellCast,

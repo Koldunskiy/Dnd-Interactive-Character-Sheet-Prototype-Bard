@@ -25,6 +25,10 @@ if (dirname(webDir) !== projectRoot || basename(webDir) !== "www") {
 
 const runtimeDataFiles = [
   "data/character.js",
+  "data/sara.js",
+  "data/sara-lore.js",
+  "data/monk-techniques.js",
+  "data/monk-support-spells.js",
   "data/spell-library.js",
   "data/bard-spells.generated.js",
   "data/extra-spells.js"

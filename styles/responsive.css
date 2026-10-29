@@ -111,7 +111,7 @@
     margin-inline: 0;
 
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(var(--tab-count, 6), minmax(0, 1fr));
     gap: 4px;
 
     max-height: none;

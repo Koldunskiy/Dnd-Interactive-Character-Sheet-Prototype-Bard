@@ -5,6 +5,10 @@ import {
   BARD_PROGRESSION,
   TURN_TRACKER_META,
 } from "./rules.js";
+import {
+  ALTERNATE_MONK_RULESET_ID,
+  getAlternateMonkDerived
+} from "./rules/alternate-monk.js";
 
 function getAbilityModifier(score = 10) {
   return Math.floor((Number(score) - 10) / 2);
@@ -444,6 +448,10 @@ function getBardicInspirationState(character, bardProgression, abilityModifiers)
 }
 
 export function getDerivedStats(character) {
+  if (character.profile?.rulesetId === ALTERNATE_MONK_RULESET_ID) {
+    return getAlternateMonkDerived(character);
+  }
+
   const level = getLevel(character);
   const proficiencyBonus = getProficiencyBonus(
     level,

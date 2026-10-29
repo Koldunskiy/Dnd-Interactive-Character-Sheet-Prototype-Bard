@@ -2,6 +2,7 @@ import {
   escapeHtml,
 } from "./shared/spell-card.js";
 import { getBladeFlourishReference } from "../rule-reference.js";
+import { renderSaraCombatPanel } from "./render-techniques.js";
 
 const EMPTY_COMBAT_CARDS = Object.freeze({
   weapons: [],
@@ -476,6 +477,15 @@ function renderGroupedCombatActionCards(cards = [], expandedCardIds = [], derive
 export function renderMeleePanel(state, derived) {
   const meleePanel = document.getElementById("meleePanel");
   if (!meleePanel) {
+    return;
+  }
+
+  if (state.profile?.id === "sara-velaris") {
+    meleePanel.innerHTML = `
+      ${renderTurnTracker(derived)}
+      ${renderSaraCombatPanel(state, derived)}
+      <button type="button" class="btn" data-action="monk-attack">Отметить действие «Атака»</button>
+    `;
     return;
   }
 

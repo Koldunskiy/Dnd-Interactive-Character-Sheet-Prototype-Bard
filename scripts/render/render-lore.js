@@ -1,8 +1,19 @@
-import { getState, updateState } from "../state.js";
+import { getState } from "../state.js";
 import { validateNoteEntries } from "../lore-notes.js";
 
-const expandedNoteIds = new Set();
-const noteStatus = new Map();
+const expandedNoteIdsByCharacter = new Map();
+const noteStatusByCharacter = new Map();
+let activeLoreCharacterId = null;
+const loreDisclosureStates = new Map();
+
+function getCharacterTransientState(characterId) {
+  if (!expandedNoteIdsByCharacter.has(characterId)) expandedNoteIdsByCharacter.set(characterId, new Set());
+  if (!noteStatusByCharacter.has(characterId)) noteStatusByCharacter.set(characterId, new Map());
+  return {
+    expanded: expandedNoteIdsByCharacter.get(characterId),
+    status: noteStatusByCharacter.get(characterId)
+  };
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -87,8 +98,8 @@ function createNoteCard(note) {
   return card;
 }
 
-function updateNoteCard(card, note) {
-  const isExpanded = expandedNoteIds.has(note.id);
+function updateNoteCard(card, note, transient) {
+  const isExpanded = transient.expanded.has(note.id);
   card.querySelector(".lore-note-title").textContent = note.title.trim() || "Без названия";
   const preview = note.text.replace(/\s+/g, " ").trim();
   card.querySelector(".lore-note-preview").textContent =
@@ -105,10 +116,11 @@ function updateNoteCard(card, note) {
     }
   }
   const status = card.querySelector(".lore-note-status");
-  status.textContent = noteStatus.get(note.id) ?? "Изменения сохраняются автоматически.";
+  status.textContent = transient.status.get(note.id) ?? "Изменения сохраняются автоматически.";
 }
 
-function renderNoteCards(root, lore) {
+function renderNoteCards(root, lore, characterId) {
+  const transient = getCharacterTransientState(characterId);
   const issue = lore.notesMigrationIssue || validateNoteEntries(lore.noteEntries);
   const issueNode = root.querySelector(".lore-notes-issue");
   let emptyNode = root.querySelector(".lore-notes-empty");
@@ -141,10 +153,10 @@ function renderNoteCards(root, lore) {
     } else if (cardsRoot.children[index] !== card) {
       cardsRoot.insertBefore(card, cardsRoot.children[index] ?? null);
     }
-    updateNoteCard(card, note);
+    updateNoteCard(card, note, transient);
   });
-  for (const id of [...expandedNoteIds]) {
-    if (!wantedIds.has(id)) expandedNoteIds.delete(id);
+  for (const id of [...transient.expanded]) {
+    if (!wantedIds.has(id)) transient.expanded.delete(id);
   }
 }
 
@@ -162,11 +174,12 @@ export function updateLoreNoteEditView(metadata) {
   card.querySelector(".lore-note-preview").textContent =
     preview.length > 180 ? `${preview.slice(0, 180)}…` : preview || "Нет текста.";
   const saved = metadata.persistenceResult?.ok;
-  noteStatus.set(metadata.noteId, saved ? "Сохранено" : "Не удалось сохранить на устройстве");
-  card.querySelector(".lore-note-status").textContent = noteStatus.get(metadata.noteId);
+  const transient = getCharacterTransientState(state.profile?.id ?? "aurelia");
+  transient.status.set(metadata.noteId, saved ? "Сохранено" : "Не удалось сохранить на устройстве");
+  card.querySelector(".lore-note-status").textContent = transient.status.get(metadata.noteId);
 }
 
-function renderLoreNotes(lore, root = null) {
+function renderLoreNotes(lore, characterId, root = null) {
   if (!root) {
     root = document.createElement("section");
     root.id = "loreNotesRoot";
@@ -181,18 +194,38 @@ function renderLoreNotes(lore, root = null) {
       <div class="lore-note-cards"></div>
     `;
   }
-  renderNoteCards(root, lore);
+  renderNoteCards(root, lore, characterId);
   return root;
+}
+
+function renderSaraBiography(biography) {
+  if (!biography || !Array.isArray(biography.sections)) return "";
+  return `
+    <section class="sara-biography">
+      <h2>${escapeHtml(biography.title)}</h2>
+      <h3>${escapeHtml(biography.subtitle)}</h3>
+      <p class="panel-text">${escapeHtml(biography.disclaimer)}</p>
+      ${biography.sections.map((section) => `
+        <details class="info-card profile-responsive-disclosure" data-profile-disclosure="sara-lore-${escapeHtml(section.title)}">
+          <summary class="info-card-title">${escapeHtml(section.title)}</summary>
+          <div class="info-card-text">${escapeHtml(section.text)}</div>
+        </details>`).join("")}
+    </section>
+  `;
 }
 
 export function renderLorePanel(state) {
   const lorePanel = document.getElementById("lorePanel");
   if (!lorePanel) return;
   const lore = state.lore ?? {};
-  const disclosureState = new Map(
-    [...lorePanel.querySelectorAll("#loreCardsRoot details[data-profile-disclosure]")]
-      .map((details) => [details.dataset.profileDisclosure, details.open]),
-  );
+  const characterId = state.profile?.id ?? "aurelia";
+  if (activeLoreCharacterId === characterId) {
+    loreDisclosureStates.set(activeLoreCharacterId, new Map(
+      [...lorePanel.querySelectorAll("#loreCardsRoot details[data-profile-disclosure]")]
+        .map((details) => [details.dataset.profileDisclosure, details.open]),
+    ));
+  }
+  const disclosureState = loreDisclosureStates.get(characterId) ?? new Map();
   const compact = window.matchMedia("(max-width: 899px)").matches;
   let cardsRoot = lorePanel.querySelector("#loreCardsRoot");
   let notesRoot = lorePanel.querySelector("#loreNotesRoot");
@@ -222,7 +255,7 @@ export function renderLorePanel(state) {
   if (mount.parentElement !== lorePanel) lorePanel.append(mount);
   lorePanel.insertBefore(mount, cardsRoot);
 
-  cardsRoot.innerHTML = [
+  cardsRoot.innerHTML = lore.biography ? renderSaraBiography(lore.biography) : [
     renderInfoCard("appearance", "Внешний вид", lore.appearance),
     renderInfoCard("order", "Орден", lore.order),
     renderInfoCard("motivation", "Цель", lore.motivation),
@@ -236,16 +269,37 @@ export function renderLorePanel(state) {
     const key = details.dataset.profileDisclosure;
     details.open = disclosureState.has(key) ? disclosureState.get(key) : !compact;
   });
+  loreDisclosureStates.set(characterId, new Map(
+    [...cardsRoot.querySelectorAll("details[data-profile-disclosure]")]
+      .map((details) => [details.dataset.profileDisclosure, details.open]),
+  ));
 
-  notesRoot = renderLoreNotes(lore, notesRoot);
+  notesRoot = renderLoreNotes(lore, characterId, notesRoot);
   if (notesRoot.parentElement !== mount) mount.append(notesRoot);
+  activeLoreCharacterId = characterId;
+}
+
+export function activateLoreCharacter(characterId) {
+  if (activeLoreCharacterId && activeLoreCharacterId !== characterId) {
+    const lorePanel = document.getElementById("lorePanel");
+    if (lorePanel) {
+      loreDisclosureStates.set(activeLoreCharacterId, new Map(
+        [...lorePanel.querySelectorAll("#loreCardsRoot details[data-profile-disclosure]")]
+          .map((details) => [details.dataset.profileDisclosure, details.open]),
+      ));
+    }
+    document.getElementById("loreNotesRoot")?.remove();
+    document.getElementById("loreNotesMount")?.remove();
+  }
+  activeLoreCharacterId = characterId;
 }
 
 export function setLoreNoteExpanded(noteId, expanded) {
-  if (expanded) expandedNoteIds.add(noteId);
-  else expandedNoteIds.delete(noteId);
+  const transient = getCharacterTransientState(getState().profile?.id ?? "aurelia");
+  if (expanded) transient.expanded.add(noteId);
+  else transient.expanded.delete(noteId);
 }
 
 export function clearLoreNoteStatus(noteId) {
-  noteStatus.delete(noteId);
+  getCharacterTransientState(getState().profile?.id ?? "aurelia").status.delete(noteId);
 }

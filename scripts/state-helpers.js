@@ -197,6 +197,8 @@ export function ensureInventoryState(draft) {
             magicalBonusDamage: Number.isFinite(Number(safeItem.weapon.magicalBonusDamage))
               ? Number(safeItem.weapon.magicalBonusDamage)
               : 0,
+            proficiencyName: safeItem.weapon.proficiencyName ?? null,
+            proficient: Boolean(safeItem.weapon.proficient),
           }
         : null;
 
@@ -257,6 +259,7 @@ export function ensureInventoryState(draft) {
       quantity: Number.isFinite(Number(safeItem.quantity)) ? Number(safeItem.quantity) : 1,
       stackable: Boolean(safeItem.stackable),
       equipped: Boolean(safeItem.equipped),
+      attuned: Boolean(safeItem.attuned),
       notes: safeItem.notes ?? "",
       tags: Array.isArray(safeItem.tags) ? safeItem.tags : [],
       weapon,

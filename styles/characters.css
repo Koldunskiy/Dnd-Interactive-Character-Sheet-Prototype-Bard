@@ -1,0 +1,74 @@
+.character-picker {
+  max-width: 760px;
+  margin: 8vh auto;
+  padding: clamp(20px, 5vw, 40px);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--surface);
+}
+
+.character-picker[hidden] {
+  display: none;
+}
+
+.character-picker__choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.character-picker__button {
+  min-height: 100px;
+  padding: 18px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 245, 239, 0.04);
+  color: inherit;
+  cursor: pointer;
+}
+
+.character-picker__button strong,
+.character-picker__button span {
+  display: block;
+}
+
+.character-picker__button span {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.character-picker__error {
+  color: #ffb6a9;
+}
+
+.page[data-screen="characters"] > .topbar,
+.page[data-screen="characters"] > .app-layout {
+  display: none;
+}
+
+.page[data-screen="characters"] {
+  display: block;
+}
+
+[data-tab][hidden] {
+  display: none !important;
+}
+
+.character-setup {
+  display: grid;
+  gap: 12px;
+  max-width: 480px;
+  margin: 24px auto;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.character-setup__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}

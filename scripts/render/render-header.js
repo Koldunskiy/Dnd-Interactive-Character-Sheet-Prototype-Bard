@@ -1,16 +1,14 @@
 export function renderHeader(state) {
-  const header = document.getElementById("appHeader");
-  if (!header) return;
-
-  header.innerHTML = `
-    <div class="app-header__main">
-      <div>
-        <p class="eyebrow">Character Sheet</p>
-        <h1>${escapeHtml(state.profile?.name ?? "Безымянный персонаж")}</h1>
-      </div>
-      <div class="app-header__actions">
-        ...
-      </div>
-    </div>
-  `;
+  const name = document.getElementById("heroName");
+  const subtitle = document.getElementById("heroSubtitle");
+  const characterName = state.profile?.name ?? "Безымянный персонаж";
+  if (name) name.textContent = characterName;
+  document.title = `${characterName} — лист персонажа`;
+  if (subtitle) {
+    subtitle.textContent = [
+      state.profile?.race,
+      state.profile?.className,
+      state.profile?.subclass
+    ].filter(Boolean).join(" · ");
+  }
 }
