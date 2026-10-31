@@ -1,9 +1,17 @@
 import { MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
 import { getDerivedStats } from "../calculations.js";
-import { getTechniqueAvailability } from "../selectors/techniques.js";
+import {
+  getTechniqueAvailability,
+  isTechniqueEffectivelySelected
+} from "../selectors/techniques.js";
 import { getSessionContext, getState, updateSessionState } from "../state.js";
 import { ALTERNATE_MONK_RULESET_ID } from "../rules/alternate-monk.js";
 import { MONK_RACIAL_SPELLS } from "../../data/monk-support-spells.js";
+import { applyDamagePools } from "../combat/damage-pools.js";
+import {
+  calculateAttackDamage,
+  parsePhysicalInteger
+} from "../combat/sara-combat.js";
 
 function isSara(character) {
   return character.profile?.id === "sara-velaris" &&
@@ -77,6 +85,19 @@ function markActivation(character, technique) {
   if (technique.activation === "replace-attack") turn.actionUsed = true;
 }
 
+function applySaraDamage(character, damage) {
+  const hp = character.combat?.hp;
+  const result = applyDamagePools(
+    Number(hp?.current),
+    Number(hp?.temp ?? 0),
+    damage
+  );
+  if (!result.ok) return result;
+  hp.current = result.hpAfter;
+  hp.temp = result.tempHpAfter;
+  return result;
+}
+
 function applyToCharacter(character, techniqueId, input) {
   if (!isSara(character)) return { ok: false, reason: "Эта операция доступна только в листе Сары." };
   const technique = MONK_TECHNIQUE_BY_ID.get(techniqueId);
@@ -84,6 +105,9 @@ function applyToCharacter(character, techniqueId, input) {
   if (!getSelectedIds(character).includes(techniqueId)) return { ok: false, reason: "Техника не выбрана." };
   const availability = getTechniqueAvailability(character, technique);
   if (!availability.available) return { ok: false, reason: availability.reason };
+  if (!isTechniqueEffectivelySelected(character, techniqueId)) {
+    return { ok: false, reason: "Техника сохранена в выборе, но сейчас недоступна по уровню, предварительным требованиям или выбору стиля." };
+  }
   if (input.confirmed !== true) return { ok: false, reason: "Применение не подтверждено." };
 
   character.monk.techniqueRuntime ??= {};
@@ -151,25 +175,22 @@ function applyToCharacter(character, techniqueId, input) {
     return { ok: false, reason: "Дополнительные модификаторы Mantle должны быть целым числом." };
   }
   if (technique.id === "ll-monk:deflect-strike" || technique.id === "ll-monk:deflect-missile") {
-    if (!Number.isInteger(Number(input.incomingDamage)) || Number(input.incomingDamage) < 0 ||
-        !Number.isInteger(Number(input.deflectRoll)) || Number(input.deflectRoll) < 1 ||
-        Number(input.deflectRoll) > derived.monk.martialDieSides) {
-      return { ok: false, reason: `Введите целый входящий урон ≥ 0 и результат кости от 1 до ${derived.monk.martialDieSides}.` };
-    }
+    const incoming = parsePhysicalInteger(input.incomingDamage, 0, Number.MAX_SAFE_INTEGER, "Входящий урон");
+    const die = parsePhysicalInteger(input.deflectRoll, 1, derived.monk.martialDieSides, "Результат кости");
+    if (!incoming.ok) return incoming;
+    if (!die.ok) return die;
     if (technique.id === "ll-monk:deflect-missile" &&
         input.mode !== "weapon" && input.returnProjectile === true) {
       return { ok: false, reason: "Комбинация spell-deflect и возврата снаряда не поддерживается." };
     }
   }
   if (technique.id === "ll-monk:mystic-regeneration") {
-    const dieResult = Number(input.dieResult);
-    if (!Number.isInteger(dieResult) || dieResult < 1 || dieResult > derived.monk.martialDieSides) {
-      return { ok: false, reason: `Введите целый результат кости от 1 до ${derived.monk.martialDieSides}.` };
-    }
+    const die = parsePhysicalInteger(input.dieResult, 1, derived.monk.martialDieSides, "Результат кости");
+    if (!die.ok) return die;
     if (derived.currentHitPoints >= derived.maxHitPoints && input.confirmNoHealing !== true) {
       return { ok: false, reason: "Хиты уже полные; подтвердите применение без полезного лечения или отмените." };
     }
-    const heal = Math.max(0, dieResult + derived.abilityModifiers.wisdom);
+    const heal = Math.max(0, die.value + derived.abilityModifiers.wisdom);
     character.combat.hp.current = Math.min(derived.maxHitPoints, derived.currentHitPoints + heal);
   }
 
@@ -195,13 +216,20 @@ function applyToCharacter(character, techniqueId, input) {
     character.monk.techniqueRuntime[techniqueId] = { ...runtime, usedUntilRest: true };
   }
   if (technique.id === "ll-monk:deflect-missile") {
-    const reduced = Math.max(0, Number(input.incomingDamage) - (
+    const rawRemainder = Math.max(0, Number(input.incomingDamage) - (
       derived.level + Number(input.deflectRoll) + derived.abilityModifiers.dexterity
     ));
+    const adjustedRemainder = input.finalAdjustedDamage == null ||
+      String(input.finalAdjustedDamage).trim() === ""
+      ? { ok: true, value: rawRemainder }
+      : parsePhysicalInteger(input.finalAdjustedDamage, 0, rawRemainder, "Итоговый скорректированный остаток");
+    if (!adjustedRemainder.ok) return adjustedRemainder;
+    const reduced = adjustedRemainder.value;
     const canCatch = reduced === 0 && input.freeHand === true && input.physicalProjectile === true;
-    if (input.applyDamageToSara === true) {
-      character.combat.hp.current = Math.max(0, derived.currentHitPoints - reduced);
-    }
+    const hpResult = input.applyDamageToSara === true
+      ? applySaraDamage(character, reduced)
+      : null;
+    if (hpResult && !hpResult.ok) return hpResult;
     if (input.caught === true && canCatch && input.mode === "weapon") {
       character.monk.techniqueRuntime.deflectContinuation = {
         id: input.continuationId ?? input.operationId ??
@@ -215,6 +243,8 @@ function applyToCharacter(character, techniqueId, input) {
       ok: true,
       result: {
         reducedDamage: reduced,
+        remainingDamage: reduced,
+        damagePools: hpResult,
         canCatch: input.caught === true && canCatch,
         returnUnsupported: input.caught === true && canCatch && input.mode !== "weapon"
       }
@@ -222,11 +252,18 @@ function applyToCharacter(character, techniqueId, input) {
   }
   if (technique.id === "ll-monk:deflect-strike") {
     const reduction = derived.level + Number(input.deflectRoll) + derived.abilityModifiers.dexterity;
-    const remaining = Math.max(0, Number(input.incomingDamage) - reduction);
-    if (input.applyDamageToSara === true) {
-      character.combat.hp.current = Math.max(0, derived.currentHitPoints - remaining);
-    }
-    return { ok: true, result: { reduction, remainingDamage: remaining, canCounterattack: remaining === 0 } };
+    const rawRemainder = Math.max(0, Number(input.incomingDamage) - reduction);
+    const adjustedRemainder = input.finalAdjustedDamage == null ||
+      String(input.finalAdjustedDamage).trim() === ""
+      ? { ok: true, value: rawRemainder }
+      : parsePhysicalInteger(input.finalAdjustedDamage, 0, rawRemainder, "Итоговый скорректированный остаток");
+    if (!adjustedRemainder.ok) return adjustedRemainder;
+    const remaining = adjustedRemainder.value;
+    const hpResult = input.applyDamageToSara === true
+      ? applySaraDamage(character, remaining)
+      : null;
+    if (hpResult && !hpResult.ok) return hpResult;
+    return { ok: true, result: { reduction, remainingDamage: remaining, damagePools: hpResult, canCounterattack: remaining === 0 } };
   }
   return {
     ok: true,
@@ -463,7 +500,7 @@ export function continueDeflectMissile(
   continuationId,
   attackRoll,
   targetArmorClass,
-  { proficiencyConfirmed = false } = {}
+  { dmHitResult = null, damageRolls = [], proficiencyConfirmed = false } = {}
 ) {
   const operationId = `missile-return:${continuationId}`;
   let outcome;
@@ -475,16 +512,40 @@ export function continueDeflectMissile(
     }
     const currentKi = Number(draft.combat?.ki?.current);
     if (!Number.isInteger(currentKi) || currentKi < 1) throw new Error("Для возврата снаряда требуется 1 Ki.");
-    if (!Number.isInteger(attackRoll) || attackRoll < 1 || attackRoll > 20 ||
-        !Number.isInteger(Number(targetArmorClass)) ||
-        !proficiencyConfirmed) throw new Error("Подтвердите владение этим оружием и введите корректные бросок атаки и КД цели.");
+    if (proficiencyConfirmed !== true) {
+      throw new Error("Подтвердите владение простым оружием для возврата.");
+    }
+    const checkedD20 = parsePhysicalInteger(attackRoll, 1, 20, "Результат к20");
+    if (!checkedD20.ok) throw new Error(checkedD20.reason);
+    const checkedAc = targetArmorClass == null || String(targetArmorClass).trim() === ""
+      ? null
+      : parsePhysicalInteger(targetArmorClass, 1, 99, "КД цели");
+    if (checkedAc && !checkedAc.ok) throw new Error(checkedAc.reason);
+    if (checkedAc == null && !["hit", "miss"].includes(dmHitResult)) {
+      throw new Error("Введите результат к20 и укажите КД цели либо подтвердите попадание/промах.");
+    }
     const derived = getDerivedStats(draft);
+    const profile = derived.saraAttackProfiles.returnedProjectile;
+    const total = checkedD20.value + profile.attackBonus;
+    const hits = checkedAc == null
+      ? dmHitResult === "hit"
+      : checkedD20.value === 20 || (checkedD20.value !== 1 && total >= checkedAc.value);
+    const damage = hits
+      ? calculateAttackDamage(profile, damageRolls, checkedD20.value === 20)
+      : null;
+    if (damage && !damage.ok) throw new Error(damage.reason);
     draft.combat.ki.current = currentKi - 1;
     delete draft.monk.techniqueRuntime.deflectContinuation;
     outcome = {
-      attackBonus: derived.unarmedAttackBonus,
-      total: attackRoll + derived.unarmedAttackBonus,
-      hits: attackRoll === 20 || (attackRoll !== 1 && attackRoll + derived.unarmedAttackBonus >= Number(targetArmorClass)),
+      attackBonus: profile.attackBonus,
+      damageDice: profile.damageDice,
+      damageModifier: profile.damageModifier,
+      attackKind: profile.attackKind,
+      total,
+      hits,
+      critical: checkedD20.value === 20,
+      damageRolls: damage?.damageRolls ?? null,
+      damageTotalBeforeTargetModifiers: damage?.damageTotalBeforeTargetModifiers ?? null,
       range: "20/60",
       sameReaction: true
     };

@@ -483,8 +483,11 @@ export function renderMeleePanel(state, derived) {
   if (state.profile?.id === "sara-velaris") {
     meleePanel.innerHTML = `
       ${renderTurnTracker(derived)}
+      <section class="panel-section sara-battle-hp">
+        <h2 class="section-title">Хиты Сары</h2>
+        <div class="combat-resource-grid">${renderHpCard(state, derived)}</div>
+      </section>
       ${renderSaraCombatPanel(state, derived)}
-      <button type="button" class="btn" data-action="monk-attack">Отметить действие «Атака»</button>
     `;
     return;
   }

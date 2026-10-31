@@ -40,8 +40,57 @@
   font-size: 0.9rem;
 }
 
+.sara-combat-form {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 245, 239, 0.035);
+}
+
+.sara-combat-form[hidden] {
+  display: none;
+}
+
+.sara-form-check,
+.sara-form-actions,
+.sara-attack-record {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.sara-form-check {
+  line-height: 1.45;
+}
+
+.sara-form-error {
+  min-height: 1.2em;
+  color: #ffb3a8;
+}
+
+.sara-attack-record {
+  align-items: stretch;
+  flex-direction: column;
+  padding: 12px;
+  border-inline-start: 3px solid var(--line);
+}
+
+.sara-attack-assistant > button,
+.sara-attack-assistant .sara-combat-form,
+.sara-save-outcome {
+  margin-block: 10px;
+}
+
 @media (max-width: 540px) {
   .character-setup__fields {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sara-form-actions > .btn {
+    flex: 1 1 100%;
   }
 }

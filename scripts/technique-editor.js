@@ -136,14 +136,20 @@ export function validateTechniqueDraft(character, draft, context) {
     const previousLimit = previousLevel === 1 ? 0 : previousLevel <= 4 ? 3 : previousLevel <= 6 ? 4 :
       previousLevel <= 8 ? 5 : previousLevel <= 10 ? 6 : previousLevel <= 12 ? 7 :
         previousLevel <= 14 ? 8 : previousLevel <= 17 ? 9 : 10;
-    const earnedSlots = ordinaryLimit - previousLimit;
-    if (draft.ordinaryTechniqueIds.length !== before.length + earnedSlots) {
-      reasons.push(`На этом уровне должно быть ${before.length + earnedSlots} обычных техник до единственной разрешённой замены.`);
-    }
-    if (ordinaryChanges.added.length > 1 || ordinaryChanges.removed.length > 1) {
-      reasons.push("Повышение уровня разрешает не больше одной замены каждого типа.");
-    }
     const addedSignature = signatureChanges.filter((slot) => !signatureBefore[slot] && slots[slot]);
+    const addedSignatureIds = new Set(addedSignature.map((slot) => slots[slot]).filter(Boolean));
+    const relocatedToSignature = ordinaryChanges.removed
+      .filter((id) => addedSignatureIds.has(id));
+    const discretionaryRemovals = ordinaryChanges.removed.length - relocatedToSignature.length;
+    const earnedSlots = ordinaryLimit - previousLimit;
+    if (earnedSlots < 0) reasons.push("Число обычных слотов не может уменьшаться при повышении уровня.");
+    if (draft.ordinaryTechniqueIds.length !== before.length + earnedSlots) {
+      reasons.push(`На этом уровне итоговое число обычных техник должно быть ${before.length + earnedSlots}.`);
+    }
+    const expectedAdditions = earnedSlots + relocatedToSignature.length + discretionaryRemovals;
+    if (discretionaryRemovals > 1 || ordinaryChanges.added.length !== expectedAdditions) {
+      reasons.push("Повышение уровня допускает только одну дополнительную замену сверх новых и перенесённых слотов.");
+    }
     const changedExistingSignatures = signatureChanges.filter((slot) => signatureBefore[slot] && slots[slot]);
     const expectedSlot = `open-hand:${event.level}`;
     if (Number(event.level) === 3 || Number(event.level) === 5 || Number(event.level) === 9) {

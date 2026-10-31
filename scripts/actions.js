@@ -20,6 +20,7 @@ import {
   SKILL_ID_META,
 } from "./rules.js";
 import { buildCharacterSpellCollections } from "./selectors/spellcasting.js";
+import { applyDamagePools } from "./combat/damage-pools.js";
 
 
 export const STATELESS_ACTIONS = new Set(["print-sheet", "reset-runtime"]);
@@ -480,14 +481,14 @@ function handleHpApplyDamage(draft) {
   const maxHp = getMaxHp(derived);
   const amount = Math.max(0, Number(draft.ui?.hpAdjustAmount || 0));
 
-  const currentTemp = Number(combat.hp.temp || 0);
-  const currentHp = Number(combat.hp.current || 0);
-
-  const tempAbsorbed = Math.min(currentTemp, amount);
-  const remainingDamage = amount - tempAbsorbed;
-
-  combat.hp.temp = currentTemp - tempAbsorbed;
-  combat.hp.current = clamp(currentHp - remainingDamage, 0, maxHp);
+  const result = applyDamagePools(
+    Number(combat.hp.current || 0),
+    Number(combat.hp.temp || 0),
+    amount
+  );
+  if (!result.ok) throw new Error(result.reason);
+  combat.hp.temp = result.tempHpAfter;
+  combat.hp.current = clamp(result.hpAfter, 0, maxHp);
 }
 
 function handleHpApplyHeal(draft) {

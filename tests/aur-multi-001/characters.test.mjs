@@ -68,9 +68,10 @@ test("registry and Sara defaults use separate identities, ruleset, and resource 
   assert.equal(sara.combat.hp.current, 124);
   assert.equal(sara.combat.ki.current, 16);
   assert.equal(sara.combat.practiced.current, 4);
-  assert.equal(sara.inventory.items.length, 1);
+  assert.equal(sara.inventory.items.length, 2);
   assert.equal(sara.inventory.items[0].id, "amulet-of-health");
   assert.equal(sara.inventory.items[0].attuned, true);
+  assert.equal(sara.inventory.items[1].id, "insignia-of-claws");
   assert.equal(sara.ui.abilitiesEditable, true);
 });
 
@@ -83,8 +84,8 @@ test("Alternate Monk derived values respect the amulet and do not inherit Bard r
   assert.equal(derived.monk.kiMaximum, 16);
   assert.equal(derived.monk.practicedMaximum, 4);
   assert.equal(derived.monk.techniqueSaveDc, 16);
-  assert.equal(derived.unarmedAttackBonus, 9);
-  assert.equal(derived.unarmedDamage, "1d10 +5 дробящего");
+  assert.equal(derived.unarmedAttackBonus, 10);
+  assert.equal(derived.unarmedDamage, "1d10 +6 дробящего");
   assert.equal(derived.passivePerception, 14);
   assert.equal(derived.passiveInsight, 18);
   assert.equal(derived.passiveInvestigation, 9);
@@ -107,7 +108,7 @@ test("Alternate Monk derived values respect the amulet and do not inherit Bard r
   };
   const adeptDerived = getDerivedStats(adept);
   assert.equal(adeptDerived.unarmoredMovementBonus, 30);
-  assert.equal(adeptDerived.unarmedDamage, "1d10 +6 дробящего");
+  assert.equal(adeptDerived.unarmedDamage, "1d10 +7 дробящего");
 
   const highLevel = cloneSara();
   highLevel.profile.level = 13;
@@ -128,7 +129,7 @@ test("technique catalog is complete, unique, and preserves Sara's agreed selecti
     "open-hand:9": "ll-monk:indomitable-spirit"
   });
   for (const excluded of [
-    "ll-monk:aura-sight", "ll-monk:slowing-strike", "ll-monk:patient-defense",
+    "ll-monk:aura-sight", "ll-monk:heavenly-step", "ll-monk:patient-defense",
     "ll-monk:slow-fall", "ll-monk:gentling-touch"
   ]) {
     assert.equal(
@@ -473,14 +474,21 @@ test("Deflect Missile creates a same-reaction continuation and charges return Ki
   assert.equal(getState().ui.turn.reactionUsed, true);
   const continuationId = getState().monk.techniqueRuntime.deflectContinuation.id;
   const returned = continueDeflectMissile(
-    getSessionContext(), continuationId, 15, 20, { proficiencyConfirmed: true }
+    getSessionContext(), continuationId, 15, 20, {
+      proficiencyConfirmed: true,
+      damageRolls: [4]
+    }
   );
   assert.equal(returned.status, "applied");
   assert.equal(returned.outcome.sameReaction, true);
+  assert.equal(returned.outcome.damageTotalBeforeTargetModifiers, 9);
   assert.equal(getState().combat.ki.current, 15);
   assert.equal(getState().monk.techniqueRuntime.deflectContinuation, undefined);
   assert.equal(continueDeflectMissile(
-    getSessionContext(), continuationId, 15, 20, { proficiencyConfirmed: true }
+    getSessionContext(), continuationId, 15, 20, {
+      proficiencyConfirmed: true,
+      damageRolls: [4]
+    }
   ).status, "rejected");
 });
 

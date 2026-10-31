@@ -1,3 +1,5 @@
+import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
+
 export const ALTERNATE_MONK_RULESET_ID =
   "laserllama-alternate-monk-open-hand-snapshot-2026-10-29";
 
@@ -25,13 +27,6 @@ const SKILLS = {
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 const modifier = (score) => Math.floor((Number(score ?? 10) - 10) / 2);
-
-function selectedTechniqueIds(monk) {
-  return [
-    ...(monk.ordinaryTechniqueIds ?? []),
-    ...Object.values(monk.signatureTechniqueSlots ?? {})
-  ];
-}
 
 export function getAlternateMonkDerived(character) {
   const level = Math.max(1, Math.min(20, Number(character.profile?.level ?? 1)));
@@ -75,12 +70,12 @@ export function getAlternateMonkDerived(character) {
   }
 
   const monk = character.monk ?? {};
-  const warriorAdeptSelected = selectedTechniqueIds(monk).includes("ll-monk:warrior-adept");
+  const effectiveSelections = getEffectiveSelectedTechniqueIds(character);
+  const warriorAdeptSelected = effectiveSelections.has("ll-monk:warrior-adept");
   const warriorAdeptStyle = warriorAdeptSelected
     ? monk.techniqueChoices?.["ll-monk:warrior-adept"]?.styleId ?? null
     : null;
-  const mantleSelected = (monk.ordinaryTechniqueIds ?? []).includes("ll-monk:mantle-of-courtesy") ||
-    Object.values(monk.signatureTechniqueSlots ?? {}).includes("ll-monk:mantle-of-courtesy");
+  const mantleSelected = effectiveSelections.has("ll-monk:mantle-of-courtesy");
   const baseSkills = new Map((character.skills ?? []).map((skill) => [skill.id, skill]));
   const skills = {};
   for (const [id, [label, ability]] of Object.entries(SKILLS)) {
@@ -157,6 +152,24 @@ export function getAlternateMonkDerived(character) {
   const tools = {
     "thieves-tools": abilityModifiers.dexterity + proficiencyBonus
   };
+  const insigniaActive = items.some((item) =>
+    item?.id === "insignia-of-claws" &&
+    item?.equipped === true &&
+    Number(item?.quantity ?? 1) > 0);
+  const unarmedAttackBonus = dexterityModifier + proficiencyBonus + (insigniaActive ? 1 : 0);
+  const unarmedDamageModifier = dexterityModifier +
+    (warriorAdeptStyle === "ll-style:featherweight-fighting" &&
+      (!armor || !["medium", "heavy"].includes(armor.category)) ? 1 : 0) +
+    (insigniaActive ? 1 : 0);
+  const returnedProjectileProfile = {
+    attackAbility: dexterityModifier,
+    attackBonus: dexterityModifier + proficiencyBonus,
+    damageDice: `1d${martialDieSides}`,
+    damageModifier: dexterityModifier,
+    attackKind: "returned-projectile",
+    damageType: "bludgeoning",
+    range: "20/60"
+  };
 
   return {
     level,
@@ -198,14 +211,22 @@ export function getAlternateMonkDerived(character) {
     racialSaveDc: techniqueSaveDc,
     ordinaryTechniqueLimit,
     unarmoredMovementBonus: activeMovementBonus,
-    unarmedAttackBonus: dexterityModifier + proficiencyBonus,
-    unarmedDamage: `1d${martialDieSides} ${dexterityModifier + (
-      warriorAdeptStyle === "ll-style:featherweight-fighting" &&
-      (!armor || !["medium", "heavy"].includes(armor.category)) ? 1 : 0
-    ) >= 0 ? "+" : ""}${dexterityModifier + (
-      warriorAdeptStyle === "ll-style:featherweight-fighting" &&
-      (!armor || !["medium", "heavy"].includes(armor.category)) ? 1 : 0
-    )} дробящего`,
+    effectiveTechniqueIds: [...effectiveSelections],
+    insigniaOfClawsActive: insigniaActive,
+    saraAttackProfiles: {
+      unarmed: {
+        attackAbility: dexterityModifier,
+        attackBonus: unarmedAttackBonus,
+        damageDice: `1d${martialDieSides}`,
+        damageModifier: unarmedDamageModifier,
+        attackKind: "unarmed",
+        damageType: "bludgeoning",
+        magical: insigniaActive
+      },
+      returnedProjectile: returnedProjectileProfile
+    },
+    unarmedAttackBonus,
+    unarmedDamage: `1d${martialDieSides} ${unarmedDamageModifier >= 0 ? "+" : ""}${unarmedDamageModifier} дробящего`,
     spellStats: {
       ability: "wisdom",
       spellcastingModifier: wisdomModifier,
