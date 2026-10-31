@@ -231,10 +231,10 @@ function renderBattleTechniqueForm(techniqueId, state) {
   </form>`;
 }
 
-function renderSaraActionForm(actionId) {
+function renderSaraActionForm(actionId, derived) {
   if (actionId === "flurry") {
     return `<form class="sara-combat-form" data-sara-action-form="flurry" hidden>
-      <p>Начало сразу потратит 1 ци и отметит бонусное действие; два безоружных удара при 12 уровне.</p>
+      <p>Начало сразу потратит 1 ци и отметит бонусное действие; атак: ${derived.level >= 17 ? 3 : 2}.</p>
       <label class="sara-form-check"><input type="checkbox" name="confirmed" required> Подтверждаю расход 1 ци и начало Шквала</label>
       <div class="sara-form-actions"><button type="button" class="btn btn--utility" data-sara-form-cancel>Отмена</button>
         <button type="submit" class="btn">Начать шквал — 1 ци</button></div></form>`;
@@ -249,7 +249,7 @@ function renderSaraActionForm(actionId) {
     <p>Подтвердите видимый промах рукопашной атаки. Эффект цели разрешается вручную.</p>
     <label class="field-label">Ответ<select class="input" name="mode" required>
       <option value="">Выберите</option><option value="unarmed">Ответный безоружный удар</option>
-      <option value="dexterity-save">Спасбросок Ловкости цели · СЛ 16</option></select></label>
+      <option value="dexterity-save">Спасбросок Ловкости цели · СЛ ${derived.monk.techniqueSaveDc}</option></select></label>
     <label class="sara-form-check"><input type="checkbox" name="missConfirmed" required> Видимая рукопашная атака промахнулась</label>
     <div class="sara-form-actions"><button type="button" class="btn btn--utility" data-sara-form-cancel>Отмена</button>
       <button type="submit" class="btn">Применить «Прилив и отлив»</button></div></form>`;
@@ -286,48 +286,69 @@ function renderAttackRollForm(sequenceId, attackId, attackNumber, total, kind, c
   </form>`;
 }
 
-function renderAttackSequence(state, derived) {
-  const sequences = state.monk?.combatAssistant?.activeSequences ?? [];
-  const activeSequence = sequences.find((entry) => entry.status === "open");
-  const displayedSequence = activeSequence ??
-    [...sequences].reverse().find((entry) => entry.status === "complete" || entry.status === "abandoned");
-  const attackActionId = activeSequence?.id ?? newUiId("attack-sequence");
-  const attackNumber = (activeSequence?.resolvedAttacks?.length ?? 0) + 1;
-  const maxAttacks = activeSequence?.maximumAttacks ?? (derived.level >= 5 ? 2 : 1);
-  const details = displayedSequence?.resolvedAttacks?.map((attack) => `
+function renderAttackSequenceCard(state, sequence, derived) {
+  const attackNumber = sequence.resolvedAttacks.length + 1;
+  const details = sequence.resolvedAttacks.map((attack) => `
     <article class="sara-attack-record">
       <h4>Удар ${escapeHtml(String(attack.chosenD20))} · ${attack.hitResult === "hit" ? "попадание" : "промах"}
         ${attack.critical ? " · критическое попадание" : ""}</h4>
       <p>${escapeHtml(attack.optionalTargetLabel || "Цель не указана")} · ${escapeHtml(attack.rawD20Rolls.join(" / "))} + ${escapeHtml(String(attack.attackBonusSnapshot))} = ${escapeHtml(String(attack.attackTotal))}</p>
       ${attack.critical && attack.profileId === "unarmed" ? `<p>Удар открытой ладони: цель совершает с помехой спасбросок, вызванный этой атакой.</p>` : ""}
       ${attack.hitResult === "hit" && attack.damageStatus === "awaiting-damage" ? `
-        <form class="sara-combat-form" data-sara-damage-submit data-action-id="${escapeHtml(displayedSequence.id)}" data-attack-id="${escapeHtml(attack.id)}">
+        <form class="sara-combat-form" data-sara-damage-submit data-action-id="${escapeHtml(sequence.id)}" data-attack-id="${escapeHtml(attack.id)}">
           ${Array.from({ length: attack.critical ? 2 : 1 }, (_, index) =>
-            numberField(`damage${index + 1}`, `Физический результат к${derived.monk.martialDieSides} урона ${index + 1}`, {
-              min: 1, max: derived.monk.martialDieSides
+            numberField(`damage${index + 1}`, `Физический результат к${Number(String(attack.profileSnapshot?.damageDice ?? "").match(/d(\d+)/)?.[1] ?? derived.monk.martialDieSides)} урона ${index + 1}`, {
+              min: 1, max: Number(String(attack.profileSnapshot?.damageDice ?? "").match(/d(\d+)/)?.[1] ?? derived.monk.martialDieSides)
             })).join("")}
           <p>Урон до сопротивлений и других поправок цели.</p>
           <p class="sara-form-error" data-form-error role="alert"></p>
-          <div class="sara-form-actions"><button type="button" class="btn btn--utility" data-mark-damage-outside="${escapeHtml(attack.id)}" data-action-id="${escapeHtml(displayedSequence.id)}">Урон учтён вне приложения</button>
+          <div class="sara-form-actions"><button type="button" class="btn btn--utility" data-mark-damage-outside="${escapeHtml(attack.id)}" data-action-id="${escapeHtml(sequence.id)}">Урон учтён вне приложения</button>
             <button type="submit" class="btn">Записать урон</button></div>
         </form>` : attack.damageTotalBeforeTargetModifiers != null
         ? `<p>Урон: ${escapeHtml(String(attack.damageTotalBeforeTargetModifiers))} до поправок цели.</p>` : ""}
       ${attack.hitResult === "hit" && attack.profileId === "unarmed" &&
-        !attack.techniqueApplicationId && sequenceStillCurrent(state, displayedSequence)
-        ? renderStrikeForm(state, displayedSequence.id, attack.id) : ""}
+        !attack.techniqueApplicationId && sequenceStillCurrent(state, sequence)
+        ? renderStrikeForm(state, sequence.id, attack.id) : ""}
     </article>`).join("") ?? "";
-  const nextAttackForm = activeSequence
-    ? attackNumber <= maxAttacks
-      ? `<button type="button" class="btn btn--utility" data-attack-form-open="${escapeHtml(attackActionId)}">Ввести удар ${attackNumber}</button>
-        ${renderAttackRollForm(attackActionId, `${attackActionId}:${attackNumber}`, attackNumber, maxAttacks, activeSequence.kind, Boolean(state.ui?.turn?.actionUsed))}`
-      : ""
-    : `<button type="button" class="btn" data-attack-form-open="${escapeHtml(attackActionId)}">Атака — ${maxAttacks} удара</button>
-      ${renderAttackRollForm(attackActionId, `${attackActionId}:1`, 1, maxAttacks, "attack-action", Boolean(state.ui?.turn?.actionUsed))}
-      ${(() => {
-        const bonusId = newUiId("bonus-unarmed");
-        return `<button type="button" class="btn btn--utility" data-attack-form-open="${escapeHtml(bonusId)}">Бонусный безоружный удар</button>
-          ${renderAttackRollForm(bonusId, `${bonusId}:1`, 1, 1, "bonus-unarmed", false)}`;
-      })()}`;
+  const maximumAttacks = sequence.maximumAttacks;
+  const nextAttackForm = sequence.status === "open" && attackNumber <= maximumAttacks
+    ? `<button type="button" class="btn btn--utility" data-attack-form-open="${escapeHtml(sequence.id)}">Ввести удар ${attackNumber}</button>
+      ${renderAttackRollForm(sequence.id, `${sequence.id}:${attackNumber}`, attackNumber, maximumAttacks, sequence.kind, Boolean(state.ui?.turn?.actionUsed))}`
+    : "";
+  return `<article class="sara-attack-sequence">
+    <p>Последовательность ${escapeHtml(sequence.kind)}: ${sequence.resolvedAttacks.length}/${maximumAttacks} атак.</p>
+    ${details}${nextAttackForm}
+    ${sequence.status === "open" ? `<button type="button" class="btn btn--utility" data-sequence-close="${escapeHtml(sequence.id)}">Закрыть последовательность</button>` : ""}
+  </article>`;
+}
+
+function renderAttackSequence(state, derived) {
+  const sequences = state.monk?.combatAssistant?.activeSequences ?? [];
+  const openSequences = sequences.filter((entry) => entry.status === "open");
+  const latestResolved = [...sequences].reverse().find((entry) =>
+    entry.status === "complete" || entry.status === "abandoned");
+  const unresolvedSequences = sequences.filter((entry) =>
+    entry.status !== "open" && entry.resolvedAttacks?.some((attack) =>
+      attack.damageStatus === "awaiting-damage"));
+  const displayedSequences = [...openSequences, ...unresolvedSequences];
+  if (!displayedSequences.length && latestResolved) displayedSequences.push(latestResolved);
+  const hasAttackAction = openSequences.some((entry) => entry.kind === "attack-action");
+  const hasBonusSequence = openSequences.some((entry) =>
+    ["flurry", "bonus-unarmed"].includes(entry.kind));
+  const battle = state.battleConsole?.current;
+  const canStartTurnActions = !battle || battle.phase === "own-turn";
+  const starts = [];
+  if (canStartTurnActions && !hasAttackAction) {
+    const id = newUiId("attack-sequence");
+    const maximum = derived.level >= 5 ? 2 : 1;
+    starts.push(`<button type="button" class="btn" data-attack-form-open="${id}">Атака — ${maximum} удара</button>
+      ${renderAttackRollForm(id, `${id}:1`, 1, maximum, "attack-action", Boolean(state.ui?.turn?.actionUsed))}`);
+  }
+  if (canStartTurnActions && !hasBonusSequence && derived.level >= 2) {
+    const id = newUiId("bonus-unarmed");
+    starts.push(`<button type="button" class="btn btn--utility" data-attack-form-open="${id}">Бонусный безоружный удар</button>
+      ${renderAttackRollForm(id, `${id}:1`, 1, 1, "bonus-unarmed", false)}`);
+  }
   const currentPending = state.monk?.combatAssistant?.pendingApplications ?? [];
   const pending = currentPending.map((application) => `
     <form class="sara-combat-form sara-save-outcome" data-save-outcome="${escapeHtml(application.id)}">
@@ -338,13 +359,24 @@ function renderAttackSequence(state, derived) {
         <option value="">Неизвестен</option><option value="success">Успех</option><option value="failure">Провал</option><option value="unknown">Оставить неизвестным</option></select></label>
       <button type="submit" class="btn btn--utility">Записать результат без повторной оплаты</button>
     </form>`).join("");
-  return `<section class="panel-section sara-attack-assistant">
+  const recent = [...(state.monk?.combatAssistant?.recentlyCompletedSummaries ?? [])]
+    .slice(-5).reverse().map((entry) => {
+      if (entry.kind === "regeneration") {
+        return `<li>Мистическая регенерация: физический результат ${escapeHtml(String(entry.dieResult))}, полезное лечение ${escapeHtml(String(entry.usefulHealing))} HP.</li>`;
+      }
+      if (entry.kind === "deflection") {
+        return `<li>Отражение: входящий урон ${escapeHtml(String(entry.incomingDamage))}, остаток ${escapeHtml(String(entry.finalRemainder))}.</li>`;
+      }
+      return "";
+    }).filter(Boolean).join("");
+  return `<section id="saraCombatTasks" class="panel-section sara-attack-assistant">
     <h3>Физические броски</h3>
-    ${activeSequence ? `<p>Последовательность ${escapeHtml(activeSequence.kind)}: ${activeSequence.resolvedAttacks.length}/${activeSequence.maximumAttacks} атак. Закрытие не отменяет уже записанные действия и расходы.</p>` : ""}
-    ${details}
-    ${nextAttackForm}
-    ${activeSequence ? `<button type="button" class="btn btn--utility" data-sequence-close="${escapeHtml(activeSequence.id)}">Закрыть последовательность</button>` : ""}
+    ${displayedSequences.map((sequence) => renderAttackSequenceCard(state, sequence, derived)).join("")}
+    ${starts.join("")}
+    ${!canStartTurnActions ? `<p class="hint">Обычную атаку и бонусный удар можно начать только в свой ход.</p>` : ""}
+    ${openSequences.length ? `<p class="hint">Закрытие не отменяет уже записанные действия, расходы и нерешённые результаты.</p>` : ""}
     ${pending ? `<h4>Ожидаемые спасброски</h4>${pending}` : ""}
+    ${recent ? `<details class="sara-combat-recent"><summary>Недавние события</summary><ul>${recent}</ul></details>` : ""}
   </section>`;
 }
 
@@ -505,7 +537,7 @@ export function renderSaraCombatPanel(state, derived) {
         <button type="button" class="btn btn--utility" data-sara-action="flurry">Шквал — 1 ци</button>
         ${derived.level >= 6 ? `<button type="button" class="btn btn--utility" data-sara-action="ebb-and-flow">Прилив и отлив · реакция</button>` : ""}
       </div>
-      <div class="sara-action-forms">${renderSaraActionForm("flurry")}${derived.level >= 6 ? renderSaraActionForm("ebb-and-flow") : ""}</div>
+      <div class="sara-action-forms">${renderSaraActionForm("flurry", derived)}${derived.level >= 6 ? renderSaraActionForm("ebb-and-flow", derived) : ""}</div>
       <p>Бонусный безоружный удар требует подходящего условия Боевых искусств. Шквал даёт ${derived.level >= 17 ? 3 : 2} безоружных удара и не требует действия «Атака». Приложение не определяет попадания.</p>
       ${buildUpdate}
       <h3>Расовая магия Yuan-ti (MotM; тексты 2014)</h3>

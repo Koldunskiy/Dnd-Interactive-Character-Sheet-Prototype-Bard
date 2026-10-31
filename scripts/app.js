@@ -17,9 +17,17 @@ import { getDerivedStats } from "./calculations.js";
 import { renderPortraitMedia, initPortraitControls, resetPortraitForCharacter } from "./media.js";
 
 import { renderHeader } from "./render/render-header.js";
+import {
+  bindCharacterRollEntryPoints,
+  clearCharacterRollDraft,
+  hasChangedCharacterRollDraft,
+  hasUnsavedCharacterRoll,
+  markCharacterRollSaved,
+} from "./rolls/controller.js";
 import { renderQuickStats, renderSidebarSummary } from "./render/render-sidebar.js";
 import { renderProfile } from "./render/render-profile.js";
 import { renderMeleePanel } from "./render/render-melee.js";
+import { bindBattleConsole } from "./render/render-battle-console.js";
 import { renderSpells } from "./render/render-spells.js";
 import { renderLorePanel } from "./render/render-lore.js";
 import { renderInventoryPanel } from "./render/render-inventory.js";
@@ -660,6 +668,8 @@ function renderApp() {
   renderLorePanel(state);
 
   bindUi(document);
+  bindCharacterRollEntryPoints(document);
+  bindBattleConsole(document.getElementById("meleePanel") ?? document);
   bindSaraCombatControls();
   initPortraitControls();
 }
@@ -919,6 +929,7 @@ function completeCharacterOpen(characterId, warning = "") {
   if (page) page.dataset.screen = "sheet";
   isSheetVisible = true;
   clearTechniqueDrafts(characterId);
+  clearCharacterRollDraft();
   activateLoreCharacter(characterId);
   showPersistenceWarning("");
   configureTabs(characterId);
@@ -931,6 +942,17 @@ function selectCharacter(characterId) {
   switchingCharacter = true;
   try {
     const activeContext = getSessionContext();
+    const discardRollDraft = isSheetVisible && hasChangedCharacterRollDraft() &&
+      window.confirm("Остаться на текущем персонаже — Отмена. Отбросить незаписанный бросок и перейти к выбору персонажа?");
+    if (isSheetVisible && hasChangedCharacterRollDraft() && !discardRollDraft) return;
+    if (isSheetVisible && hasUnsavedCharacterRoll()) {
+      const savedRoll = retryPersistedState();
+      if (!savedRoll.ok) {
+        showPersistenceWarning("Бросок применён, но не сохранён. Повторите сохранение перед переключением.");
+        return;
+      }
+      markCharacterRollSaved();
+    }
     const discardChangedDraft = isSheetVisible &&
       hasChangedTechniqueDraft(activeContext) &&
       window.confirm("Остаться на текущем персонаже — Отмена. Отбросить изменённый черновик техник и перейти к выбору персонажа?");
@@ -953,6 +975,7 @@ function selectCharacter(characterId) {
       return;
     }
     if (discardChangedDraft) clearTechniqueDrafts(activeContext.characterId);
+    clearCharacterRollDraft();
     if (characterId === "sara-velaris" && opened.status === "missing") {
       showPicker();
       showSaraSetup(opened.context);
@@ -979,6 +1002,17 @@ function returnToCharacterPicker() {
   switchingCharacter = true;
   try {
     const context = getSessionContext();
+    const discardRollDraft = hasChangedCharacterRollDraft() &&
+      window.confirm("Остаться на текущем персонаже — Отмена. Отбросить незаписанный бросок и открыть выбор персонажей?");
+    if (hasChangedCharacterRollDraft() && !discardRollDraft) return;
+    if (hasUnsavedCharacterRoll()) {
+      const savedRoll = retryPersistedState();
+      if (!savedRoll.ok) {
+        showPersistenceWarning("Бросок применён, но не сохранён. Выбор персонажей не открыт.");
+        return;
+      }
+      markCharacterRollSaved();
+    }
     const discardChangedDraft = hasChangedTechniqueDraft(context);
     if (discardChangedDraft &&
         !window.confirm("Остаться на текущем персонаже — Отмена. Отбросить изменённый черновик техник и перейти к выбору персонажа?")) return;
@@ -989,6 +1023,7 @@ function returnToCharacterPicker() {
       return;
     }
     if (discardChangedDraft) clearTechniqueDrafts(context.characterId);
+    clearCharacterRollDraft();
     showPersistenceWarning("");
     showPicker();
   } finally {
@@ -1004,6 +1039,7 @@ function bindAppControls() {
       if (button.dataset.appAction === "choose-characters") returnToCharacterPicker();
       if (button.dataset.appAction === "retry-save") {
         const result = retryPersistedState();
+        if (result.ok) markCharacterRollSaved();
         showPersistenceWarning(result.ok ? "" : "Сохранение не удалось. Попробуйте ещё раз.");
       }
     });
@@ -1093,6 +1129,7 @@ subscribe((_state, metadata) => {
     showPersistenceWarning("Изменения применены в памяти, но не сохранены. Повторите сохранение.");
   }
   if (metadata?.kind === "persistence-retry" && metadata.persistenceResult?.ok) {
+    markCharacterRollSaved();
     showPersistenceWarning("");
   }
   if (metadata?.kind === "reset") {

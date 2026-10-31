@@ -978,6 +978,26 @@
   font-size: 0.78rem;
 }
 
+#profilePanel .profile-roll-button {
+  justify-self: start;
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+}
+
+#profilePanel .profile-roll-link {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: none;
+  text-align: left;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line-gold);
+  cursor: pointer;
+}
+
 #profilePanel .profile-skill-value {
   font-size: 1.35rem;
   white-space: nowrap;

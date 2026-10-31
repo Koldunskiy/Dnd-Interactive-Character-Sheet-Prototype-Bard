@@ -21,6 +21,8 @@ import {
 } from "./rules.js";
 import { buildCharacterSpellCollections } from "./selectors/spellcasting.js";
 import { applyDamagePools } from "./combat/damage-pools.js";
+import { executeBattleBoundaryInDraft } from "./battle/commands.js";
+import { endOwnTurn } from "./battle/transitions.js";
 
 
 export const STATELESS_ACTIONS = new Set(["print-sheet", "reset-runtime"]);
@@ -179,6 +181,7 @@ function handleLongRest(draft) {
     const meditate = requestConfirmation("Подтвердите, что Сара посвятила не менее 30 минут долгого отдыха медитации для восстановления ци.");
     const practice = Number(draft.profile.level) >= 10 &&
       requestConfirmation("Подтвердите 10 минут практики для одной замены обычной техники Open Hand.");
+    executeBattleBoundaryInDraft(draft, "long-rest");
     const combat = ensureCombatState(draft);
     const turn = ensureTurnState(draft);
     const effects = ensureEffectsState(draft);
@@ -294,6 +297,7 @@ function handleShortRest(draft) {
     const meditate = requestConfirmation(hasPuritySpirit
       ? "Подтвердите восстановление ци через 1-минутный отдых Purity Spirit; это отдельный режим, не 30-минутная медитация."
       : "Подтвердите 30 минут медитации внутри короткого отдыха для восстановления ци.");
+    executeBattleBoundaryInDraft(draft, "short-rest");
     const combat = ensureCombatState(draft);
     const turn = ensureTurnState(draft);
     const effects = ensureEffectsState(draft);
@@ -559,6 +563,11 @@ function handleTurnToggleReaction(draft) {
 }
 
 function handleTurnEnd(draft) {
+  if (draft.profile?.id === "sara-velaris" &&
+      ["waiting", "own-turn", "paused"].includes(draft.battleConsole?.current?.phase)) {
+    const result = endOwnTurn(draft);
+    return result.ok ? undefined : false;
+  }
   const turn = ensureTurnState(draft);
   turn.actionUsed = false;
   turn.bonusActionUsed = false;

@@ -16,6 +16,8 @@ const SAVE_ABILITIES = Object.freeze({
   "ll-monk:crippling-strike": "constitution",
   "ll-monk:slowing-strike": "wisdom"
 });
+const MAX_UNRESOLVED_COMBAT_TASKS = 20;
+const MAX_RECENT_COMBAT_SEQUENCES = 30;
 
 function isSara(character) {
   return character?.profile?.id === "sara-velaris";
@@ -42,8 +44,41 @@ function rememberSummary(assistant, record) {
   assistant.recentlyCompletedSummaries = assistant.recentlyCompletedSummaries.slice(-20);
 }
 
+function countUnresolvedCombatTasks(assistant) {
+  const pendingSaves = assistant.pendingApplications.filter((entry) =>
+    !["success", "failure"].includes(entry.targetOutcome)).length;
+  const pendingDamage = assistant.activeSequences.reduce((count, sequence) =>
+    count + (sequence.resolvedAttacks ?? []).filter((attack) =>
+      attack.damageStatus === "awaiting-damage").length, 0);
+  return pendingSaves + pendingDamage;
+}
+
+function pruneCombatHistory(assistant) {
+  const unresolvedApplicationIds = new Set(assistant.pendingApplications
+    .filter((entry) => !["success", "failure"].includes(entry.targetOutcome))
+    .map((entry) => entry.parentAttackId));
+  const unresolvedSequences = [];
+  const completedSequences = [];
+  for (const sequence of assistant.activeSequences) {
+    const unresolved = sequence.status === "open" ||
+      sequence.resolvedAttacks?.some((attack) =>
+        attack.damageStatus === "awaiting-damage" || unresolvedApplicationIds.has(attack.id));
+    (unresolved ? unresolvedSequences : completedSequences).push(sequence);
+  }
+  assistant.activeSequences = [
+    ...completedSequences.slice(-MAX_RECENT_COMBAT_SEQUENCES),
+    ...unresolvedSequences,
+  ];
+  const unresolvedApplications = assistant.pendingApplications.filter((entry) =>
+    !["success", "failure"].includes(entry.targetOutcome));
+  const completedApplications = assistant.pendingApplications.filter((entry) =>
+    ["success", "failure"].includes(entry.targetOutcome)).slice(-MAX_RECENT_COMBAT_SEQUENCES);
+  assistant.pendingApplications = [...completedApplications, ...unresolvedApplications];
+}
+
 function createSequenceRecord(character, sequenceId, kind = "attack-action") {
   const derived = getDerivedStats(character);
+  const battle = character.battleConsole?.current;
   const maximumAttacks = kind === "attack-action"
     ? Number(character.profile.level) >= 5 ? 2 : 1
     : kind === "flurry" ? Number(character.profile.level) >= 17 ? 3 : 2 : 1;
@@ -51,6 +86,8 @@ function createSequenceRecord(character, sequenceId, kind = "attack-action") {
     id: sequenceId,
     kind,
     turnMarker: Number(character.ui?.turn?.turnNumber ?? 1),
+    battleId: battle?.phase === "own-turn" ? battle.id : null,
+    ownTurnId: battle?.phase === "own-turn" ? battle.ownTurnId : null,
     status: "open",
     maximumAttacks,
     resolvedAttacks: [],
@@ -65,8 +102,27 @@ function createSequenceRecord(character, sequenceId, kind = "attack-action") {
   };
 }
 
+function validateBattleActionPhase(character, kind) {
+  const battle = character.battleConsole?.current;
+  if (!battle || battle.phase === "ended") return null;
+  if (kind === "reaction-unarmed" || kind === "returned-projectile") {
+    return ["waiting", "own-turn"].includes(battle.phase)
+      ? null
+      : "В приостановленной сцене нельзя выполнять реакцию.";
+  }
+  return battle.phase === "own-turn"
+    ? null
+    : "Эту боевую атаку можно начать только в свой ход.";
+}
+
 function reject(reason) {
   return { status: "rejected", reason };
+}
+
+function mayRunAlongside(kind, existingKind) {
+  const bonusKinds = new Set(["flurry", "bonus-unarmed"]);
+  return kind === "attack-action" && bonusKinds.has(existingKind) ||
+    existingKind === "attack-action" && bonusKinds.has(kind);
 }
 
 function commit(context, operationId, metadata, updater, validate) {
@@ -86,10 +142,14 @@ export function startAttackSequence(context, input, operationId) {
   return commit(context, operationId, { kind: "sara-attack-sequence-start", sequenceKind: kind },
     (draft) => {
       if (!isSara(draft)) throw new Error("Последовательность доступна только в листе Сары.");
+      const phaseReason = validateBattleActionPhase(draft, kind);
+      if (phaseReason) throw new Error(phaseReason);
       const assistant = ensureCombatAssistant(draft);
-      if (assistant.activeSequences.some((sequence) => sequence.status === "open")) {
+      if (assistant.activeSequences.some((sequence) =>
+        sequence.status === "open" && !mayRunAlongside(kind, sequence.kind))) {
         throw new Error("Сначала завершите или закройте текущую последовательность.");
       }
+      pruneCombatHistory(assistant);
       const level = Number(draft.profile.level);
       const turn = draft.ui.turn;
       if (kind === "flurry" && input.confirmed !== true) {
@@ -135,9 +195,12 @@ export function startAttackSequence(context, input, operationId) {
     },
     (current) => {
       if (!isSara(current)) return "Последовательность доступна только в листе Сары.";
+      const phaseReason = validateBattleActionPhase(current, kind);
+      if (phaseReason) return phaseReason;
       const activeSequences = current.monk?.combatAssistant?.activeSequences ?? [];
       if (activeSequences.some((sequence) =>
-        sequence.id === input.sequenceId || sequence.status === "open")) {
+        sequence.id === input.sequenceId ||
+        sequence.status === "open" && !mayRunAlongside(kind, sequence.kind))) {
         return "Последовательность уже существует или другая ещё открыта.";
       }
       return null;
@@ -152,6 +215,8 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
       const assistant = ensureCombatAssistant(draft);
       let sequence = assistant.activeSequences.find((entry) =>
         entry.id === actionId && entry.status === "open");
+      const phaseReason = validateBattleActionPhase(draft, sequence?.kind ?? input.kind ?? "attack-action");
+      if (phaseReason) throw new Error(phaseReason);
       if (!sequence && assistant.activeSequences.some((entry) => entry.id === actionId)) {
         throw new Error("Идентификатор последовательности уже использован.");
       }
@@ -184,14 +249,6 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
         throw new Error("В этой последовательности уже записано максимальное число атак.");
       }
       const derived = getDerivedStats(draft);
-      if (JSON.stringify(derived.saraAttackProfiles.unarmed) !==
-            JSON.stringify(sequence.creationStatsSnapshot.unarmed) ||
-          JSON.stringify(derived.saraAttackProfiles.returnedProjectile) !==
-            JSON.stringify(sequence.creationStatsSnapshot.returnedProjectile) ||
-          derived.level !== sequence.creationStatsSnapshot.level ||
-          derived.monk.martialDieSides !== sequence.creationStatsSnapshot.martialDieSides) {
-        throw new Error("Параметры персонажа изменились после начала последовательности. Закройте её и начните заново.");
-      }
       const profileId = input.profileId ?? "unarmed";
       const previewInput = { ...input, profileId };
       let preview = calculateAttackPreview(draft, previewInput);
@@ -206,10 +263,14 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
         } else {
           throw new Error("Укажите известную КД цели или вручную подтвердите попадание/промах.");
         }
+        if (preview.hitResult && countUnresolvedCombatTasks(assistant) >= MAX_UNRESOLVED_COMBAT_TASKS) {
+          throw new Error("Достигнут предел 20 нерешённых задач боя; закройте или отметьте одну из них.");
+        }
       }
       const attack = {
         id: attackId,
         profileId,
+        profileSnapshot: structuredClone(preview.profile),
         optionalTargetLabel: String(input.targetLabel ?? "").trim(),
         rawD20Rolls: preview.rawD20Rolls,
         rollMode: preview.rollMode,
@@ -244,8 +305,11 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
     (current) => {
       const sequences = current.monk?.combatAssistant?.activeSequences ?? [];
       const sequence = sequences.find((entry) => entry.id === actionId && entry.status === "open");
+      const phaseReason = validateBattleActionPhase(current, sequence?.kind ?? input.kind ?? "attack-action");
+      if (phaseReason) return phaseReason;
       const canStart = ["attack-action", "bonus-unarmed", "reaction-unarmed"].includes(input.kind) &&
-        !sequences.some((entry) => entry.status === "open" || entry.id === actionId);
+        !sequences.some((entry) => entry.id === actionId ||
+          entry.status === "open" && !mayRunAlongside(input.kind, entry.kind));
       if (!isSara(current) || (!sequence && !canStart)) return "Последовательность атаки закрыта или недействительна.";
       if (sequence && (sequence.resolvedAttacks.some((attack) => attack.id === attackId) ||
           sequence.resolvedAttacks.length >= sequence.maximumAttacks)) {
@@ -279,7 +343,8 @@ export function recordAttackDamage(context, actionId, attackId, rolls, operation
         throw new Error("Урон можно записать только для подтверждённого попадания.");
       }
       if (attack.damageStatus !== "awaiting-damage") throw new Error("Урон этого удара уже записан или закрыт.");
-      const profile = getDerivedStats(draft).saraAttackProfiles[attack.profileId];
+      const profile = attack.profileSnapshot ??
+        getDerivedStats(draft).saraAttackProfiles[attack.profileId];
       const damage = calculateAttackDamage(profile, rolls, attack.critical);
       if (!damage.ok) throw new Error(damage.reason);
       attack.damageRolls = damage.damageRolls;
@@ -333,6 +398,10 @@ export function applyTechniqueToHit(context, actionId, attackId, techniqueId, in
       if (!getEffectiveSelectedTechniqueIds(draft).has(techniqueId)) {
         throw new Error("Техника не выбрана или сейчас недоступна.");
       }
+      if (SAVE_ABILITIES[techniqueId] &&
+          countUnresolvedCombatTasks(assistant) >= MAX_UNRESOLVED_COMBAT_TASKS) {
+        throw new Error("Достигнут предел 20 нерешённых задач боя; сначала разрешите один спасбросок или урон.");
+      }
       const kiBefore = Number(draft.combat?.ki?.current);
       const practicedBefore = Number(draft.combat?.practiced?.current);
       const result = applyMonkTechnique(draft, techniqueId, {
@@ -362,6 +431,7 @@ export function applyTechniqueToHit(context, actionId, attackId, techniqueId, in
           ? "Повторный спасбросок Мудрости в конце хода цели зависит от решения мастера."
           : null
       };
+      pruneCombatHistory(assistant);
       assistant.pendingApplications.push(application);
       attack.techniqueApplicationId = applicationId;
       techniqueOutcome = result.result;

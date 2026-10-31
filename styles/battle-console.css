@@ -1,0 +1,76 @@
+.battle-console {
+  border: 1px solid var(--line-gold);
+  background:
+    radial-gradient(circle at 90% 0, rgba(128, 83, 169, 0.13), transparent 35%),
+    var(--surface-2);
+}
+
+.battle-console-phase {
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.battle-console-budget {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.battle-budget-item {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.battle-console-init-form,
+.battle-console-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.battle-command-menu {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: 8px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(5, 3, 7, 0.45);
+}
+
+.battle-console-init-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+}
+
+.battle-console-init-form input {
+  width: 7rem;
+  min-height: 42px;
+  padding: 8px;
+  border: 1px solid var(--line-gold);
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--bg-deep);
+}
+
+.battle-console-initiative {
+  color: var(--muted);
+}
+
+.battle-console-status {
+  min-height: 1.4em;
+  color: #ff9a9a;
+}
+
+@media (max-width: 520px) {
+  .battle-console-actions > .btn {
+    flex: 1 1 100%;
+  }
+}

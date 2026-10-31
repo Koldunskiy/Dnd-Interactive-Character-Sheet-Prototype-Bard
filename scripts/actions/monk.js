@@ -18,6 +18,21 @@ function isSara(character) {
     character.profile?.rulesetId === ALTERNATE_MONK_RULESET_ID;
 }
 
+function getBattlePhaseReason(character, activation) {
+  const phase = character.battleConsole?.current?.phase;
+  if (!phase) return null;
+  if (["action", "bonus-action", "replace-attack", "hit", "after-roll", "start-of-turn"]
+    .includes(activation)) {
+    return phase === "own-turn" ? null : "Эту способность можно применить только в свой ход.";
+  }
+  if (activation === "reaction") {
+    return ["waiting", "own-turn"].includes(phase)
+      ? null
+      : "Реакцию нельзя применить в приостановленной сцене.";
+  }
+  return null;
+}
+
 function getSelectedIds(character) {
   return [
     ...(character.monk?.ordinaryTechniqueIds ?? []),
@@ -109,6 +124,8 @@ function applyToCharacter(character, techniqueId, input) {
     return { ok: false, reason: "Техника сохранена в выборе, но сейчас недоступна по уровню, предварительным требованиям или выбору стиля." };
   }
   if (input.confirmed !== true) return { ok: false, reason: "Применение не подтверждено." };
+  const phaseReason = getBattlePhaseReason(character, technique.activation);
+  if (phaseReason) return { ok: false, reason: phaseReason };
 
   character.monk.techniqueRuntime ??= {};
   const runtime = character.monk.techniqueRuntime[techniqueId] ?? {};
@@ -231,12 +248,15 @@ function applyToCharacter(character, techniqueId, input) {
       : null;
     if (hpResult && !hpResult.ok) return hpResult;
     if (input.caught === true && canCatch && input.mode === "weapon") {
+      const battle = character.battleConsole?.current;
       character.monk.techniqueRuntime.deflectContinuation = {
         id: input.continuationId ?? input.operationId ??
           globalThis.crypto?.randomUUID?.() ?? `missile-${Date.now()}`,
         sourceSessionGeneration: input.sessionGeneration,
         kind: "missile-return",
-        reactionAlreadyUsed: true
+        reactionAlreadyUsed: true,
+        ...(battle ? { battleId: battle.id } : {}),
+        ...(battle?.phase === "own-turn" ? { ownTurnId: battle.ownTurnId } : {})
       };
     }
     return {
@@ -321,6 +341,8 @@ export function castSaraRacialSpell(context, spellId, input = {}) {
   let outcome;
   const result = updateSessionState(context, (draft) => {
     if (!isSara(draft)) throw new Error("Расовая магия доступна только в листе Сары.");
+    const phaseReason = getBattlePhaseReason(draft, "action");
+    if (phaseReason) throw new Error(phaseReason);
     const record = draft.spellcasting?.racialSpells?.find((entry) =>
       entry.id === spellId && entry.source === "racial" && entry.mode === spell.mode);
     if (!record) throw new Error("Запись расового режима не найдена в активном листе.");
@@ -351,6 +373,8 @@ export function castSaraRacialSpell(context, spellId, input = {}) {
     metadata: { kind: "sara-racial-spell", spellId },
     validate: (current) => {
       if (!isSara(current)) return "Расовая магия доступна только в листе Сары.";
+      const phaseReason = getBattlePhaseReason(current, "action");
+      if (phaseReason) return phaseReason;
       const record = current.spellcasting?.racialSpells?.find((entry) =>
         entry.id === spellId && entry.source === "racial" && entry.mode === spell.mode);
       if (!record) return "Запись расового режима не найдена в активном листе.";
@@ -378,6 +402,8 @@ export function applySaraCombatAction(context, actionId, input = {}) {
   let outcome;
   const result = updateSessionState(context, (draft) => {
     if (!isSara(draft)) throw new Error("Это действие доступно только в листе Сары.");
+    const phaseReason = getBattlePhaseReason(draft, actionId === "ebb-and-flow" ? "reaction" : "bonus-action");
+    if (phaseReason) throw new Error(phaseReason);
     const level = Number(draft.profile.level);
     if (level < 2) throw new Error("Это действие ещё не доступно на текущем уровне.");
     const turn = draft.ui.turn;
@@ -509,6 +535,14 @@ export function continueDeflectMissile(
     if (!token || token.id !== continuationId || token.kind !== "missile-return" ||
         token.sourceSessionGeneration !== context.sessionGeneration || token.reactionAlreadyUsed !== true) {
       throw new Error("Продолжение отражения снаряда устарело или недействительно.");
+    }
+    if (token.battleId) {
+      const battle = draft.battleConsole?.current;
+      if (!battle || battle.id !== token.battleId ||
+          !["waiting", "own-turn"].includes(battle.phase) ||
+          token.ownTurnId && token.ownTurnId !== battle.ownTurnId) {
+        throw new Error("Продолжение отражения снаряда вышло за границы своего боевого контекста.");
+      }
     }
     const currentKi = Number(draft.combat?.ki?.current);
     if (!Number.isInteger(currentKi) || currentKi < 1) throw new Error("Для возврата снаряда требуется 1 Ki.");

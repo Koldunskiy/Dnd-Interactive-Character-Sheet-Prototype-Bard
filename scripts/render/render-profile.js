@@ -175,11 +175,13 @@ function renderAbilityCard(card) {
         <div class="ability-card-stat-inline">
           <span class="ability-card-stat-label">Проверка</span>
           <strong class="ability-card-stat-value">${escapeHtml(formatSigned(card.checkValue))}</strong>
+          ${card.characterId === "sara-velaris" ? `<button type="button" class="btn btn--utility profile-roll-button" data-open-character-roll data-roll-kind="ability-check" data-roll-id="${escapeHtml(card.id)}">Бросить</button>` : ""}
         </div>
 
         <div class="ability-card-stat-inline ability-card-stat-inline--save">
           <span class="ability-card-stat-label">Спасбросок</span>
           <strong class="ability-card-stat-value">${escapeHtml(formatSigned(card.saveValue))}</strong>
+          ${card.characterId === "sara-velaris" ? `<button type="button" class="btn btn--utility profile-roll-button" data-open-character-roll data-roll-kind="saving-throw" data-roll-id="${escapeHtml(card.id)}">Бросить</button>` : ""}
           ${
             card.editable
               ? `
@@ -259,7 +261,7 @@ function renderSkillCard(skillId, character, derived) {
   return `
     <article class="profile-skill-card">
       <div class="profile-skill-card-main">
-        <span class="profile-skill-name">${escapeHtml(SKILL_LABELS[skillId])}</span>
+        <button type="button" class="profile-skill-name profile-roll-link" data-open-character-roll data-roll-kind="ability-check" data-roll-id="${escapeHtml(skillId)}">${escapeHtml(SKILL_LABELS[skillId])}</button>
         ${status ? `<span class="profile-skill-status">${escapeHtml(status)}</span>` : ""}
       </div>
       <strong class="profile-skill-value">${escapeHtml(formatSigned(value))}</strong>

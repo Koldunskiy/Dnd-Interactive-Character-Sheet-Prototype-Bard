@@ -1,0 +1,86 @@
+.character-roll-root[hidden] {
+  display: none;
+}
+
+.character-roll-panel {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.character-roll-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(4, 3, 5, 0.78);
+}
+
+.character-roll-card {
+  position: relative;
+  width: min(100%, 560px);
+  max-height: min(90vh, 840px);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--line-gold);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+}
+
+.character-roll-card form {
+  display: grid;
+  gap: 12px;
+}
+
+.character-roll-card label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+}
+
+.character-roll-card input,
+.character-roll-card select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--bg-deep);
+}
+
+.character-roll-dice,
+.character-roll-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.character-roll-check {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.character-roll-check input {
+  width: 20px;
+  min-height: 20px;
+}
+
+.character-roll-result {
+  min-height: 1.5em;
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.character-roll-error {
+  color: #ff9a9a;
+}
+
+@media (max-width: 480px) {
+  .character-roll-card {
+    padding: 14px;
+  }
+}

@@ -24,6 +24,8 @@
   <link rel="stylesheet" href="./styles/responsive.css">
   <link rel="stylesheet" href="./styles/characters.css">
   <link rel="stylesheet" href="./styles/techniques.css">
+  <link rel="stylesheet" href="./styles/character-rolls.css">
+  <link rel="stylesheet" href="./styles/battle-console.css">
 </head>
 <body>
   <div class="page">
@@ -52,6 +54,7 @@
 
       <div class="topbar-actions">
         <button class="btn" type="button" data-app-action="choose-characters">Персонажи</button>
+        <button class="btn" id="characterRollShortcut" type="button" data-open-character-roll-panel hidden>Бросок</button>
         <button class="btn" type="button" data-action="reset-runtime">Сбросить лист</button>
         <button class="btn" type="button" data-action="short-rest">Короткий отдых</button>
         <button class="btn" type="button" data-action="long-rest">Долгий отдых</button>
@@ -260,5 +263,6 @@
       </section>
     </main>
   </div>
+  <div id="characterRollsRoot" class="character-roll-root" hidden></div>
 </body>
 </html>
