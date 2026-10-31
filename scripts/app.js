@@ -28,6 +28,12 @@ import { renderQuickStats, renderSidebarSummary } from "./render/render-sidebar.
 import { renderProfile } from "./render/render-profile.js";
 import { renderMeleePanel } from "./render/render-melee.js";
 import { bindBattleConsole } from "./render/render-battle-console.js";
+import {
+  disposeWorkspaceOwner,
+  initActionWorkspace,
+  prepareWorkspaceCharacterTransition,
+  reconcileWorkspaceAfterStateChange,
+} from "./workspace/controller.js";
 import { renderSpells } from "./render/render-spells.js";
 import { renderLorePanel } from "./render/render-lore.js";
 import { renderInventoryPanel } from "./render/render-inventory.js";
@@ -957,6 +963,11 @@ function selectCharacter(characterId) {
       hasChangedTechniqueDraft(activeContext) &&
       window.confirm("Остаться на текущем персонаже — Отмена. Отбросить изменённый черновик техник и перейти к выбору персонажа?");
     if (isSheetVisible && hasChangedTechniqueDraft(activeContext) && !discardChangedDraft) return;
+    const workspaceTransition = prepareWorkspaceCharacterTransition(characterId);
+    if (!workspaceTransition.ok) {
+      showPersistenceWarning(workspaceTransition.reason);
+      return;
+    }
     if (isSheetVisible) {
       if (!flushEditableFields()) return;
       const saved = retryPersistedState();
@@ -1016,6 +1027,11 @@ function returnToCharacterPicker() {
     const discardChangedDraft = hasChangedTechniqueDraft(context);
     if (discardChangedDraft &&
         !window.confirm("Остаться на текущем персонаже — Отмена. Отбросить изменённый черновик техник и перейти к выбору персонажа?")) return;
+    const workspaceTransition = prepareWorkspaceCharacterTransition(null);
+    if (!workspaceTransition.ok) {
+      showPersistenceWarning(workspaceTransition.reason);
+      return;
+    }
     if (!flushEditableFields()) return;
     const saved = retryPersistedState();
     if (!saved.ok) {
@@ -1025,6 +1041,7 @@ function returnToCharacterPicker() {
     if (discardChangedDraft) clearTechniqueDrafts(context.characterId);
     clearCharacterRollDraft();
     showPersistenceWarning("");
+    disposeWorkspaceOwner(context, "character-picker");
     showPicker();
   } finally {
     switchingCharacter = false;
@@ -1081,6 +1098,7 @@ function initTelegramWebApp() {
 
 function initApp() {
   initTelegramWebApp();
+  initActionWorkspace();
   bindAppControls();
   const preferences = readAppPreferences();
   if (preferences.status === "loaded" && preferences.preferences.lastCharacterId) {
@@ -1118,6 +1136,7 @@ window.debug = {
 };
 
 subscribe((_state, metadata) => {
+  reconcileWorkspaceAfterStateChange(_state, metadata);
   if (metadata?.kind === "lore-note-edit") {
     const key = `${_state.profile?.id ?? "aurelia"}:${metadata.noteId}`;
     if (metadata.persistenceResult?.ok) failedLoreNoteIds.delete(key);
@@ -1133,12 +1152,17 @@ subscribe((_state, metadata) => {
     showPersistenceWarning("");
   }
   if (metadata?.kind === "reset") {
+    disposeWorkspaceOwner(getSessionContext(), "character-reset");
     clearTechniqueDrafts(metadata.characterId);
     resetPortraitForCharacter(metadata.characterId);
     activateLoreCharacter(metadata.characterId);
     configureTabs(metadata.characterId);
   }
   renderApp();
+});
+
+document.addEventListener("action-workspace-visibility-changed", () => {
+  if (isSheetVisible) renderApp();
 });
 
 window.addEventListener("pagehide", flushLoreNotes);

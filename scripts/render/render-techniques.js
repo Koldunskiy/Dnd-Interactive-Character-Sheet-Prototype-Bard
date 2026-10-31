@@ -40,12 +40,14 @@ import {
   closeAttackSequence,
   commitDeflection,
   commitRegeneration,
+  getSaraAttackCount,
   markAttackDamageOutside,
   recordAttackDamage,
   recordAttackOutcome,
   recordTargetSaveOutcome,
   startAttackSequence
 } from "../actions/sara-combat.js";
+import { openNormalAttack } from "../workspace/controller.js";
 
 const pendingDrafts = new Map();
 const techniqueViews = new Map();
@@ -294,7 +296,12 @@ function renderAttackSequenceCard(state, sequence, derived) {
         ${attack.critical ? " · критическое попадание" : ""}</h4>
       <p>${escapeHtml(attack.optionalTargetLabel || "Цель не указана")} · ${escapeHtml(attack.rawD20Rolls.join(" / "))} + ${escapeHtml(String(attack.attackBonusSnapshot))} = ${escapeHtml(String(attack.attackTotal))}</p>
       ${attack.critical && attack.profileId === "unarmed" ? `<p>Удар открытой ладони: цель совершает с помехой спасбросок, вызванный этой атакой.</p>` : ""}
-      ${attack.hitResult === "hit" && attack.damageStatus === "awaiting-damage" ? `
+      ${attack.hitResult === "hit" && attack.damageStatus === "awaiting-damage" &&
+        sequence.kind === "attack-action" ? `
+        <button type="button" class="btn btn--utility" data-workspace-normal-sequence="${escapeHtml(sequence.id)}"
+          data-workspace-attack-id="${escapeHtml(attack.id)}">Продолжить запись физического урона</button>` : ""}
+      ${attack.hitResult === "hit" && attack.damageStatus === "awaiting-damage" &&
+        sequence.kind !== "attack-action" ? `
         <form class="sara-combat-form" data-sara-damage-submit data-action-id="${escapeHtml(sequence.id)}" data-attack-id="${escapeHtml(attack.id)}">
           ${Array.from({ length: attack.critical ? 2 : 1 }, (_, index) =>
             numberField(`damage${index + 1}`, `Физический результат к${Number(String(attack.profileSnapshot?.damageDice ?? "").match(/d(\d+)/)?.[1] ?? derived.monk.martialDieSides)} урона ${index + 1}`, {
@@ -312,8 +319,10 @@ function renderAttackSequenceCard(state, sequence, derived) {
     </article>`).join("") ?? "";
   const maximumAttacks = sequence.maximumAttacks;
   const nextAttackForm = sequence.status === "open" && attackNumber <= maximumAttacks
-    ? `<button type="button" class="btn btn--utility" data-attack-form-open="${escapeHtml(sequence.id)}">Ввести удар ${attackNumber}</button>
-      ${renderAttackRollForm(sequence.id, `${sequence.id}:${attackNumber}`, attackNumber, maximumAttacks, sequence.kind, Boolean(state.ui?.turn?.actionUsed))}`
+    ? sequence.kind === "attack-action"
+      ? `<button type="button" class="btn btn--utility" data-workspace-normal-sequence="${escapeHtml(sequence.id)}">Продолжить обычную атаку · удар ${attackNumber} из ${maximumAttacks}</button>`
+      : `<button type="button" class="btn btn--utility" data-attack-form-open="${escapeHtml(sequence.id)}">Ввести удар ${attackNumber}</button>
+        ${renderAttackRollForm(sequence.id, `${sequence.id}:${attackNumber}`, attackNumber, maximumAttacks, sequence.kind, Boolean(state.ui?.turn?.actionUsed))}`
     : "";
   return `<article class="sara-attack-sequence">
     <p>Последовательность ${escapeHtml(sequence.kind)}: ${sequence.resolvedAttacks.length}/${maximumAttacks} атак.</p>
@@ -339,10 +348,8 @@ function renderAttackSequence(state, derived) {
   const canStartTurnActions = !battle || battle.phase === "own-turn";
   const starts = [];
   if (canStartTurnActions && !hasAttackAction) {
-    const id = newUiId("attack-sequence");
-    const maximum = derived.level >= 5 ? 2 : 1;
-    starts.push(`<button type="button" class="btn" data-attack-form-open="${id}">Атака — ${maximum} удара</button>
-      ${renderAttackRollForm(id, `${id}:1`, 1, maximum, "attack-action", Boolean(state.ui?.turn?.actionUsed))}`);
+    const maximum = getSaraAttackCount(state);
+    starts.push(`<button type="button" class="btn" data-workspace-normal-open data-workspace-invoker="normal-attack">Атака — ${maximum} удара</button>`);
   }
   if (canStartTurnActions && !hasBonusSequence && derived.level >= 2) {
     const id = newUiId("bonus-unarmed");
@@ -557,6 +564,22 @@ export function bindSaraCombatControls() {
   if (!root || root.dataset.racialControlsBound) return;
   root.addEventListener("click", (event) => {
     if (!(event.target instanceof Element)) return;
+    const workspaceAttack = event.target.closest(
+      "[data-workspace-normal-open], [data-workspace-normal-sequence]",
+    );
+    if (workspaceAttack && root.contains(workspaceAttack)) {
+      const result = openNormalAttack({
+        sequenceId: workspaceAttack.dataset.workspaceNormalSequence || null,
+        attackId: workspaceAttack.dataset.workspaceAttackId || null,
+        mode: workspaceAttack.dataset.workspaceAttackId ? "historical-damage" : "current",
+        invoker: workspaceAttack,
+      });
+      if (!result.ok) {
+        const status = root.querySelector("[data-sara-combat-status]");
+        if (status) status.textContent = result.reason;
+      }
+      return;
+    }
     const combatActionTarget = event.target.closest("[data-sara-action]");
     if (combatActionTarget && root.contains(combatActionTarget) &&
         combatActionTarget.isConnected && !combatActionTarget.closest("[hidden]") &&

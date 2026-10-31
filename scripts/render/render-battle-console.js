@@ -2,6 +2,11 @@ import { escapeHtml } from "./shared/spell-card.js";
 import { getActiveBattle } from "../battle/model.js";
 import { executeBattleCommand } from "../battle/commands.js";
 import { isTechniqueEffectivelySelected } from "../selectors/techniques.js";
+import {
+  getMinimizedWorkspaceSession,
+  openNormalAttack,
+  resumeWorkspace,
+} from "../workspace/controller.js";
 
 function renderInitiative(battle) {
   const initiative = battle?.initiative;
@@ -33,6 +38,7 @@ export function renderBattleConsole(state) {
   const pendingRollCount = (state.characterRolls?.records ?? []).filter((entry) =>
     ["pending", "awaiting-outcome"].includes(entry.consequence?.status)).length;
   const turn = state.ui?.turn ?? {};
+  const minimizedWorkspace = getMinimizedWorkspaceSession();
   const budgetItem = (label, used) =>
     `<span class="battle-budget-item"><strong>${label}</strong> · ${used ? "использовано" : "доступно"}</span>`;
   const phaseLabel = !battle ? "Нет активного боя" : ({
@@ -43,7 +49,7 @@ export function renderBattleConsole(state) {
   return `
     <section class="battle-console panel-section" aria-labelledby="battleConsoleTitle">
       <div class="section-heading-row">
-        <div><div class="eyebrow">Личная сцена</div><h2 id="battleConsoleTitle">Боевой пульт</h2></div>
+        <div><div class="eyebrow">Личная сцена</div><h2 id="battleConsoleTitle" tabindex="-1">Боевой пульт</h2></div>
         <span class="battle-console-phase">${escapeHtml(phaseLabel)}</span>
       </div>
         <div class="battle-console-budget" aria-label="Доступность ресурсов хода">
@@ -52,6 +58,7 @@ export function renderBattleConsole(state) {
           ${budgetItem("Реакция", turn.reactionUsed === true)}
         </div>
       ${renderInitiative(battle)}
+      ${minimizedWorkspace ? `<button type="button" class="btn btn--primary" data-workspace-resume="${escapeHtml(minimizedWorkspace.workspaceSessionId)}">${escapeHtml(minimizedWorkspace.label)}</button>` : ""}
       ${pendingCombatCount ? `<button type="button" class="btn btn--utility battle-console-pending" data-battle-open-pending>Бой: незавершённые события · ${pendingCombatCount}</button>` : ""}
       ${pendingRollCount ? `<button type="button" class="btn btn--utility battle-console-pending" data-open-character-roll-panel>Спасброски: незавершённые последствия · ${pendingRollCount}</button>` : ""}
       ${!battle ? `
@@ -71,7 +78,7 @@ export function renderBattleConsole(state) {
         </div>
       ` : battle.phase === "own-turn" ? `
         <nav class="battle-command-menu" aria-label="Команды боя">
-          <button type="button" class="btn btn--primary" data-battle-open-attack>Атака</button>
+          <button type="button" class="btn btn--primary" data-battle-open-attack data-workspace-invoker="normal-attack">Атака</button>
           ${canFlurry ? `<button type="button" class="btn" data-battle-open-flurry>Шквал · 1 ци</button>
             <button type="button" class="btn" data-battle-open-bonus-attack>Бонусный удар</button>` : ""}
           ${canRegenerate ? `<button type="button" class="btn" data-battle-open-regeneration>Мистическая регенерация</button>` : ""}
@@ -103,9 +110,20 @@ export function bindBattleConsole(root = document) {
     if (!(event.target instanceof Element)) return;
     const attackShortcut = event.target.closest("[data-battle-open-attack]");
     if (attackShortcut && root.contains(attackShortcut)) {
-      root.querySelector("[data-attack-form-open]")?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      const result = openNormalAttack({ invoker: attackShortcut });
+      if (!result.ok) {
+        const status = root.querySelector("[data-battle-status]");
+        if (status) status.textContent = result.reason;
+      }
+      return;
+    }
+    const resumeShortcut = event.target.closest("[data-workspace-resume]");
+    if (resumeShortcut && root.contains(resumeShortcut)) {
+      const result = resumeWorkspace(resumeShortcut.dataset.workspaceResume);
+      if (!result.ok) {
+        const status = root.querySelector("[data-battle-status]");
+        if (status) status.textContent = result.reason;
+      }
       return;
     }
     const flurryShortcut = event.target.closest("[data-battle-open-flurry]");

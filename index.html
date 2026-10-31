@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="./styles/techniques.css">
   <link rel="stylesheet" href="./styles/character-rolls.css">
   <link rel="stylesheet" href="./styles/battle-console.css">
+  <link rel="stylesheet" href="./styles/action-workspace.css">
 </head>
 <body>
   <div class="page">
@@ -264,5 +265,15 @@
     </main>
   </div>
   <div id="characterRollsRoot" class="character-roll-root" hidden></div>
+  <dialog id="actionWorkspaceRoot" class="action-workspace" aria-labelledby="workspaceDialogTitle">
+    <header class="action-workspace__header">
+      <div data-workspace-header></div>
+    </header>
+    <section class="action-workspace__body" data-workspace-body aria-label="Текущий этап атаки"></section>
+    <footer class="action-workspace__footer">
+      <div data-workspace-footer></div>
+      <p data-workspace-status role="status" aria-live="polite"></p>
+    </footer>
+  </dialog>
 </body>
 </html>

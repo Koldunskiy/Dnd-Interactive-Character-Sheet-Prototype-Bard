@@ -6,6 +6,7 @@ import {
   resolveCharacterRollConsequence,
 } from "./commands.js";
 import { escapeHtml } from "../render/shared/spell-card.js";
+import { isWorkspaceOpen } from "../workspace/controller.js";
 
 let draft = {
   kind: "ability-check",
@@ -321,6 +322,7 @@ function bindRollPanel(root) {
 }
 
 export function openCharacterRollPanel(kind = "ability-check", id = "strength") {
+  if (isWorkspaceOpen()) return false;
   const root = document.getElementById("characterRollsRoot");
   if (!(root instanceof HTMLElement)) return;
   if (!hasChangedCharacterRollDraft()) {

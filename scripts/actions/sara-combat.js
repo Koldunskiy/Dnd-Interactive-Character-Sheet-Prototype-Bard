@@ -79,9 +79,7 @@ function pruneCombatHistory(assistant) {
 function createSequenceRecord(character, sequenceId, kind = "attack-action") {
   const derived = getDerivedStats(character);
   const battle = character.battleConsole?.current;
-  const maximumAttacks = kind === "attack-action"
-    ? Number(character.profile.level) >= 5 ? 2 : 1
-    : kind === "flurry" ? Number(character.profile.level) >= 17 ? 3 : 2 : 1;
+  const maximumAttacks = getSaraAttackCount(character, kind);
   return {
     id: sequenceId,
     kind,
@@ -123,6 +121,13 @@ function mayRunAlongside(kind, existingKind) {
   const bonusKinds = new Set(["flurry", "bonus-unarmed"]);
   return kind === "attack-action" && bonusKinds.has(existingKind) ||
     existingKind === "attack-action" && bonusKinds.has(kind);
+}
+
+export function getSaraAttackCount(character, kind = "attack-action") {
+  const level = Number(character?.profile?.level ?? 1);
+  if (kind === "attack-action") return level >= 5 ? 2 : 1;
+  if (kind === "flurry") return level >= 17 ? 3 : 2;
+  return 1;
 }
 
 function commit(context, operationId, metadata, updater, validate) {
