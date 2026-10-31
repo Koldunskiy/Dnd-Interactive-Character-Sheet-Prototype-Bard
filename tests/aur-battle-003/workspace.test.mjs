@@ -1,10 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { getState, getSessionContext, openCharacterSession, subscribe } from "../../scripts/state.js";
-import { getDerivedStats } from "../../scripts/calculations.js";
 import { sara } from "../../data/sara.js";
 import { renderBattleConsole } from "../../scripts/render/render-battle-console.js";
-import { renderSaraCombatPanel } from "../../scripts/render/render-techniques.js";
 import { beginOwnTurn, startBattle } from "../../scripts/battle/transitions.js";
 import { bindBattleConsole } from "../../scripts/render/render-battle-console.js";
 import { applyTechniqueToHit } from "../../scripts/actions/sara-combat.js";
@@ -164,15 +162,16 @@ test("production normal attack workspace records one action, snapshot damage and
   startBattle(battleFixture, { rawD20: "10" }, { id: "workspace-battle" });
   beginOwnTurn(battleFixture, { id: "workspace-turn" });
   const renderedConsole = renderBattleConsole(battleFixture);
-  assert.match(renderedConsole, /data-battle-open-attack data-workspace-invoker="normal-attack"/);
+  assert.match(renderedConsole, /data-battle-command-open="normal-attack"/);
   const consoleRoot = new FakeNode();
   const consoleStatus = new FakeNode();
   consoleRoot.querySelector = (selector) =>
     selector === "[data-battle-status]" ? consoleStatus : null;
   bindBattleConsole(consoleRoot);
   const attackShortcut = new FakeNode();
+  attackShortcut.dataset.battleCommandOpen = "normal-attack";
   attackShortcut.closest = (selector) =>
-    selector === "[data-battle-open-attack]" ? attackShortcut : null;
+    selector === "[data-battle-command-open]" ? attackShortcut : null;
   consoleRoot.fire("click", { target: attackShortcut });
   const opened = {
     ok: dialog.open,
@@ -218,9 +217,10 @@ test("production normal attack workspace records one action, snapshot damage and
   assert.equal(dialog.open, false);
   assert.equal(minimized.rawInputsByStep[minimized.currentStepKey].firstD20, "10");
   assert.match(renderBattleConsole(getState()), /data-workspace-resume=/);
-  assert.equal(openNormalAttack({ sequenceId: "another-normal-sequence" }).ok, true);
+  const invalidTarget = openNormalAttack({ sequenceId: "another-normal-sequence" });
+  assert.equal(invalidTarget.ok, false);
   assert.equal(getWorkspaceSessionForTests().workspaceSessionId, opened.sessionId);
-  assert.equal(dialog.open, true);
+  assert.equal(dialog.open, false);
   assert.equal(resumeWorkspace(opened.sessionId).ok, true);
   fireAction(dialog, "close");
   assert.equal(getWorkspaceSessionForTests().currentStep, "confirm-close");
@@ -243,9 +243,25 @@ test("production normal attack workspace records one action, snapshot damage and
   assert.equal(firstAttack.damageStatus, "awaiting-damage");
   assert.equal(getState().ui.turn.actionUsed, true);
   assert.equal(getWorkspaceSessionForTests().currentStep, "damage-input");
-  const pendingMarkup = renderSaraCombatPanel(getState(), getDerivedStats(getState()));
-  assert.match(pendingMarkup, /data-workspace-normal-sequence/);
-  assert.doesNotMatch(pendingMarkup, /data-sara-damage-submit/);
+  assert.match(dialog.body.innerHTML, /data-workspace-form="damage"/);
+  assert.doesNotMatch(dialog.body.innerHTML, /data-sara-damage-submit/);
+  const invalidAttackTarget = openNormalAttack({
+    sequenceId: sequence.id, attackId: "missing-attack",
+  });
+  assert.equal(invalidAttackTarget.ok, false);
+  assert.equal(getWorkspaceSessionForTests().workspaceSessionId, opened.sessionId);
+  const exactTarget = openNormalAttack({
+    sequenceId: sequence.id, attackId: firstAttack.id,
+  });
+  assert.equal(exactTarget.ok, true);
+  assert.equal(exactTarget.sessionId, opened.sessionId);
+  assert.equal(getWorkspaceSessionForTests().attackId, firstAttack.id);
+  const historicalTarget = openNormalAttack({
+    sequenceId: sequence.id, attackId: firstAttack.id, mode: "historical-damage",
+  });
+  assert.equal(historicalTarget.ok, true);
+  assert.notEqual(historicalTarget.sessionId, opened.sessionId);
+  assert.equal(getWorkspaceSessionForTests().historicalOnly, true);
 
   const kiBeforeTechnique = getState().combat.ki.current;
   minimizeWorkspace();
@@ -259,7 +275,7 @@ test("production normal attack workspace records one action, snapshot damage and
   );
   assert.equal(technique.status, "applied");
   assert.equal(getState().combat.ki.current, kiBeforeTechnique - 1);
-  assert.equal(resumeWorkspace(opened.sessionId).ok, true);
+  assert.equal(resumeWorkspace(historicalTarget.sessionId).ok, true);
   assert.match(dialog.body.innerHTML, /К этому удару уже применена техника/);
 
   dialog.forms.damage = new FakeForm("damage", { damage1: "3" });
@@ -271,6 +287,7 @@ test("production normal attack workspace records one action, snapshot damage and
   3 + firstAttack.profileSnapshot.damageModifier);
   assert.equal(getWorkspaceSessionForTests().currentStep, "checkpoint");
   assert.equal(getWorkspaceSessionForTests().appliedUnsaved, true);
+  assert.doesNotMatch(dialog.footer.innerHTML, /data-workspace-action="next-attack"/);
   const appliedRevision = getSessionContext().stateRevision;
   globalThis.workspaceStorageFailures = true;
   const failedTransition = prepareWorkspaceCharacterTransition("aurelia");
@@ -283,6 +300,10 @@ test("production normal attack workspace records one action, snapshot damage and
   fireAction(dialog, "retry-save");
   assert.equal(getWorkspaceSessionForTests().appliedUnsaved, false);
   assert.equal(getSessionContext().stateRevision, appliedRevision);
+  const currentContinuation = openNormalAttack({ sequenceId: sequence.id, mode: "current" });
+  assert.equal(currentContinuation.ok, true);
+  assert.equal(getWorkspaceSessionForTests().historicalOnly, false);
+  assert.equal(getWorkspaceSessionForTests().currentStep, "attack-input");
 
   const sequenceId = sequence.id;
   minimizeWorkspace();
@@ -295,6 +316,21 @@ test("production normal attack workspace records one action, snapshot damage and
   assert.notEqual(secondId, firstAttack.id);
   assert.deepEqual(getWorkspaceSessionForTests().rawInputsByStep[
     getWorkspaceSessionForTests().currentStepKey], {});
+  const secondRoll = {
+    name: "firstD20", type: "number", value: "13",
+    closest(selector) { return selector === "[data-workspace-field]" ? this : null; },
+  };
+  dialog.fire("input", { target: secondRoll });
+  const secondDraftKey = getWorkspaceSessionForTests().currentStepKey;
+  const resolvedBeforeResume = getState().monk.combatAssistant.activeSequences[0]
+    .resolvedAttacks.length;
+  minimizeWorkspace();
+  assert.equal(resumeWorkspace(reopened.sessionId).ok, true);
+  assert.equal(getWorkspaceSessionForTests().attackId, secondId);
+  assert.equal(getWorkspaceSessionForTests().currentStepKey, secondDraftKey);
+  assert.equal(getWorkspaceSessionForTests().rawInputsByStep[secondDraftKey].firstD20, "13");
+  assert.equal(getState().monk.combatAssistant.activeSequences[0].resolvedAttacks.length,
+    resolvedBeforeResume);
 
   dialog.forms.attack = new FakeForm("attack", {
     kind: "attack-action", profileId: "unarmed", targetLabel: "",

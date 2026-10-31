@@ -5,7 +5,6 @@ import {
   CLERIC_CANTRIPS,
   MONK_RULESET_PROVENANCE
 } from "../../data/monk-techniques.js";
-import { MONK_RACIAL_SPELLS } from "../../data/monk-support-spells.js";
 import { getTechniqueAvailability } from "../selectors/techniques.js";
 import { applyTechniqueDraft, createTechniqueDraft } from "../technique-editor.js";
 import {
@@ -14,10 +13,7 @@ import {
   updateSessionState
 } from "../state.js";
 import {
-  applySaraCombatAction,
-  castSaraRacialSpell,
   completeAwakenThirdEyeMeditation,
-  continueDeflectMissile,
   endAwakenThirdEye,
   executeMonkTechnique
 } from "../actions/monk.js";
@@ -26,31 +22,20 @@ import {
   activationLabel,
   paymentLabel,
   sourceLabel,
-  spellTitle,
   subchoiceLabel,
   techniqueTitle
 } from "../presentation/ru.js";
 import { isTechniqueEffectivelySelected } from "../selectors/techniques.js";
-import {
-  applySaraBuildUpdate,
-  proposeSaraBuildUpdate
-} from "../migrations/sara-build-20261031.js";
-import {
-  applyTechniqueToHit,
-  closeAttackSequence,
-  commitDeflection,
-  commitRegeneration,
-  getSaraAttackCount,
-  markAttackDamageOutside,
-  recordAttackDamage,
-  recordAttackOutcome,
-  recordTargetSaveOutcome,
-  startAttackSequence
-} from "../actions/sara-combat.js";
-import { openNormalAttack } from "../workspace/controller.js";
 
 const pendingDrafts = new Map();
 const techniqueViews = new Map();
+const BATTLE_WORKSPACE_TECHNIQUES = new Set([
+  "ll-monk:step-of-the-wind",
+  "ll-monk:patient-defense",
+  "ll-monk:mystic-regeneration",
+  "ll-monk:deflect-strike",
+  "ll-monk:deflect-missile",
+]);
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -107,10 +92,16 @@ function renderTechniqueCard(entry, character, draft) {
   const editControl = draft
     ? `<label><input type="checkbox" data-technique-draft="${escapeHtml(entry.id)}" ${ordinaryChecked ? "checked" : ""} ${disabled ? "disabled" : ""}> Обычный выбор</label>`
     : `<span class="technique-card__status">${isSelected ? isEffective ? "Выбрана · действует" : `Сохранена, но недоступна: ${escapeHtml(availability.reason ?? "проверьте требования")}` : availability.available ? "Доступна" : escapeHtml(availability.reason)}</span>`;
-  const useControl = isEffective && availability.available &&
+  const isStrikeFollowUp = Boolean(entry.eligibleStrike);
+  const useControl = !isStrikeFollowUp && !BATTLE_WORKSPACE_TECHNIQUES.has(entry.id) &&
+    isEffective && availability.available &&
     (entry.category !== "passive" || entry.id === "ll-monk:heavenly-step") && !draft
     ? `<button type="button" class="btn btn--utility" data-technique-use="${escapeHtml(entry.id)}">Применить</button>`
     : "";
+  const workspaceHint = isStrikeFollowUp
+    ? `<p class="technique-card__status">Доступна как продолжение после подходящего попадания в боевом пульте.</p>`
+    : BATTLE_WORKSPACE_TECHNIQUES.has(entry.id)
+      ? `<p class="technique-card__status">Боевой сценарий доступен через категории боевого пульта.</p>` : "";
   return `
     <article class="technique-card" data-technique-card data-available="${availability.available}"
       data-source="${entry.sourceId === "laserllama-core" ? "core" : "expanded"}"
@@ -124,6 +115,7 @@ function renderTechniqueCard(entry, character, draft) {
       </details>
       ${editControl}
       ${useControl}
+      ${workspaceHint}
       ${useControl ? `<form class="sara-combat-form" data-technique-form="${escapeHtml(entry.id)}" hidden>
         <h4>Применение: ${escapeHtml(techniqueTitle(entry))}</h4>
         ${renderTechniqueFormFields(entry, character)}
@@ -220,203 +212,6 @@ function renderTechniqueFormFields(entry, character) {
   return `<p>Проверьте полный текст правила и вручную выполните требуемые броски и решения мастера.</p>`;
 }
 
-function renderBattleTechniqueForm(techniqueId, state) {
-  const entry = MONK_TECHNIQUE_BY_ID.get(techniqueId);
-  if (!entry || !isTechniqueEffectivelySelected(state, techniqueId)) return "";
-  return `<form class="sara-combat-form" data-battle-technique-form="${escapeHtml(techniqueId)}">
-    <h4>${escapeHtml(techniqueTitle(entry))}</h4>
-    ${renderTechniqueFormFields(entry, state)}
-    <label class="sara-form-check"><input type="checkbox" name="confirmed" required>
-      Подтверждаю условия применения; броски и цель определяются физически и мастером</label>
-    <p class="sara-form-error" data-form-error role="alert"></p>
-    <button type="submit" class="btn btn--utility">Применить из боевого листа</button>
-  </form>`;
-}
-
-function renderSaraActionForm(actionId, derived) {
-  if (actionId === "flurry") {
-    return `<form class="sara-combat-form" data-sara-action-form="flurry" hidden>
-      <p>Начало сразу потратит 1 ци и отметит бонусное действие; атак: ${derived.level >= 17 ? 3 : 2}.</p>
-      <label class="sara-form-check"><input type="checkbox" name="confirmed" required> Подтверждаю расход 1 ци и начало Шквала</label>
-      <div class="sara-form-actions"><button type="button" class="btn btn--utility" data-sara-form-cancel>Отмена</button>
-        <button type="submit" class="btn">Начать шквал — 1 ци</button></div></form>`;
-  }
-  if (actionId === "bonus-unarmed") {
-    return `<form class="sara-combat-form" data-sara-action-form="bonus-unarmed" hidden>
-      <label class="sara-form-check"><input type="checkbox" name="triggerConfirmed" required> Подтверждаю условие бонусной атаки Боевых искусств</label>
-      <div class="sara-form-actions"><button type="button" class="btn btn--utility" data-sara-form-cancel>Отмена</button>
-        <button type="submit" class="btn">Записать бонусную атаку</button></div></form>`;
-  }
-  return `<form class="sara-combat-form" data-sara-action-form="ebb-and-flow" hidden>
-    <p>Подтвердите видимый промах рукопашной атаки. Эффект цели разрешается вручную.</p>
-    <label class="field-label">Ответ<select class="input" name="mode" required>
-      <option value="">Выберите</option><option value="unarmed">Ответный безоружный удар</option>
-      <option value="dexterity-save">Спасбросок Ловкости цели · СЛ ${derived.monk.techniqueSaveDc}</option></select></label>
-    <label class="sara-form-check"><input type="checkbox" name="missConfirmed" required> Видимая рукопашная атака промахнулась</label>
-    <div class="sara-form-actions"><button type="button" class="btn btn--utility" data-sara-form-cancel>Отмена</button>
-      <button type="submit" class="btn">Применить «Прилив и отлив»</button></div></form>`;
-}
-
-function newUiId(prefix) {
-  return globalThis.crypto?.randomUUID?.() ??
-    `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function renderAttackRollForm(sequenceId, attackId, attackNumber, total, kind, currentActionUsed) {
-  const startKind = attackNumber === 1 &&
-    ["attack-action", "bonus-unarmed", "reaction-unarmed"].includes(kind) ? kind : "";
-  return `<form class="sara-combat-form" data-sara-attack-submit
-      data-action-id="${escapeHtml(sequenceId)}" data-attack-id="${escapeHtml(attackId)}"
-      data-attack-kind="${startKind}" hidden>
-    <h4>${kind === "attack-action" ? `Действие «Атака» — удар ${attackNumber} из ${total}` : kind === "bonus-unarmed" ? "Бонусный безоружный удар" : kind === "reaction-unarmed" ? "Ответный безоружный удар" : `Атака — удар ${attackNumber} из ${total}`}</h4>
-    <p>Безоружная атака: ${escapeHtml(String(getDerivedStats(getState()).saraAttackProfiles.unarmed.attackBonus))}; урон ${escapeHtml(getDerivedStats(getState()).saraAttackProfiles.unarmed.damageDice)} +${escapeHtml(String(getDerivedStats(getState()).saraAttackProfiles.unarmed.damageModifier))}.</p>
-    ${["bonus-unarmed", "reaction-unarmed"].includes(kind) && attackNumber === 1
-      ? `<label class="sara-form-check"><input type="checkbox" name="triggerConfirmed" required> Подтверждаю условие этой атаки</label>` : ""}
-    <label class="field-label">Цель (необязательно)<input class="input" type="text" name="targetLabel" maxlength="60"></label>
-    <label class="field-label">Режим<select class="input" name="rollMode" required>
-      <option value="normal">Обычный</option><option value="advantage">Преимущество</option><option value="disadvantage">Помеха</option></select></label>
-    <label class="field-label">Результат к20<input class="input" type="number" min="1" max="20" step="1" inputmode="numeric" name="firstD20" required></label>
-    <label class="field-label">Второй к20 (для преимущества/помехи)<input class="input" type="number" min="1" max="20" step="1" inputmode="numeric" name="secondD20"></label>
-    <label class="field-label">КД цели (необязательно)<input class="input" type="number" min="1" max="99" step="1" inputmode="numeric" name="targetArmorClass"></label>
-    <label class="field-label">Если КД неизвестна или мастер исправляет результат<select class="input" name="dmHitResult">
-      <option value="">Не указано</option><option value="hit">Мастер подтверждает попадание</option>
-      <option value="miss">Мастер подтверждает промах</option></select></label>
-    ${currentActionUsed && startKind ? `<label class="sara-form-check"><input type="checkbox" name="confirmSeparateAction"> Подтверждаю отдельное дополнительное действие или ручную корректировку</label>` : ""}
-    <p class="sara-form-error" data-form-error role="alert"></p>
-    <div class="sara-form-actions"><button type="button" class="btn btn--utility" data-sara-form-cancel>Отмена</button>
-      <button type="submit" class="btn">Подтвердить попадание / записать промах</button></div>
-  </form>`;
-}
-
-function renderAttackSequenceCard(state, sequence, derived) {
-  const attackNumber = sequence.resolvedAttacks.length + 1;
-  const details = sequence.resolvedAttacks.map((attack) => `
-    <article class="sara-attack-record">
-      <h4>Удар ${escapeHtml(String(attack.chosenD20))} · ${attack.hitResult === "hit" ? "попадание" : "промах"}
-        ${attack.critical ? " · критическое попадание" : ""}</h4>
-      <p>${escapeHtml(attack.optionalTargetLabel || "Цель не указана")} · ${escapeHtml(attack.rawD20Rolls.join(" / "))} + ${escapeHtml(String(attack.attackBonusSnapshot))} = ${escapeHtml(String(attack.attackTotal))}</p>
-      ${attack.critical && attack.profileId === "unarmed" ? `<p>Удар открытой ладони: цель совершает с помехой спасбросок, вызванный этой атакой.</p>` : ""}
-      ${attack.hitResult === "hit" && attack.damageStatus === "awaiting-damage" &&
-        sequence.kind === "attack-action" ? `
-        <button type="button" class="btn btn--utility" data-workspace-normal-sequence="${escapeHtml(sequence.id)}"
-          data-workspace-attack-id="${escapeHtml(attack.id)}">Продолжить запись физического урона</button>` : ""}
-      ${attack.hitResult === "hit" && attack.damageStatus === "awaiting-damage" &&
-        sequence.kind !== "attack-action" ? `
-        <form class="sara-combat-form" data-sara-damage-submit data-action-id="${escapeHtml(sequence.id)}" data-attack-id="${escapeHtml(attack.id)}">
-          ${Array.from({ length: attack.critical ? 2 : 1 }, (_, index) =>
-            numberField(`damage${index + 1}`, `Физический результат к${Number(String(attack.profileSnapshot?.damageDice ?? "").match(/d(\d+)/)?.[1] ?? derived.monk.martialDieSides)} урона ${index + 1}`, {
-              min: 1, max: Number(String(attack.profileSnapshot?.damageDice ?? "").match(/d(\d+)/)?.[1] ?? derived.monk.martialDieSides)
-            })).join("")}
-          <p>Урон до сопротивлений и других поправок цели.</p>
-          <p class="sara-form-error" data-form-error role="alert"></p>
-          <div class="sara-form-actions"><button type="button" class="btn btn--utility" data-mark-damage-outside="${escapeHtml(attack.id)}" data-action-id="${escapeHtml(sequence.id)}">Урон учтён вне приложения</button>
-            <button type="submit" class="btn">Записать урон</button></div>
-        </form>` : attack.damageTotalBeforeTargetModifiers != null
-        ? `<p>Урон: ${escapeHtml(String(attack.damageTotalBeforeTargetModifiers))} до поправок цели.</p>` : ""}
-      ${attack.hitResult === "hit" && attack.profileId === "unarmed" &&
-        !attack.techniqueApplicationId && sequenceStillCurrent(state, sequence)
-        ? renderStrikeForm(state, sequence.id, attack.id) : ""}
-    </article>`).join("") ?? "";
-  const maximumAttacks = sequence.maximumAttacks;
-  const nextAttackForm = sequence.status === "open" && attackNumber <= maximumAttacks
-    ? sequence.kind === "attack-action"
-      ? `<button type="button" class="btn btn--utility" data-workspace-normal-sequence="${escapeHtml(sequence.id)}">Продолжить обычную атаку · удар ${attackNumber} из ${maximumAttacks}</button>`
-      : `<button type="button" class="btn btn--utility" data-attack-form-open="${escapeHtml(sequence.id)}">Ввести удар ${attackNumber}</button>
-        ${renderAttackRollForm(sequence.id, `${sequence.id}:${attackNumber}`, attackNumber, maximumAttacks, sequence.kind, Boolean(state.ui?.turn?.actionUsed))}`
-    : "";
-  return `<article class="sara-attack-sequence">
-    <p>Последовательность ${escapeHtml(sequence.kind)}: ${sequence.resolvedAttacks.length}/${maximumAttacks} атак.</p>
-    ${details}${nextAttackForm}
-    ${sequence.status === "open" ? `<button type="button" class="btn btn--utility" data-sequence-close="${escapeHtml(sequence.id)}">Закрыть последовательность</button>` : ""}
-  </article>`;
-}
-
-function renderAttackSequence(state, derived) {
-  const sequences = state.monk?.combatAssistant?.activeSequences ?? [];
-  const openSequences = sequences.filter((entry) => entry.status === "open");
-  const latestResolved = [...sequences].reverse().find((entry) =>
-    entry.status === "complete" || entry.status === "abandoned");
-  const unresolvedSequences = sequences.filter((entry) =>
-    entry.status !== "open" && entry.resolvedAttacks?.some((attack) =>
-      attack.damageStatus === "awaiting-damage"));
-  const displayedSequences = [...openSequences, ...unresolvedSequences];
-  if (!displayedSequences.length && latestResolved) displayedSequences.push(latestResolved);
-  const hasAttackAction = openSequences.some((entry) => entry.kind === "attack-action");
-  const hasBonusSequence = openSequences.some((entry) =>
-    ["flurry", "bonus-unarmed"].includes(entry.kind));
-  const battle = state.battleConsole?.current;
-  const canStartTurnActions = !battle || battle.phase === "own-turn";
-  const starts = [];
-  if (canStartTurnActions && !hasAttackAction) {
-    const maximum = getSaraAttackCount(state);
-    starts.push(`<button type="button" class="btn" data-workspace-normal-open data-workspace-invoker="normal-attack">Атака — ${maximum} удара</button>`);
-  }
-  if (canStartTurnActions && !hasBonusSequence && derived.level >= 2) {
-    const id = newUiId("bonus-unarmed");
-    starts.push(`<button type="button" class="btn btn--utility" data-attack-form-open="${id}">Бонусный безоружный удар</button>
-      ${renderAttackRollForm(id, `${id}:1`, 1, 1, "bonus-unarmed", false)}`);
-  }
-  const currentPending = state.monk?.combatAssistant?.pendingApplications ?? [];
-  const pending = currentPending.map((application) => `
-    <form class="sara-combat-form sara-save-outcome" data-save-outcome="${escapeHtml(application.id)}">
-      <p>${escapeHtml(application.techniqueId)} · СЛ ${escapeHtml(String(application.dc))} · спасбросок ${escapeHtml(application.saveAbility ?? "по правилу")}</p>
-      ${application.criticalDisadvantageReminder ? `<p>${escapeHtml(application.criticalDisadvantageReminder)}</p>` : ""}
-      ${application.manualTimingNote ? `<p>${escapeHtml(application.manualTimingNote)}</p>` : ""}
-      <label class="field-label">Результат цели<select class="input" name="outcome" required>
-        <option value="">Неизвестен</option><option value="success">Успех</option><option value="failure">Провал</option><option value="unknown">Оставить неизвестным</option></select></label>
-      <button type="submit" class="btn btn--utility">Записать результат без повторной оплаты</button>
-    </form>`).join("");
-  const recent = [...(state.monk?.combatAssistant?.recentlyCompletedSummaries ?? [])]
-    .slice(-5).reverse().map((entry) => {
-      if (entry.kind === "regeneration") {
-        return `<li>Мистическая регенерация: физический результат ${escapeHtml(String(entry.dieResult))}, полезное лечение ${escapeHtml(String(entry.usefulHealing))} HP.</li>`;
-      }
-      if (entry.kind === "deflection") {
-        return `<li>Отражение: входящий урон ${escapeHtml(String(entry.incomingDamage))}, остаток ${escapeHtml(String(entry.finalRemainder))}.</li>`;
-      }
-      return "";
-    }).filter(Boolean).join("");
-  return `<section id="saraCombatTasks" class="panel-section sara-attack-assistant">
-    <h3>Физические броски</h3>
-    ${displayedSequences.map((sequence) => renderAttackSequenceCard(state, sequence, derived)).join("")}
-    ${starts.join("")}
-    ${!canStartTurnActions ? `<p class="hint">Обычную атаку и бонусный удар можно начать только в свой ход.</p>` : ""}
-    ${openSequences.length ? `<p class="hint">Закрытие не отменяет уже записанные действия, расходы и нерешённые результаты.</p>` : ""}
-    ${pending ? `<h4>Ожидаемые спасброски</h4>${pending}` : ""}
-    ${recent ? `<details class="sara-combat-recent"><summary>Недавние события</summary><ul>${recent}</ul></details>` : ""}
-  </section>`;
-}
-
-function sequenceStillCurrent(state, sequence) {
-  return Number(sequence?.turnMarker ?? -1) === Number(state.ui?.turn?.turnNumber ?? 1);
-}
-
-function renderStrikeForm(state, actionId, attackId) {
-  const effective = new Set(getDerivedStats(state).effectiveTechniqueIds ?? []);
-  const choices = MONK_TECHNIQUES.filter((entry) =>
-    entry.eligibleStrike && effective.has(entry.id) &&
-    ["ll-monk:empowered-strike", "ll-monk:stunning-strike",
-      "ll-monk:crippling-strike", "ll-monk:slowing-strike"].includes(entry.id));
-  if (!choices.length) return "";
-  return `<form class="sara-combat-form" data-sara-strike-submit
-      data-action-id="${escapeHtml(actionId)}" data-attack-id="${escapeHtml(attackId)}">
-    <h4>Техника после попадания</h4>
-    <label class="field-label">Техника<select class="input" name="techniqueId" required>
-      <option value="">Выберите</option>${choices.map((entry) =>
-        `<option value="${escapeHtml(entry.id)}">${escapeHtml(techniqueTitle(entry))}</option>`).join("")}
-    </select></label>
-    <label class="field-label">Оплата<select class="input" name="paymentMode" required>
-      <option value="ki">Ци</option><option value="practiced" ${Number(state.combat?.practiced?.current) > 0 ? "" : "disabled"}>Отработанный удар · свой ход</option>
-    </select></label>
-    <label class="field-label">Эффект «Калечащего удара»<select class="input" name="effect">
-      <option value="">Не применяется</option><option value="blinded">Ослепление</option>
-      <option value="deafened">Глухота</option><option value="unable-to-speak">Невозможность говорить</option></select></label>
-    <label class="sara-form-check"><input type="checkbox" name="practicedConditions"> Подтверждаю свой ход и безоружное попадание для оплаты отработанным ударом</label>
-    <p class="sara-form-error" data-form-error role="alert"></p>
-    <button type="submit" class="btn">Применить технику к этому попаданию</button>
-  </form>`;
-}
-
 function renderSignatureSelects(character, draft) {
   const level = Number(character.profile?.level ?? 1);
   return [3, 5, 9].filter((slotLevel) => level >= slotLevel).map((slotLevel) => {
@@ -462,392 +257,6 @@ function renderTechniqueChoices(character, draft) {
   }).join("");
 }
 
-export function renderSaraCombatPanel(state, derived) {
-  const ki = derived.monk.kiMaximum;
-  const currentKi = state.combat.ki.current;
-  const divineLightIds = state.monk?.ordinaryTechniqueIds?.includes("ll-monk:divine-light") ||
-    Object.values(state.monk?.signatureTechniqueSlots ?? {}).includes("ll-monk:divine-light")
-    ? state.monk?.techniqueChoices?.["ll-monk:divine-light"]?.clericCantripIds ?? []
-    : [];
-  const divineLight = divineLightIds.map((id) =>
-    CLERIC_CANTRIPS.find((cantrip) => cantrip.id === id)).filter(Boolean);
-  const battleTechniques = [
-    "ll-monk:deflect-strike",
-    "ll-monk:deflect-missile",
-    "ll-monk:mystic-regeneration"
-  ].map((id) => renderBattleTechniqueForm(id, state)).filter(Boolean);
-  const buildProposal = proposeSaraBuildUpdate(state);
-  const buildUpdate = buildProposal.status === "proposal" ? `
-    <section class="panel-section sara-build-update">
-      <h3>Обновить согласованный билд Сары</h3>
-      ${buildProposal.techniqueDelta?.remove
-        ? `<p>Техники: Небесный шаг → Замедляющий удар</p>`
-        : buildProposal.conflicts.some((conflict) => conflict.kind === "custom-techniques")
-          ? `<p>Ваш текущий набор техник отличается. Он не будет заменён без отдельного подтверждения.</p>`
-          : ""}
-      ${buildProposal.itemDelta ? `<p>Предметы: добавить Эмблему когтей</p>
-        <p>Безоружные атаки при ношении эмблемы: +${derived.saraAttackProfiles.unarmed.attackBonus}, ${escapeHtml(derived.saraAttackProfiles.unarmed.damageDice)} +${derived.saraAttackProfiles.unarmed.damageModifier}</p>
-        <label class="field-label"><input type="checkbox" data-sara-insignia-wear checked> Носить после добавления</label>` : ""}
-      ${buildProposal.conflicts.map((conflict) => `<p role="alert">${conflict.kind === "ambiguous-insignia"
-        ? `Предмет «${escapeHtml(conflict.itemName)}» похож на эмблему, но не распознан по идентификатору.`
-        : conflict.kind === "custom-techniques"
-          ? "Сохраните свой набор или пересоберите его в редакторе."
-          : "Обнаружена неоднозначность дубликатов Эмблемы когтей."}</p>`).join("")}
-      <p>Сохраняются текущие ресурсы, заметки, история и прочие вещи.</p>
-      <button type="button" class="btn" data-sara-build-update="apply">
-        ${buildProposal.conflicts.some((conflict) => conflict.kind === "custom-techniques")
-          ? buildProposal.itemDelta ? "Сохранить мой набор и добавить Эмблему когтей" : "Сохранить мой набор"
-          : "Применить обновление"}
-      </button>
-      <p class="technique-card__status" data-sara-build-status role="status"></p>
-    </section>` : "";
-  const racial = MONK_RACIAL_SPELLS.map((spell) => {
-    const savedSpell = state.spellcasting?.racialSpells?.find((entry) =>
-      entry.id === spell.id && entry.source === spell.source && entry.mode === spell.mode);
-    const uses = savedSpell?.uses;
-    return `
-    <article class="technique-card">
-      <h3>${escapeHtml(spellTitle(spell.name))}</h3>
-      <p class="technique-card__meta">${spell.mode === "cantrip" ? "Заговор" : spell.mode === "at-will-racial" ? "Без ограничений" : "1 раз за долгий отдых"} · Действие · ${escapeHtml(spell.range)}</p>
-      <p class="technique-card__description">${escapeHtml(spell.description)}</p>
-      <p>${escapeHtml(spell.damage ?? spell.duration ?? "Без лимита применений")}</p>
-      ${uses ? `<p>Осталось: ${escapeHtml(uses.current)} / ${escapeHtml(uses.max)}</p>` : ""}
-      <details><summary>Оригинал и источник</summary><p>${escapeHtml(spell.name)} · Yuan-ti MotM · правила заклинаний 2014 года</p></details>
-      <button type="button" class="btn btn--utility" data-racial-form-open="${escapeHtml(spell.id)}"
-        ${uses && Number(uses.current) < 1 ? "disabled" : ""}>Открыть форму применения</button>
-      <form class="sara-combat-form" data-racial-spell-form="${escapeHtml(spell.id)}"
-        data-current-concentration="${escapeHtml(state.combat?.concentration ?? "")}" hidden>
-        <label class="sara-form-check"><input type="checkbox" name="confirmed" required>
-          Подтверждаю применение; цель, спасбросок и результат определяются вручную</label>
-        ${spell.concentration && state.combat?.concentration
-          ? `<label class="sara-form-check"><input type="checkbox" name="replaceConcentration" required>
-            Заменить текущую концентрацию «${escapeHtml(state.combat.concentration)}»</label>` : ""}
-        <p class="sara-form-error" data-form-error role="alert"></p>
-        <div class="sara-form-actions"><button type="button" class="btn btn--utility" data-racial-form-cancel>Отмена</button>
-          <button type="submit" class="btn">Применить заклинание</button></div>
-      </form>
-    </article>`;
-  }).join("");
-  return `
-    <section class="panel-section">
-      <h2 class="section-title">Боевые искусства · Открытая ладонь</h2>
-      <p>Кость Боевых искусств: ${escapeHtml(derived.monk.martialDie)} · СЛ техник: ${derived.monk.techniqueSaveDc} · безоружная атака ${derived.unarmedAttackBonus >= 0 ? "+" : ""}${derived.unarmedAttackBonus}, ${escapeHtml(derived.unarmedDamage)}.</p>
-      <label class="field-label"><span>Текущая ци</span><input class="input" type="number" min="0" max="${ki}" step="1" data-bind="combat.ki.current" value="${escapeHtml(currentKi)}"></label>
-      <label class="field-label"><span>Отработанные удары</span><input class="input" type="number" min="0" max="${derived.monk.practicedMaximum}" step="1" data-bind="combat.practiced.current" value="${escapeHtml(state.combat.practiced.current)}"></label>
-      <label class="field-label"><span>Оставшиеся кости хитов к10</span><input class="input" type="number" min="0" max="${derived.level}" step="1" data-bind="combat.hitDice.remaining" value="${escapeHtml(state.combat.hitDice?.remaining ?? derived.level)}"></label>
-      <p class="sara-ki-note">Воинский дух: в начале своего хода в бою вручную восстановите 1 ци, если не недееспособны, не выше максимума. Автоматического начисления нет.</p>
-      ${renderAttackSequence(state, derived)}
-      ${battleTechniques.length ? `<section class="panel-section">
-        <h3>Реакция и восстановление</h3>${battleTechniques.join("")}
-      </section>` : ""}
-      <div class="technique-controls">
-        <button type="button" class="btn btn--utility" data-sara-action="flurry">Шквал — 1 ци</button>
-        ${derived.level >= 6 ? `<button type="button" class="btn btn--utility" data-sara-action="ebb-and-flow">Прилив и отлив · реакция</button>` : ""}
-      </div>
-      <div class="sara-action-forms">${renderSaraActionForm("flurry", derived)}${derived.level >= 6 ? renderSaraActionForm("ebb-and-flow", derived) : ""}</div>
-      <p>Бонусный безоружный удар требует подходящего условия Боевых искусств. Шквал даёт ${derived.level >= 17 ? 3 : 2} безоружных удара и не требует действия «Атака». Приложение не определяет попадания.</p>
-      ${buildUpdate}
-      <h3>Расовая магия Yuan-ti (MotM; тексты 2014)</h3>
-      <div class="technique-list">${racial}</div>
-      ${divineLight.length ? `<h3>Заговоры «Сияния божества»</h3><div class="technique-list">${divineLight.map((cantrip) => `
-        <article class="technique-card">
-          <h4>${escapeHtml(cantrip.name)}</h4>
-          <p class="technique-card__description">${escapeHtml(cantrip.text)}</p>
-        </article>`).join("")}</div>` : ""}
-      <p class="technique-card__status" data-sara-combat-status role="status"></p>
-    </section>
-  `;
-}
-
-export function bindSaraCombatControls() {
-  const root = document.getElementById("meleePanel");
-  if (!root || root.dataset.racialControlsBound) return;
-  root.addEventListener("click", (event) => {
-    if (!(event.target instanceof Element)) return;
-    const workspaceAttack = event.target.closest(
-      "[data-workspace-normal-open], [data-workspace-normal-sequence]",
-    );
-    if (workspaceAttack && root.contains(workspaceAttack)) {
-      const result = openNormalAttack({
-        sequenceId: workspaceAttack.dataset.workspaceNormalSequence || null,
-        attackId: workspaceAttack.dataset.workspaceAttackId || null,
-        mode: workspaceAttack.dataset.workspaceAttackId ? "historical-damage" : "current",
-        invoker: workspaceAttack,
-      });
-      if (!result.ok) {
-        const status = root.querySelector("[data-sara-combat-status]");
-        if (status) status.textContent = result.reason;
-      }
-      return;
-    }
-    const combatActionTarget = event.target.closest("[data-sara-action]");
-    if (combatActionTarget && root.contains(combatActionTarget) &&
-        combatActionTarget.isConnected && !combatActionTarget.closest("[hidden]") &&
-        combatActionTarget.dataset.processing !== "true") {
-      const actionId = combatActionTarget.dataset.saraAction;
-      const form = root.querySelector(`[data-sara-action-form="${actionId}"]`);
-      if (form) {
-        form.hidden = false;
-        form.querySelector("input, select, button")?.focus();
-      }
-      return;
-    }
-    if (event.target.closest("[data-sara-form-cancel], [data-racial-form-cancel]")) {
-      const form = event.target.closest("form");
-      if (form) {
-        form.hidden = true;
-        form.closest(".technique-card, .panel-section")?.querySelector("button")?.focus();
-      }
-      return;
-    }
-    const racialOpen = event.target.closest("[data-racial-form-open]");
-    if (racialOpen && root.contains(racialOpen)) {
-      const form = racialOpen.closest(".technique-card")?.querySelector("[data-racial-spell-form]");
-      if (form) {
-        form.hidden = false;
-        form.querySelector("input, select, button")?.focus();
-      }
-      return;
-    }
-    const attackFormOpen = event.target.closest("[data-attack-form-open]");
-    if (attackFormOpen && root.contains(attackFormOpen)) {
-      const form = root.querySelectorAll("[data-sara-attack-submit]");
-      const matchingForm = [...form].find((item) =>
-        item.dataset.actionId === attackFormOpen.dataset.attackFormOpen);
-      if (matchingForm) {
-        matchingForm.hidden = false;
-        matchingForm.querySelector("input, select")?.focus();
-      }
-      return;
-    }
-    const markDamageTarget = event.target.closest("[data-mark-damage-outside]");
-    if (markDamageTarget && root.contains(markDamageTarget)) {
-      const result = markAttackDamageOutside(
-        getSessionContext(),
-        markDamageTarget.dataset.actionId,
-        markDamageTarget.dataset.markDamageOutside,
-        newUiId("damage-outside")
-      );
-      const status = markDamageTarget.closest("form")?.querySelector("[data-form-error]");
-      if (result.status !== "applied" && status) status.textContent = result.reason;
-      return;
-    }
-    const closeSequenceTarget = event.target.closest("[data-sequence-close]");
-    if (closeSequenceTarget && root.contains(closeSequenceTarget)) {
-      const result = closeAttackSequence(
-        getSessionContext(),
-        closeSequenceTarget.dataset.sequenceClose,
-        newUiId("sequence-close")
-      );
-      const status = root.querySelector("[data-sara-combat-status]");
-      if (result.status !== "applied" && status) status.textContent = result.reason;
-      return;
-    }
-    const buildUpdateTarget = event.target.closest("[data-sara-build-update]");
-    if (buildUpdateTarget && root.contains(buildUpdateTarget)) {
-      const context = getSessionContext();
-      const character = getState();
-      const proposal = proposeSaraBuildUpdate(character);
-      const wear = root.querySelector("[data-sara-insignia-wear]")?.checked !== false;
-      const decisions = {
-        techniques: proposal.conflicts?.some((conflict) => conflict.kind === "custom-techniques")
-          ? "keep"
-          : proposal.techniqueDelta?.remove ? "apply" : undefined,
-        insignia: proposal.itemDelta ? "add" : undefined,
-        wearInsignia: wear
-      };
-      const result = updateSessionState(context, (draft) => {
-        const applied = applySaraBuildUpdate(draft, proposal, decisions);
-        if (applied.status !== "applied") throw new Error(applied.reason);
-        return applied.state;
-      }, {
-        operationId: `sara-build-update:${proposal.patchId ?? "missing"}`,
-        metadata: { kind: "sara-build-update", patchId: proposal.patchId }
-      });
-      const status = root.querySelector("[data-sara-build-status]");
-      if (result.status !== "applied") {
-        if (status) status.textContent = result.reason ?? "Обновление не применено.";
-      } else if (!result.persistence.ok && status) {
-        status.textContent = "Обновление применено в памяти, но не сохранено. Повторите сохранение; повторно применять изменения не нужно.";
-      }
-      return;
-    }
-  });
-  root.addEventListener("submit", (event) => {
-    const attackForm = event.target.closest("[data-sara-attack-submit]");
-    const damageForm = event.target.closest("[data-sara-damage-submit]");
-    const strikeForm = event.target.closest("[data-sara-strike-submit]");
-    const saveOutcomeForm = event.target.closest("[data-save-outcome]");
-    const battleTechniqueForm = event.target.closest("[data-battle-technique-form]");
-    if (attackForm || damageForm || strikeForm || saveOutcomeForm || battleTechniqueForm) {
-      event.preventDefault();
-      const form = attackForm ?? damageForm ?? strikeForm ?? saveOutcomeForm ?? battleTechniqueForm;
-      if (form.dataset.processing === "true") return;
-      form.dataset.processing = "true";
-      const submit = form.querySelector("[type='submit']");
-      if (submit) submit.disabled = true;
-      const values = new FormData(form);
-      const context = getSessionContext();
-      const operationId = newUiId("sara-combat");
-      let result;
-      if (attackForm) {
-        result = recordAttackOutcome(
-          context,
-          attackForm.dataset.actionId,
-          attackForm.dataset.attackId,
-          {
-            kind: attackForm.dataset.attackKind || undefined,
-            profileId: "unarmed",
-            targetLabel: values.get("targetLabel"),
-            rollMode: values.get("rollMode"),
-            firstD20: values.get("firstD20"),
-            secondD20: values.get("secondD20"),
-            targetArmorClass: values.get("targetArmorClass"),
-            dmHitResult: values.get("dmHitResult") || undefined,
-            triggerConfirmed: values.has("triggerConfirmed"),
-            confirmSeparateAction: values.has("confirmSeparateAction")
-          },
-          operationId
-        );
-      } else if (damageForm) {
-        const damageRolls = [...form.querySelectorAll("input[name^='damage']")]
-          .map((input) => input.value);
-        result = recordAttackDamage(
-          context,
-          damageForm.dataset.actionId,
-          damageForm.dataset.attackId,
-          damageRolls,
-          operationId
-        );
-      } else if (strikeForm) {
-        const paymentMode = values.get("paymentMode");
-        const practicedConfirmed = values.has("practicedConditions");
-        result = applyTechniqueToHit(
-          context,
-          strikeForm.dataset.actionId,
-          strikeForm.dataset.attackId,
-          values.get("techniqueId"),
-          {
-            confirmed: true,
-            paymentMode,
-            ownTurnConfirmed: paymentMode === "practiced" && practicedConfirmed,
-            unarmedHitConfirmed: paymentMode === "practiced" && practicedConfirmed,
-            effect: values.get("effect") || undefined
-          },
-          operationId
-        );
-      } else if (battleTechniqueForm) {
-        const techniqueId = battleTechniqueForm.dataset.battleTechniqueForm;
-        if (techniqueId === "ll-monk:mystic-regeneration") {
-          result = commitRegeneration(
-            context,
-            values.get("dieResult"),
-            operationId,
-            { confirmNoHealing: values.has("confirmNoHealing") }
-          );
-        } else {
-          result = commitDeflection(context, {
-            kind: techniqueId === "ll-monk:deflect-missile" ? "missile" : "melee",
-            mode: values.get("mode"),
-            incomingDamage: values.get("incomingDamage"),
-            deflectRoll: values.get("deflectRoll"),
-            finalAdjustedDamage: values.get("finalAdjustedDamage"),
-            freeHand: values.has("freeHand"),
-            physicalProjectile: values.has("physicalProjectile"),
-            caught: values.has("caught"),
-            applyDamageToSara: values.get("applyDamageToSara") === "true"
-          }, operationId);
-        }
-      } else {
-        result = recordTargetSaveOutcome(
-          context,
-          saveOutcomeForm.dataset.saveOutcome,
-          values.get("outcome"),
-          operationId
-        );
-      }
-      if (form.isConnected) {
-        form.dataset.processing = "false";
-        if (submit) submit.disabled = false;
-      }
-      if (result.status !== "applied") {
-        const status = form.querySelector("[data-form-error]") ??
-          root.querySelector("[data-sara-combat-status]");
-        if (status) status.textContent = result.reason ?? "Операция не применена.";
-      } else {
-        const status = root.querySelector("[data-sara-combat-status]");
-        if (status) status.textContent = result.persistence?.ok === false
-          ? "Изменение применено в памяти, но сохранение не удалось. Повторите сохранение; операция повторно не применяется."
-          : "Результат записан.";
-      }
-      return;
-    }
-    const racialForm = event.target.closest("[data-racial-spell-form]");
-    const actionForm = event.target.closest("[data-sara-action-form]");
-    if (!racialForm && !actionForm) return;
-    event.preventDefault();
-    const form = racialForm ?? actionForm;
-    if (form.dataset.processing === "true") return;
-    form.dataset.processing = "true";
-    const submit = form.querySelector("[type='submit']");
-    if (submit) submit.disabled = true;
-    const values = new FormData(form);
-    const context = getSessionContext();
-    let result;
-    if (racialForm) {
-      const spellId = racialForm.dataset.racialSpellForm;
-      const expectedConcentration = racialForm.dataset.currentConcentration ?? "";
-      result = castSaraRacialSpell(context, spellId, {
-        confirmed: values.has("confirmed"),
-        replaceConcentration: values.has("replaceConcentration"),
-        expectedConcentration,
-        operationId: globalThis.crypto?.randomUUID?.() ??
-          `racial-spell-${Date.now()}-${Math.random().toString(16).slice(2)}`
-      });
-    } else {
-      const actionId = actionForm.dataset.saraActionForm;
-      const operationId = globalThis.crypto?.randomUUID?.() ??
-        `sara-action-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      if (actionId === "flurry") {
-        const sequenceId = globalThis.crypto?.randomUUID?.() ??
-          `sara-sequence-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        result = startAttackSequence(context, {
-          kind: actionId,
-          sequenceId,
-          confirmed: values.has("confirmed")
-        }, operationId);
-      } else if (values.get("mode") === "unarmed") {
-        result = startAttackSequence(context, {
-          kind: "reaction-unarmed",
-          sequenceId: globalThis.crypto?.randomUUID?.() ??
-            `ebb-response-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          triggerConfirmed: values.has("missConfirmed")
-        }, operationId);
-      } else {
-        result = applySaraCombatAction(context, actionId, {
-          confirmed: values.has("missConfirmed"),
-          mode: values.get("mode")
-        });
-      }
-    }
-    form.dataset.processing = "false";
-    if (submit) submit.disabled = false;
-    const status = form.querySelector("[data-form-error]") ??
-      root.querySelector("[data-sara-combat-status]");
-    if (result.status !== "applied") {
-      if (status) status.textContent = result.reason ?? "Операция не применена.";
-      return;
-    }
-    form.hidden = true;
-    if (status) {
-      status.textContent = result.persistence?.ok === false
-        ? "Применено в памяти, но сохранение не удалось. Повторите сохранение; действие повторно применять не нужно."
-        : "Применено. Физические броски и результат цели отмечаются вручную.";
-    }
-  });
-  root.dataset.racialControlsBound = "true";
-}
-
 export function renderTechniquesPanel(character) {
   const panel = document.getElementById("techniquesPanel");
   if (!panel) return;
@@ -870,7 +279,6 @@ export function renderTechniquesPanel(character) {
     .filter((event) => !event.consumed);
   const entitlementId = view.entitlementEventId;
   const entitlement = entitlements.find((event) => event.id === entitlementId) ?? entitlements[0] ?? null;
-  const continuation = character.monk?.techniqueRuntime?.deflectContinuation;
   const thirdEye = character.monk?.techniqueRuntime?.["ll-monk:awaken-the-third-eye"] ?? {};
   panel.innerHTML = `
     <h2>Техники монаха</h2>
@@ -910,25 +318,6 @@ export function renderTechniquesPanel(character) {
       <button type="button" class="btn btn--utility" data-technique-cancel>Отменить черновик</button></p>` : ""}
     ${draft ? `<div class="technique-controls technique-signatures">${renderSignatureSelects(character, draft)}</div>` : ""}
     ${draft ? `<div class="technique-controls">${renderTechniqueChoices(character, draft)}</div>` : ""}
-    ${continuation?.kind === "missile-return" ? `<section class="panel-section">
-      <h3>Возврат пойманного снаряда · та же реакция</h3>
-      <p>Потратьте 1 Ki. Дальность 20/60; возврат доступен только для оружейного режима и при владении этим оружием.</p>
-      <label class="field-label">Бросок d20<input class="input" type="number" min="1" max="20" step="1" data-missile-attack-roll></label>
-      <label class="field-label">КД цели (необязательно)<input class="input" type="number" min="1" max="99" step="1" data-missile-target-ac></label>
-      <label class="field-label">Результат мастера, если КД неизвестна<select class="input" data-missile-dm-hit>
-        <option value="">Не указано</option><option value="hit">Попадание</option><option value="miss">Промах</option>
-      </select></label>
-      <p>При попадании укажите физический результат кости урона${derived.monk.martialDieSides} (две кости при критическом попадании); при промахе оставьте поля пустыми.</p>
-      ${numberField("returnedDamage1", "Физический результат первой кости урона", {
-        min: 1, max: derived.monk.martialDieSides, required: false
-      })}
-      ${numberField("returnedDamage2", "Физический результат второй кости при критическом попадании", {
-        min: 1, max: derived.monk.martialDieSides, required: false
-      })}
-      <label class="sara-form-check"><input type="checkbox" data-missile-proficiency-confirm required>
-        Подтверждаю простое оружие и владение им</label>
-      <button type="button" class="btn btn--utility" data-missile-return="${escapeHtml(continuation.id)}">Совершить возвратную атаку</button>
-    </section>` : ""}
     ${thirdEye.awakenThirdEyePending ? `<section class="panel-section">
       <p>Требуется вручную подтвердить завершение минутной медитации. 8 Ki уже потрачены; прерывание не возмещает их.</p>
       <label class="sara-form-check"><input type="checkbox" data-awaken-complete-confirm>
@@ -1089,44 +478,6 @@ export function renderTechniquesPanel(character) {
         pendingDrafts.delete(key);
         if (!applied.persistence.ok && status) status.textContent = "Выбор применён в памяти, но не сохранён. Повторите сохранение.";
       }
-      if (target.matches("[data-missile-return]")) {
-        const attackRollInput = panel.querySelector("[data-missile-attack-roll]");
-        const armorClassInput = panel.querySelector("[data-missile-target-ac]");
-        const dmHitInput = panel.querySelector("[data-missile-dm-hit]");
-        const proficiencyConfirmation = panel.querySelector("[data-missile-proficiency-confirm]");
-        if (!proficiencyConfirmation?.checked) {
-          if (status) status.textContent = "Подтвердите владение простым оружием.";
-          return;
-        }
-        if (!attackRollInput?.value) {
-          if (status) status.textContent = "Введите физический результат d20.";
-          return;
-        }
-        const damageRolls = [...panel.querySelectorAll("input[name^='returnedDamage']")]
-          .map((input) => input.value).filter((value) => value !== "");
-        const result = continueDeflectMissile(
-          currentContext,
-          target.dataset.missileReturn,
-          attackRollInput.value,
-          armorClassInput?.value || null,
-          {
-            proficiencyConfirmed: true,
-            dmHitResult: dmHitInput?.value || null,
-            damageRolls
-          }
-        );
-        if (result.status !== "applied") {
-          const currentStatus = panel.querySelector("[data-technique-editor-status]");
-          if (currentStatus) currentStatus.textContent = result.reason;
-        } else {
-          const currentStatus = panel.querySelector("[data-technique-editor-status]");
-          if (currentStatus) currentStatus.textContent =
-            `${result.outcome.total} против КД ${armorClassInput?.value || "решения мастера"}: ${result.outcome.hits ? "попадание" : "промах"}${
-              result.outcome.damageTotalBeforeTargetModifiers == null
-                ? "" : `, урон ${result.outcome.damageTotalBeforeTargetModifiers} до поправок цели`
-            }. Затрачено 1 Ki; реакция повторно не используется.`;
-        }
-      }
     });
     panel.addEventListener("submit", (event) => {
       const form = event.target.closest("[data-technique-form]");
@@ -1170,18 +521,7 @@ export function renderTechniquesPanel(character) {
       }
       const context = getSessionContext();
       const status = form.querySelector("[data-form-error]");
-      const result = techniqueId === "ll-monk:mystic-regeneration"
-        ? commitRegeneration(context, input.dieResult, input.operationId, {
-            confirmNoHealing: input.confirmNoHealing
-          })
-        : techniqueId === "ll-monk:deflect-strike" || techniqueId === "ll-monk:deflect-missile"
-          ? commitDeflection(context, {
-              ...input,
-              kind: techniqueId === "ll-monk:deflect-missile" ? "missile" : "melee"
-            }, input.operationId)
-          : MONK_TECHNIQUE_BY_ID.get(techniqueId)?.eligibleStrike
-            ? { status: "rejected", reason: "Сначала запишите подтверждённое попадание в боевой последовательности; Strike нельзя оплачивать из предварительного просмотра каталога." }
-            : executeMonkTechnique(context, techniqueId, input);
+      const result = executeMonkTechnique(context, techniqueId, input);
       if (button) {
         button.dataset.processing = "false";
         button.disabled = false;

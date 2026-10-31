@@ -124,7 +124,10 @@ function applyToCharacter(character, techniqueId, input) {
     return { ok: false, reason: "Техника сохранена в выборе, но сейчас недоступна по уровню, предварительным требованиям или выбору стиля." };
   }
   if (input.confirmed !== true) return { ok: false, reason: "Применение не подтверждено." };
-  const phaseReason = getBattlePhaseReason(character, technique.activation);
+  const activationContext = technique.eligibleStrike && input.unarmedHitConfirmed === true
+    ? "reaction"
+    : technique.activation;
+  const phaseReason = getBattlePhaseReason(character, activationContext);
   if (phaseReason) return { ok: false, reason: phaseReason };
 
   character.monk.techniqueRuntime ??= {};
@@ -407,6 +410,9 @@ export function applySaraCombatAction(context, actionId, input = {}) {
     const level = Number(draft.profile.level);
     if (level < 2) throw new Error("Это действие ещё не доступно на текущем уровне.");
     const turn = draft.ui.turn;
+    if (actionId !== "ebb-and-flow" && turn.bonusActionUsed) {
+      throw new Error("Бонусное действие уже использовано в этом ходу.");
+    }
     if (actionId === "bonus-unarmed") {
       turn.bonusActionUsed = true;
       outcome = { unarmedAttacks: 1, kiSpent: 0, condition: "подтвердите условие Martial Arts вручную" };
@@ -419,6 +425,8 @@ export function applySaraCombatAction(context, actionId, input = {}) {
       outcome = { unarmedAttacks: level >= 17 ? 3 : 2, kiSpent: 1, requiresAttackAction: false };
     } else {
       if (level < 6) throw new Error("Ebb & Flow доступна с 6 уровня.");
+      if (turn.reactionUsed) throw new Error("Реакция уже использована в этом ходу.");
+      if (input.triggerConfirmed !== true) throw new Error("Подтвердите видимый промах рукопашной атаки.");
       if (input.mode !== "unarmed" && input.mode !== "dexterity-save") {
         throw new Error("Выберите безоружный ответ или ручной спасбросок Ловкости цели.");
       }
@@ -439,6 +447,12 @@ export function applySaraCombatAction(context, actionId, input = {}) {
     validate: (current) => {
       if (!isSara(current)) return "Это действие доступно только в листе Сары.";
       if (Number(current.profile.level) < 2) return "Это действие ещё не доступно на текущем уровне.";
+      if (actionId !== "ebb-and-flow" && current.ui?.turn?.bonusActionUsed) {
+        return "Бонусное действие уже использовано в этом ходу.";
+      }
+      if (actionId === "ebb-and-flow" && current.ui?.turn?.reactionUsed) {
+        return "Реакция уже использована в этом ходу.";
+      }
       if (actionId === "flurry" && Number(current.combat?.ki?.current) < 1) {
         return "Для Flurry of Blows требуется 1 Ki.";
       }
@@ -448,6 +462,9 @@ export function applySaraCombatAction(context, actionId, input = {}) {
       if (actionId === "ebb-and-flow" &&
           input.mode !== "unarmed" && input.mode !== "dexterity-save") {
         return "Выберите допустимый ответ Ebb & Flow.";
+      }
+      if (actionId === "ebb-and-flow" && input.triggerConfirmed !== true) {
+        return "Подтвердите видимый промах рукопашной атаки.";
       }
       return null;
     }

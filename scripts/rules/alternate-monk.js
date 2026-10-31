@@ -97,6 +97,7 @@ export function getAlternateMonkDerived(character) {
   const featherweightMovementBonus = warriorAdeptStyle === "ll-style:featherweight-fighting" &&
     (!armor || !["medium", "heavy"].includes(armor.category)) ? 10 : 0;
   const activeMovementBonus = (armor || shield ? 0 : movementBonus) + featherweightMovementBonus;
+  const speedFeet = Number(character.profile?.speedFeet ?? 30) + activeMovementBonus;
   const ordinaryTechniqueLimit = level === 1 ? 0 : level <= 4 ? 3 : level <= 6 ? 4 :
     level <= 8 ? 5 : level <= 10 ? 6 : level <= 12 ? 7 : level <= 14 ? 8 :
       level <= 17 ? 9 : 10;
@@ -281,6 +282,7 @@ export function getAlternateMonkDerived(character) {
       martialDie: `d${martialDieSides}`,
       martialDieSides,
       movementBonus,
+      speedFeet,
       mantleSelected,
       warriorAdeptStyle
     }

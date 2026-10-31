@@ -2,7 +2,6 @@ import {
   escapeHtml,
 } from "./shared/spell-card.js";
 import { getBladeFlourishReference } from "../rule-reference.js";
-import { renderSaraCombatPanel } from "./render-techniques.js";
 import { renderBattleConsole } from "./render-battle-console.js";
 
 const EMPTY_COMBAT_CARDS = Object.freeze({
@@ -482,14 +481,7 @@ export function renderMeleePanel(state, derived) {
   }
 
   if (state.profile?.id === "sara-velaris") {
-    meleePanel.innerHTML = `
-      ${renderBattleConsole(state)}
-      <section class="panel-section sara-battle-hp">
-        <h2 class="section-title">Хиты Сары</h2>
-        <div class="combat-resource-grid">${renderHpCard(state, derived)}</div>
-      </section>
-      ${renderSaraCombatPanel(state, derived)}
-    `;
+    meleePanel.innerHTML = renderBattleConsole(state);
     return;
   }
 

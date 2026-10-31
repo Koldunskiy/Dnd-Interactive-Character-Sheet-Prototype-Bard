@@ -18,7 +18,6 @@ import { renderPortraitMedia, initPortraitControls, resetPortraitForCharacter } 
 
 import { renderHeader } from "./render/render-header.js";
 import {
-  bindCharacterRollEntryPoints,
   clearCharacterRollDraft,
   hasChangedCharacterRollDraft,
   hasUnsavedCharacterRoll,
@@ -41,7 +40,6 @@ import { renderSpellLibrary } from "./render/render-spell-library.js";
 import {
   renderTechniquesPanel,
   clearTechniqueDrafts,
-  bindSaraCombatControls,
   hasChangedTechniqueDraft
 } from "./render/render-techniques.js";
 import {
@@ -674,9 +672,7 @@ function renderApp() {
   renderLorePanel(state);
 
   bindUi(document);
-  bindCharacterRollEntryPoints(document);
   bindBattleConsole(document.getElementById("meleePanel") ?? document);
-  bindSaraCombatControls();
   initPortraitControls();
 }
 

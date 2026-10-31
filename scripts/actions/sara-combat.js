@@ -76,13 +76,15 @@ function pruneCombatHistory(assistant) {
   assistant.pendingApplications = [...completedApplications, ...unresolvedApplications];
 }
 
-function createSequenceRecord(character, sequenceId, kind = "attack-action") {
+function createSequenceRecord(character, sequenceId, kind = "attack-action", input = {}) {
   const derived = getDerivedStats(character);
   const battle = character.battleConsole?.current;
   const maximumAttacks = getSaraAttackCount(character, kind);
   return {
     id: sequenceId,
     kind,
+    parentId: input.parentId ?? null,
+    parentFeature: input.parentFeature ?? null,
     turnMarker: Number(character.ui?.turn?.turnNumber ?? 1),
     battleId: battle?.phase === "own-turn" ? battle.id : null,
     ownTurnId: battle?.phase === "own-turn" ? battle.ownTurnId : null,
@@ -166,10 +168,14 @@ export function startAttackSequence(context, input, operationId) {
       if (["flurry", "bonus-unarmed"].includes(kind) && level < 2) {
         throw new Error("Бонусные безоружные атаки доступны со 2 уровня.");
       }
+      if (input.parentFeature === "ebb-and-flow" && level < 6) {
+        throw new Error("Прилив и отлив доступен с 6 уровня.");
+      }
       if (["flurry", "bonus-unarmed"].includes(kind) && turn.bonusActionUsed) {
         throw new Error("Бонусное действие уже использовано в этом ходу.");
       }
-      if (kind === "reaction-unarmed" && turn.reactionUsed) {
+      if (kind === "reaction-unarmed" && turn.reactionUsed &&
+          input.parentFeature !== "deflect-counter") {
         throw new Error("Реакция уже использована в этом ходу.");
       }
       if (kind === "bonus-unarmed" && input.triggerConfirmed !== true) {
@@ -192,9 +198,16 @@ export function startAttackSequence(context, input, operationId) {
       } else if (kind === "reaction-unarmed") {
         actionFlagApplied = false;
       }
-      const sequence = createSequenceRecord(draft, input.sequenceId, kind);
+      const sequence = createSequenceRecord(draft, input.sequenceId, kind, input);
+      if (kind === "bonus-unarmed") {
+        turn.bonusActionUsed = true;
+        sequence.actionFlagApplied = true;
+      } else if (kind === "reaction-unarmed") {
+        turn.reactionUsed = true;
+        sequence.actionFlagApplied = true;
+      }
       sequence.resourcePaymentApplied = resourcePaymentApplied;
-      sequence.actionFlagApplied = actionFlagApplied;
+      sequence.actionFlagApplied ||= actionFlagApplied;
       assistant.activeSequences.push(sequence);
       return draft;
     },
@@ -202,11 +215,18 @@ export function startAttackSequence(context, input, operationId) {
       if (!isSara(current)) return "Последовательность доступна только в листе Сары.";
       const phaseReason = validateBattleActionPhase(current, kind);
       if (phaseReason) return phaseReason;
+      if (input.parentFeature === "ebb-and-flow" && Number(current.profile?.level) < 6) {
+        return "Прилив и отлив доступен с 6 уровня.";
+      }
       const activeSequences = current.monk?.combatAssistant?.activeSequences ?? [];
       if (activeSequences.some((sequence) =>
         sequence.id === input.sequenceId ||
         sequence.status === "open" && !mayRunAlongside(kind, sequence.kind))) {
         return "Последовательность уже существует или другая ещё открыта.";
+      }
+      if (kind === "reaction-unarmed" && current.ui?.turn?.reactionUsed &&
+          input.parentFeature !== "deflect-counter") {
+        return "Реакция уже использована в этом ходу.";
       }
       return null;
     });
@@ -397,7 +417,8 @@ export function applyTechniqueToHit(context, actionId, attackId, techniqueId, in
       const sequence = assistant.activeSequences.find((entry) => entry.id === actionId);
       const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
       if (!isSara(draft) || !attack || attack.hitResult !== "hit" ||
-          attack.profileId !== "unarmed" || attack.techniqueApplicationId) {
+          attack.profileId !== "unarmed" || attack.techniqueApplicationId ||
+          !isCurrentStrikeParent(draft, sequence)) {
         throw new Error("Техника удара требует подтверждённое безоружное попадание без уже применённой техники.");
       }
       if (!getEffectiveSelectedTechniqueIds(draft).has(techniqueId)) {
@@ -447,10 +468,24 @@ export function applyTechniqueToHit(context, actionId, attackId, techniqueId, in
       const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
       return isSara(current) && attack?.hitResult === "hit" &&
         attack.profileId === "unarmed" && !attack.techniqueApplicationId &&
+        isCurrentStrikeParent(current, sequence) &&
         getEffectiveSelectedTechniqueIds(current).has(techniqueId)
         ? null
         : "Техника удара требует актуальное подтверждённое безоружное попадание.";
     });
+}
+
+function isCurrentStrikeParent(character, sequence) {
+  if (!sequence || !["open", "complete"].includes(sequence.status) ||
+      Number(sequence.turnMarker) !== Number(character.ui?.turn?.turnNumber ?? 1)) return false;
+  const battle = character.battleConsole?.current;
+  if (!battle) return !sequence.battleId;
+  if (battle.phase === "paused" || battle.phase === "ended" ||
+      sequence.battleId && sequence.battleId !== battle.id) return false;
+  const reactionParent = ["reaction-unarmed", "returned-projectile"].includes(sequence.kind);
+  if (!reactionParent && battle.phase !== "own-turn") return false;
+  if (sequence.ownTurnId && sequence.ownTurnId !== battle.ownTurnId) return false;
+  return reactionParent ? ["waiting", "own-turn"].includes(battle.phase) : true;
 }
 
 export function recordTargetSaveOutcome(context, applicationId, outcome, operationId) {
@@ -469,6 +504,122 @@ export function recordTargetSaveOutcome(context, applicationId, outcome, operati
       entry.id === applicationId)
       ? null
       : "Не найдено применённое ожидание спасброска цели.");
+}
+
+export function recordBasicSaraAction(context, actionId, operationId) {
+  if (!["dash", "disengage"].includes(actionId)) {
+    return reject("Неизвестное базовое боевое действие.");
+  }
+  return commit(context, operationId, { kind: "sara-basic-action", actionId },
+    (draft) => {
+      if (!isSara(draft)) throw new Error("Это действие доступно только в листе Сары.");
+      const battle = draft.battleConsole?.current;
+      if (battle && battle.phase !== "own-turn") {
+        throw new Error("Это действие можно отметить только в свой ход.");
+      }
+      if (draft.ui?.turn?.actionUsed === true) {
+        throw new Error("Действие уже использовано в этом ходу.");
+      }
+      draft.ui.turn.actionUsed = true;
+      const assistant = ensureCombatAssistant(draft);
+      rememberSummary(assistant, {
+        id: operationId,
+        kind: "basic-action",
+        actionId,
+        reminder: actionId === "dash"
+          ? "Рывок отмечен; пройденное расстояние определяется за столом."
+          : "Отход отмечен; фактические взаимодействия с угрозами определяются за столом."
+      });
+      return draft;
+    },
+    (current) => {
+      if (!isSara(current)) return "Это действие доступно только в листе Сары.";
+      const battle = current.battleConsole?.current;
+      if (battle && battle.phase !== "own-turn") return "Это действие можно отметить только в свой ход.";
+      return current.ui?.turn?.actionUsed === true
+        ? "Действие уже использовано в этом ходу."
+        : null;
+    });
+}
+
+export function correctSaraResource(context, resourceId, rawValue, operationId) {
+  let outcome;
+  const result = commit(context, operationId, {
+    kind: "sara-resource-correction",
+    resourceId,
+  }, (draft) => {
+    if (!isSara(draft)) throw new Error("Ресурсы можно исправлять только в листе Сары.");
+    const target = getSaraResourceCorrectionTarget(draft, resourceId);
+    if (!target) throw new Error("Выбранный ресурс отсутствует или не поддерживается.");
+    const parsed = parsePhysicalInteger(rawValue, 0, target.maximum, `Новое значение: ${target.label}`);
+    if (!parsed.ok) throw new Error(parsed.reason);
+    const previous = target.current;
+    target.write(parsed.value);
+    outcome = { resourceId, label: target.label, previous, current: parsed.value };
+    const assistant = ensureCombatAssistant(draft);
+    rememberSummary(assistant, {
+      id: operationId,
+      kind: "resource-correction",
+      ...outcome,
+    });
+    return draft;
+  }, (current) => {
+    if (!isSara(current)) return "Ресурсы можно исправлять только в листе Сары.";
+    const target = getSaraResourceCorrectionTarget(current, resourceId);
+    if (!target) return "Выбранный ресурс отсутствует или не поддерживается.";
+    const parsed = parsePhysicalInteger(rawValue, 0, target.maximum, `Новое значение: ${target.label}`);
+    return parsed.ok ? null : parsed.reason;
+  });
+  return result.status === "applied" ? { ...result, outcome } : result;
+}
+
+function getSaraResourceCorrectionTarget(character, resourceId) {
+  const derived = getDerivedStats(character);
+  if (resourceId === "hp-current") {
+    return {
+      label: "Текущие HP",
+      current: Number(character.combat?.hp?.current),
+      maximum: derived.maxHitPoints,
+      write(value) { character.combat.hp.current = value; },
+    };
+  }
+  if (resourceId === "hp-temp") {
+    return {
+      label: "Временные HP",
+      current: Number(character.combat?.hp?.temp ?? 0),
+      maximum: Number.MAX_SAFE_INTEGER,
+      write(value) { character.combat.hp.temp = value; },
+    };
+  }
+  if (resourceId === "ki") {
+    return {
+      label: "Ци",
+      current: Number(character.combat?.ki?.current),
+      maximum: derived.monk.kiMaximum,
+      write(value) { character.combat.ki.current = value; },
+    };
+  }
+  if (resourceId === "practiced") {
+    return {
+      label: "Отработанные удары",
+      current: Number(character.combat?.practiced?.current),
+      maximum: derived.monk.practicedMaximum,
+      write(value) { character.combat.practiced.current = value; },
+    };
+  }
+  if (resourceId.startsWith("racial-spell:")) {
+    const id = resourceId.slice("racial-spell:".length);
+    const spell = character.spellcasting?.racialSpells?.find((entry) =>
+      entry.id === id && entry.source === "racial" && entry.mode === "limited-racial" && entry.uses);
+    if (!spell) return null;
+    return {
+      label: `Применения: ${spell.nameRu ?? spell.id}`,
+      current: Number(spell.uses.current),
+      maximum: Number(spell.uses.max),
+      write(value) { spell.uses.current = value; },
+    };
+  }
+  return null;
 }
 
 export function commitRegeneration(context, dieResult, operationId, { confirmNoHealing = false } = {}) {

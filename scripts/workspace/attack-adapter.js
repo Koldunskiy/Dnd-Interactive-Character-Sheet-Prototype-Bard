@@ -22,11 +22,31 @@ export function getNormalAttackSequence(state, sequenceId) {
     sequence.id === sequenceId && sequence.kind === "attack-action") ?? null;
 }
 
+export function getWorkspaceAttackSequence(state, sequenceId) {
+  return (state.monk?.combatAssistant?.activeSequences ?? []).find((sequence) =>
+    sequence.id === sequenceId &&
+    ["attack-action", "flurry", "bonus-unarmed", "reaction-unarmed", "returned-projectile"]
+      .includes(sequence.kind)) ?? null;
+}
+
 export function findAwaitingNormalDamage(state, { sequenceId = null, attackId = null } = {}) {
   const sequences = state.monk?.combatAssistant?.activeSequences ?? [];
   for (const sequence of sequences) {
     if (sequence.kind !== "attack-action" ||
         sequenceId && sequence.id !== sequenceId) continue;
+    const attack = (sequence.resolvedAttacks ?? []).find((entry) =>
+      entry.damageStatus === "awaiting-damage" &&
+      (!attackId || entry.id === attackId));
+    if (attack) return { sequence, attack };
+  }
+  return null;
+}
+
+export function findAwaitingWorkspaceDamage(state, { sequenceId = null, attackId = null } = {}) {
+  const sequences = state.monk?.combatAssistant?.activeSequences ?? [];
+  for (const sequence of sequences) {
+    if (!["attack-action", "flurry", "bonus-unarmed", "reaction-unarmed", "returned-projectile"]
+      .includes(sequence.kind) || sequenceId && sequence.id !== sequenceId) continue;
     const attack = (sequence.resolvedAttacks ?? []).find((entry) =>
       entry.damageStatus === "awaiting-damage" &&
       (!attackId || entry.id === attackId));
@@ -62,6 +82,33 @@ export function getNormalAttackFingerprint(state, sequenceId, isFirstAttempt) {
   });
 }
 
+export function getWorkspaceAttackFingerprint(state, sequenceId, kind, isFirstAttempt) {
+  const derived = getDerivedStats(state);
+  const sequence = getWorkspaceAttackSequence(state, sequenceId);
+  const battle = state.battleConsole?.current;
+  return JSON.stringify({
+    kind,
+    unarmed: derived.saraAttackProfiles?.unarmed,
+    sequence: sequence ? {
+      id: sequence.id,
+      kind: sequence.kind,
+      status: sequence.status,
+      maximumAttacks: sequence.maximumAttacks,
+      turnMarker: sequence.turnMarker,
+      battleId: sequence.battleId,
+      ownTurnId: sequence.ownTurnId,
+      resolvedAttackIds: sequence.resolvedAttacks.map((attack) => attack.id),
+    } : null,
+    turnNumber: state.ui?.turn?.turnNumber,
+    battle: battle ? { id: battle.id, phase: battle.phase, ownTurnId: battle.ownTurnId } : null,
+    ...(isFirstAttempt && !sequence ? {
+      actionUsed: state.ui?.turn?.actionUsed === true,
+      bonusActionUsed: state.ui?.turn?.bonusActionUsed === true,
+      reactionUsed: state.ui?.turn?.reactionUsed === true,
+    } : {}),
+  });
+}
+
 export function calculateWorkspaceAttackPreview(state, input) {
   return calculateAttackPreview(state, { ...input, profileId: "unarmed" });
 }
@@ -77,6 +124,17 @@ export function submitWorkspaceAttack(owner, sequenceId, attackId, input, operat
     sequenceId,
     attackId,
     { ...input, kind: "attack-action", profileId: "unarmed" },
+    operationId,
+  );
+}
+
+export function submitWorkspaceSequenceAttack(owner, sequenceId, attackId, kind, input, operationId) {
+  if (!isWorkspaceOwnerCurrent(owner)) return { status: "rejected", reason: "stale-session" };
+  return recordAttackOutcome(
+    getWorkspaceAttackContext(),
+    sequenceId,
+    attackId,
+    { ...input, kind, profileId: "unarmed" },
     operationId,
   );
 }

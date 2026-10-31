@@ -33,15 +33,132 @@
   gap: 10px;
 }
 
-.battle-command-menu {
+.battle-console-hud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 10px 0;
+  color: var(--muted);
+}
+
+.battle-console-hud strong {
+  color: var(--text);
+}
+
+.battle-category-tabs {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
-  gap: 8px;
-  margin: 12px 0;
-  padding: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 14px 0 0;
+  padding: 6px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: rgba(5, 3, 7, 0.45);
+}
+
+.battle-category-tabs [role="tab"] {
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.battle-category-tabs [role="tab"][aria-selected="true"] {
+  border-color: var(--line-gold);
+  color: var(--text);
+  background: rgba(128, 83, 169, 0.24);
+}
+
+.battle-category-tabs [role="tab"]:focus-visible,
+.battle-command-card__open:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.battle-category-panel {
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 14px 14px;
+  background: rgba(5, 3, 7, 0.28);
+}
+
+.battle-category-panel > h3 {
+  margin: 0 0 10px;
+}
+
+.battle-command-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 10px;
+}
+
+.battle-command-card {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.battle-command-card p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.battle-command-card small,
+.battle-command-card__reason {
+  display: block;
+  margin-top: 7px;
+  color: var(--accent-strong);
+  overflow-wrap: anywhere;
+}
+
+.battle-command-card__open {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--line-gold);
+  border-radius: 9px;
+  color: var(--text);
+  background: rgba(128, 83, 169, 0.18);
+  text-align: left;
+  font: inherit;
+  font-weight: 700;
+}
+
+.battle-command-card__open:disabled {
+  border-color: var(--line);
+  color: var(--muted);
+  background: rgba(5, 3, 7, 0.24);
+  opacity: 1;
+}
+
+.battle-command-card__cost {
+  flex: none;
+  color: var(--accent-strong);
+  font-size: 0.88em;
+}
+
+.battle-command-card--reference .battle-command-card__cost {
+  display: inline-block;
+  margin-top: 8px;
+}
+
+.battle-console-pending {
+  color: var(--accent-strong);
 }
 
 .battle-console-init-form label {
@@ -72,5 +189,14 @@
 @media (max-width: 520px) {
   .battle-console-actions > .btn {
     flex: 1 1 100%;
+  }
+
+  .battle-category-tabs {
+    gap: 3px;
+    padding: 4px;
+  }
+
+  .battle-category-tabs [role="tab"] {
+    font-size: 0.82rem;
   }
 }

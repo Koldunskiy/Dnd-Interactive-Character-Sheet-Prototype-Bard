@@ -16,7 +16,7 @@ import { getSaraRollBreakdown } from "../../scripts/rolls/providers/sara.js";
 import { calculateCharacterRoll } from "../../scripts/rolls/calculations.js";
 import { getDerivedStats } from "../../scripts/calculations.js";
 import { renderBattleConsole } from "../../scripts/render/render-battle-console.js";
-import { renderSaraCombatPanel } from "../../scripts/render/render-techniques.js";
+import { selectBattleCategory } from "../../scripts/battle/command-registry.js";
 import {
   amendCharacterRoll,
   correctCharacterRollOutcome,
@@ -229,17 +229,16 @@ test("turn-based attack launch controls are absent while the battle is waiting",
     pendingApplications: [{ targetOutcome: "unknown" }],
     recentlyCompletedSummaries: [{ kind: "regeneration", dieResult: 4, usefulHealing: 3 }],
   };
-  assert.match(renderBattleConsole(character), /Бой: незавершённые события · 2/);
-  character.monk.combatAssistant.activeSequences = [];
-  let markup = renderSaraCombatPanel(character, getDerivedStats(character));
-  assert.doesNotMatch(markup, /data-attack-form-open=/);
-  assert.match(markup, /Обычную атаку и бонусный удар можно начать только в свой ход/);
-  assert.match(markup, /Недавние события/);
-  assert.match(markup, /полезное лечение 3 HP/);
+  selectBattleCategory(character.profile.id, "bonus");
+  let markup = renderBattleConsole(character);
+  assert.match(markup, /Незавершённые события боя: 2 · последствия проверок: 0/);
+  assert.match(markup, /data-battle-command-open="flurry"[^>]*disabled/);
 
   beginOwnTurn(character, { id: "render-turn" });
-  markup = renderSaraCombatPanel(character, getDerivedStats(character));
-  assert.match(markup, /data-attack-form-open=/);
+  selectBattleCategory(character.profile.id, "bonus");
+  markup = renderBattleConsole(character);
+  assert.match(markup, /data-battle-command-open="flurry"/);
+  assert.doesNotMatch(markup, /data-battle-command-open="flurry"[^>]*disabled/);
 });
 
 test("Dexterity-save Evasion consequence is explicit and corrections do not recalculate HP", () => {

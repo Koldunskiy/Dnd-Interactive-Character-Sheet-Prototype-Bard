@@ -3,6 +3,7 @@ import {
   calculateWorkspaceAttackPreview,
   calculateWorkspaceDamagePreview,
 } from "../workspace/attack-adapter.js";
+import { MONK_TECHNIQUES } from "../../data/monk-techniques.js";
 
 function escapeHtml(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
@@ -84,6 +85,54 @@ function renderDamageForm(session, state) {
   const hasTrustedProfile = Number.isInteger(dieSides) && dieSides > 0 &&
     Number.isFinite(Number(snapshot?.damageModifier));
   const values = currentInputs(session);
+  const sequence = (state.monk?.combatAssistant?.activeSequences ?? [])
+    .find((entry) => entry.id === session.sequenceId);
+  const battle = state.battleConsole?.current;
+  const parentIsCurrent = sequence &&
+    ["open", "complete"].includes(sequence.status) &&
+    Number(sequence.turnMarker) === Number(state.ui?.turn?.turnNumber ?? 1) &&
+    (!battle || (battle.phase !== "paused" && battle.phase !== "ended" &&
+      (!sequence.battleId || sequence.battleId === battle.id) &&
+      (["reaction-unarmed", "returned-projectile"].includes(sequence.kind)
+        ? ["waiting", "own-turn"].includes(battle.phase)
+        : battle.phase === "own-turn")));
+  const effective = new Set(getDerivedStats(state).effectiveTechniqueIds ?? []);
+  const strikeChoices = parentIsCurrent && attack.profileId === "unarmed" &&
+    !attack.techniqueApplicationId
+    ? MONK_TECHNIQUES.filter((entry) => entry.eligibleStrike && effective.has(entry.id) &&
+      ["ll-monk:empowered-strike", "ll-monk:stunning-strike",
+        "ll-monk:crippling-strike", "ll-monk:slowing-strike"].includes(entry.id))
+    : [];
+  const strikeFollowUp = strikeChoices.length ? `
+    <fieldset class="workspace-contextual-followup">
+      <legend>После этого попадания · не отдельное действие</legend>
+      <p>Одна контрольная техника на это родительское попадание. Цель и спасбросок разрешаются вручную; оплата не возвращается при успехе цели.</p>
+      <label class="workspace-field">Техника
+        <select data-workspace-field="techniqueId" name="techniqueId" required>
+          <option value="">Выберите</option>
+          ${strikeChoices.map((entry) => `<option value="${escapeHtml(entry.id)}" ${values.techniqueId === entry.id ? "selected" : ""}>${escapeHtml(entry.nameRu)}</option>`).join("")}
+        </select>
+      </label>
+      <label class="workspace-field">Оплата
+        <select data-workspace-field="paymentMode" name="paymentMode">
+          <option value="ki" ${values.paymentMode !== "practiced" ? "selected" : ""}>Ци · стоимость техники</option>
+          <option value="practiced" ${values.paymentMode === "practiced" ? "selected" : ""} ${Number(state.combat?.practiced?.current) > 0 ? "" : "disabled"}>Отработанный удар · свой ход и безоружное попадание</option>
+        </select>
+      </label>
+      <label class="workspace-field">Эффект «Калечащего удара»
+        <select data-workspace-field="effect" name="effect">
+          <option value="" ${!values.effect ? "selected" : ""}>Не применяется</option>
+          <option value="blinded" ${values.effect === "blinded" ? "selected" : ""}>Ослепление</option>
+          <option value="deafened" ${values.effect === "deafened" ? "selected" : ""}>Глухота</option>
+          <option value="unable-to-speak" ${values.effect === "unable-to-speak" ? "selected" : ""}>Невозможность говорить</option>
+        </select>
+      </label>
+      <label class="workspace-check"><input data-workspace-field="practicedConditions"
+        name="practicedConditions" type="checkbox" ${values.practicedConditions ? "checked" : ""}>
+        Подтверждаю свой ход и условия отработанного удара</label>
+      <button type="button" class="btn btn--utility" data-workspace-action="apply-strike"
+        ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Применить к этому попаданию</button>
+    </fieldset>` : "";
   if (!hasTrustedProfile) {
     return `<p class="workspace-warning">Для этого старого попадания нет достоверного снимка профиля. Текущие характеристики не используются как исторический факт.</p>
       <button type="button" class="btn btn--utility" data-workspace-action="outside-damage">Урон учтён вне приложения</button>
@@ -102,6 +151,7 @@ function renderDamageForm(session, state) {
     )).join("")}
     <p class="workspace-preview" data-workspace-damage-preview role="status"></p>
     <p>Урон до сопротивлений и других поправок цели.</p>
+    ${strikeFollowUp}
     <button type="button" class="btn btn--utility" data-workspace-action="outside-damage">Урон учтён вне приложения</button>
     ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}
   </form>`;
@@ -123,12 +173,13 @@ export function renderAttackWorkspace(session, state) {
   const derived = getDerivedStats(state);
   const sequence = session.sequenceId
     ? (state.monk?.combatAssistant?.activeSequences ?? []).find((entry) =>
-      entry.id === session.sequenceId && entry.kind === "attack-action")
+      entry.id === session.sequenceId)
     : null;
-  const heading = session.currentStep === "attack-input" ? "Действие «Атака»"
+  const commandTitle = session.command?.titleRu ?? "Действие «Атака»";
+  const heading = session.currentStep === "attack-input" ? commandTitle
     : session.currentStep === "damage-input" ? "Записать урон"
       : session.currentStep === "confirm-close" ? "Закрыть рабочую панель"
-        : session.currentStep === "summary" ? "Итог действия «Атака»" : "Продолжение атаки";
+        : session.currentStep === "summary" ? `Итог: ${commandTitle}` : "Продолжение атаки";
   const header = `<div class="workspace-nav">
       <button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>
       <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
@@ -158,14 +209,14 @@ export function renderAttackWorkspace(session, state) {
   } else {
     const attacks = sequence?.resolvedAttacks ?? [];
     body = `${attacks.map(renderAttackRecord).join("")}
-      ${session.currentStep === "checkpoint" && sequence?.status === "open"
+      ${session.currentStep === "checkpoint" && session.capabilities.canContinueSequence
         ? `<p>Запись удара завершена. Следующий удар использует новый ввод физических костей.</p>
-          <p>Техники пока доступны в существующей части вкладки «Бой». Сверните панель, чтобы применить их.</p>`
-        : ""}
+          <p>Продолжайте только в рамках текущей последовательности и доступного лимита ударов.</p>`
+        : session.currentStep === "checkpoint"
+          ? "<p>Запись урона завершена. Новые атаки в этом режиме не добавляются.</p>" : ""}
       ${sequence?.status === "abandoned" ? "<p>Последовательность закрыта; новые удары не добавляются.</p>" : ""}
       ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}`;
-    if (session.currentStep === "checkpoint" && sequence?.status === "open" &&
-        sequence.resolvedAttacks.length < sequence.maximumAttacks) {
+    if (session.currentStep === "checkpoint" && session.capabilities.canContinueSequence) {
       footer = `<button type="button" class="btn btn--primary" data-workspace-action="next-attack">Следующий удар · ${sequence.resolvedAttacks.length + 1} из ${sequence.maximumAttacks}</button>
         <button type="button" class="btn btn--utility" data-workspace-action="summary">Завершить ввод атак</button>`;
     } else {
