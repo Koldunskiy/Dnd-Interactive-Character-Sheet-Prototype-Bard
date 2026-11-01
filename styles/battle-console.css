@@ -288,3 +288,244 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.battle-player-console {
+  display: grid;
+  gap: 12px;
+}
+
+.battle-player-heading,
+.battle-menu-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.battle-player-heading > *,
+.battle-menu-heading > * {
+  min-width: 0;
+}
+
+.battle-player-home {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.battle-player-home > h3,
+.battle-menu-heading h4,
+.battle-turn-review h4,
+.battle-incoming-events h4 {
+  margin: 0;
+}
+
+.battle-start,
+.battle-outside-abilities,
+.battle-unfinished-work,
+.battle-turn-review,
+.battle-incoming-events,
+.battle-menu-panel {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.battle-start > summary,
+.battle-outside-abilities > summary,
+.battle-unfinished-work > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.battle-start .battle-console-init-form {
+  margin-top: 10px;
+}
+
+.battle-quick-rolls,
+.battle-unfinished-list,
+.battle-turn-review__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.battle-quick-rolls > .btn,
+.battle-unfinished-list > .btn {
+  min-height: 48px;
+}
+
+.battle-quick-rolls small {
+  display: block;
+  color: var(--muted);
+}
+
+.battle-resource-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.battle-resource-tile {
+  display: grid;
+  min-width: 0;
+  min-height: 72px;
+  place-content: center;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--text);
+  background: var(--surface-2);
+  font: inherit;
+  font-weight: 700;
+}
+
+.battle-resource-tile strong {
+  color: var(--accent-strong);
+  font-size: 1.3rem;
+}
+
+.battle-resource-tile.is-selected {
+  border-color: var(--accent-border);
+  background: var(--selected-surface);
+}
+
+.battle-movement-entry {
+  width: 100%;
+  min-height: 52px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+}
+
+.battle-movement-entry[aria-pressed="true"] {
+  border-color: var(--accent-border);
+  background: var(--selected-surface);
+}
+
+.battle-continuations {
+  display: grid;
+  gap: 8px;
+}
+
+.battle-continuations h4 {
+  margin: 0;
+}
+
+.battle-continuation {
+  width: 100%;
+  min-height: 50px;
+  text-align: left;
+}
+
+.battle-menu-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.battle-console-guidance,
+.battle-reaction-status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.battle-unfinished-list {
+  padding-top: 10px;
+}
+
+.battle-unfinished-list > p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.battle-primary-footer {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.battle-primary-footer > .btn {
+  width: 100%;
+  min-height: 54px;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.battle-turn-review {
+  display: grid;
+  gap: 10px;
+  border-color: var(--warning);
+}
+
+.battle-turn-review > p {
+  margin: 0;
+}
+
+.battle-console-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.battle-console-actions > .btn {
+  min-height: 48px;
+}
+
+:root[data-theme="teal-slate"] .battle-player-console,
+:root[data-theme="teal-slate"] .battle-player-console .battle-start,
+:root[data-theme="teal-slate"] .battle-player-console .battle-outside-abilities,
+:root[data-theme="teal-slate"] .battle-player-console .battle-unfinished-work,
+:root[data-theme="teal-slate"] .battle-player-console .battle-turn-review,
+:root[data-theme="teal-slate"] .battle-player-console .battle-incoming-events,
+:root[data-theme="teal-slate"] .battle-player-console .battle-menu-panel,
+:root[data-theme="teal-slate"] .battle-player-console .battle-resource-tile,
+:root[data-theme="teal-slate"] .battle-player-console .battle-movement-entry {
+  background-image: none;
+  box-shadow: none;
+}
+
+:root[data-theme="teal-slate"] .battle-player-console {
+  background: var(--surface-2);
+}
+
+@media (max-width: 520px) {
+  .battle-player-console {
+    gap: 10px;
+  }
+
+  .battle-player-heading {
+    align-items: flex-start;
+  }
+
+  .battle-console-hud {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .battle-resource-tiles {
+    gap: 6px;
+  }
+
+  .battle-resource-tile {
+    min-height: 68px;
+    padding: 7px 4px;
+    font-size: 0.9rem;
+  }
+
+  .battle-menu-heading {
+    align-items: flex-start;
+  }
+}

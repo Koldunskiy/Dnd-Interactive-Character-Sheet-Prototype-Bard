@@ -622,7 +622,10 @@ function getSaraResourceCorrectionTarget(character, resourceId) {
   return null;
 }
 
-export function commitRegeneration(context, dieResult, operationId, { confirmNoHealing = false } = {}) {
+export function commitRegeneration(context, dieResult, operationId, {
+  confirmNoHealing = false,
+  allowOutsideCombat = false,
+} = {}) {
   let outcome;
   const result = commit(context, operationId, { kind: "sara-regeneration" },
     (draft) => {
@@ -635,7 +638,8 @@ export function commitRegeneration(context, dieResult, operationId, { confirmNoH
       const applied = applyMonkTechnique(draft, "ll-monk:mystic-regeneration", {
         confirmed: true,
         dieResult,
-        confirmNoHealing
+        confirmNoHealing,
+        allowOutsideCombat,
       });
       if (!applied.ok) throw new Error(applied.reason);
       outcome = { ...preview, persistenceApplied: true };

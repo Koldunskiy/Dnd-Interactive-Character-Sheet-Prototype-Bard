@@ -16,7 +16,7 @@ import { getSaraRollBreakdown } from "../../scripts/rolls/providers/sara.js";
 import { calculateCharacterRoll } from "../../scripts/rolls/calculations.js";
 import { getDerivedStats } from "../../scripts/calculations.js";
 import { renderBattleConsole } from "../../scripts/render/render-battle-console.js";
-import { selectBattleCategory } from "../../scripts/battle/command-registry.js";
+import { getSaraBattleCommandRegistry } from "../../scripts/battle/command-registry.js";
 import {
   amendCharacterRoll,
   correctCharacterRollOutcome,
@@ -221,7 +221,7 @@ test("Flurry is unavailable while waiting and atomically pays before its attacks
   assert.equal(getState().combat.ki.current, kiBefore - 1);
 });
 
-test("turn-based attack launch controls are absent while the battle is waiting", () => {
+test("the phase hub keeps turn actions hidden while waiting and exposes turn resources on own turn", () => {
   const character = cloneSara();
   startBattle(character, { rawD20: "14" }, { id: "render-battle" });
   character.monk.combatAssistant = {
@@ -229,16 +229,20 @@ test("turn-based attack launch controls are absent while the battle is waiting",
     pendingApplications: [{ targetOutcome: "unknown" }],
     recentlyCompletedSummaries: [{ kind: "regeneration", dieResult: 4, usefulHealing: 3 }],
   };
-  selectBattleCategory(character.profile.id, "bonus");
   let markup = renderBattleConsole(character);
-  assert.match(markup, /Незавершённые события боя: 2 · последствия проверок: 0/);
-  assert.match(markup, /data-battle-command-open="flurry"[^>]*disabled/);
+  assert.match(markup, /data-player-scene-phase="waiting"/);
+  assert.match(markup, /Ожидание своего хода/);
+  assert.match(markup, /Незавершённое и история · 2/);
+  assert.match(markup, /data-battle-command="begin-own-turn"/);
+  assert.doesNotMatch(markup, /data-battle-command-open="(?:flurry|normal-attack)"/);
 
   beginOwnTurn(character, { id: "render-turn" });
-  selectBattleCategory(character.profile.id, "bonus");
   markup = renderBattleConsole(character);
-  assert.match(markup, /data-battle-command-open="flurry"/);
-  assert.doesNotMatch(markup, /data-battle-command-open="flurry"[^>]*disabled/);
+  assert.match(markup, /data-player-scene-phase="own-turn"/);
+  assert.match(markup, /data-battle-menu="bonus"/);
+  assert.match(markup, /data-battle-end-turn/);
+  assert.equal(getSaraBattleCommandRegistry(character)
+    .find((entry) => entry.id === "flurry").availability.enabled, true);
 });
 
 test("Dexterity-save Evasion consequence is explicit and corrections do not recalculate HP", () => {

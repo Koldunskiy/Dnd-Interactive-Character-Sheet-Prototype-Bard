@@ -22,6 +22,8 @@ import {
   castSaraRacialSpell,
   executeMonkTechnique,
   continueDeflectMissile,
+  declineDeflectMissileReturn,
+  recordSaraIncomingDamage,
 } from "../actions/monk.js";
 import {
   commitDeflection,
@@ -33,6 +35,7 @@ import {
   startAttackSequence,
 } from "../actions/sara-combat.js";
 import { getSaraBattleCommandRegistry } from "../battle/command-registry.js";
+import { getActiveBattle } from "../battle/model.js";
 import {
   amendCharacterRoll,
   correctCharacterRollOutcome,
@@ -68,6 +71,7 @@ import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
 
 const appInstanceId = createId("workspace-app");
 let session = null;
+const suspendedSessions = [];
 
 function createId(prefix) {
   return globalThis.crypto?.randomUUID?.() ??
@@ -76,6 +80,46 @@ function createId(prefix) {
 
 function stepKey(step, attackId = null) {
   return `${step}:${attackId ?? "none"}`;
+}
+
+function suspendCurrentSession() {
+  if (!session) return true;
+  if (session.submitting || session.appliedUnsaved) return false;
+  if (!suspendedSessions.includes(session)) {
+    session.suspended = true;
+    suspendedSessions.push(session);
+  }
+  session = null;
+  return true;
+}
+
+function restoreParentSession() {
+  while (suspendedSessions.length) {
+    const parent = suspendedSessions.pop();
+    if (!isWorkspaceOwnerCurrent(parent.owner) ||
+        parent.owner.appInstanceId !== appInstanceId) continue;
+    session = parent;
+    session.suspended = false;
+    session.minimized = false;
+    render();
+    if (!openWorkspaceHost(findInvoker(parent.returnTarget?.key))) {
+      session = null;
+      return false;
+    }
+    document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
+    const body = getWorkspaceHost()?.querySelector("[data-workspace-body]");
+    if (body) body.scrollTop = parent.internalScrollByStep[parent.currentStepKey] ?? 0;
+    focusWorkspaceHeading();
+    return true;
+  }
+  return false;
+}
+
+function finishCurrentSession() {
+  session = null;
+  if (restoreParentSession()) return;
+  document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
+  closeWorkspaceHost();
 }
 
 function getStepDraft() {
@@ -103,6 +147,19 @@ function getRelevantFingerprint(state, sequenceId, firstAttempt) {
 }
 
 function getCommandDescriptor(state, commandId) {
+  if (commandId === "incoming-damage") {
+    return {
+      id: commandId,
+      scenarioId: commandId,
+      titleRu: "Записать полученный урон",
+      navigationGroups: [],
+      activationBudget: "none",
+      resourceCost: "Без расхода реакции",
+      trigger: "Введите урон, полученный от ведущего; временные HP учитываются автоматически.",
+      parentRequirement: null,
+      availability: { enabled: true, reasonCode: null, reasonRu: "" },
+    };
+  }
   if (commandId.startsWith("pending-save:")) {
     const applicationId = commandId.slice("pending-save:".length);
     const application = state.monk?.combatAssistant?.pendingApplications?.find((entry) =>
@@ -144,19 +201,23 @@ function getCommandDescriptor(state, commandId) {
   return getSaraBattleCommandRegistry(state).find((entry) => entry.id === commandId) ?? null;
 }
 
-function sequenceCurrentForAttack(sequence, state) {
-  if (!sequence || sequence.kind !== (session?.sequenceKind ?? "attack-action") ||
+function sequenceCurrentForAttack(
+  sequence,
+  state,
+  sequenceKind = session?.sequenceKind ?? sequence?.kind ?? "attack-action",
+) {
+  if (!sequence || sequence.kind !== sequenceKind ||
       sequence.status !== "open" ||
       Number(sequence.turnMarker) !== Number(state.ui?.turn?.turnNumber ?? 1)) return false;
   const battle = state.battleConsole?.current;
   if (sequence.battleId) {
-    const phaseValid = sequence.kind === "reaction-unarmed"
+    const phaseValid = ["reaction-unarmed", "returned-projectile"].includes(sequence.kind)
       ? ["waiting", "own-turn"].includes(battle?.phase)
       : battle?.phase === "own-turn";
     return battle?.id === sequence.battleId && phaseValid &&
       (!sequence.ownTurnId || battle.ownTurnId === sequence.ownTurnId);
   }
-  return !battle || (sequence.kind === "reaction-unarmed"
+  return !battle || (["reaction-unarmed", "returned-projectile"].includes(sequence.kind)
     ? ["waiting", "own-turn"].includes(battle.phase)
     : battle.phase === "own-turn");
 }
@@ -282,10 +343,10 @@ function updateInput(field) {
 
 function findSequenceAndDamage(state, options = {}) {
   const explicitSequence = options.sequenceId
-    ? getNormalAttackSequence(state, options.sequenceId) : null;
-  if (options.sequenceId && !explicitSequence) return { error: "Последовательность обычной атаки не найдена." };
+    ? getWorkspaceAttackSequence(state, options.sequenceId) : null;
+  if (options.sequenceId && !explicitSequence) return { error: "Последовательность атаки не найдена." };
   if (options.attackId) {
-    const pending = findAwaitingNormalDamage(state, {
+    const pending = findAwaitingWorkspaceDamage(state, {
       sequenceId: options.sequenceId ?? null,
       attackId: options.attackId,
     });
@@ -293,13 +354,16 @@ function findSequenceAndDamage(state, options = {}) {
     return {
       sequence: pending.sequence,
       attack: pending.attack,
-      historical: !sequenceCurrentForAttack(pending.sequence, state),
+      historical: !sequenceCurrentForAttack(pending.sequence, state, pending.sequence.kind),
     };
   }
   if (explicitSequence) {
-    const pending = findAwaitingNormalDamage(state, { sequenceId: explicitSequence.id });
+    const pending = findAwaitingWorkspaceDamage(state, { sequenceId: explicitSequence.id });
     if (pending) {
-      return { ...pending, historical: !sequenceCurrentForAttack(explicitSequence, state) };
+      return {
+        ...pending,
+        historical: !sequenceCurrentForAttack(explicitSequence, state, explicitSequence.kind),
+      };
     }
     return { sequence: explicitSequence };
   }
@@ -349,28 +413,24 @@ export function openNormalAttack({ sequenceId = null, attackId = null, mode = "c
     session.owner.characterId === owner.characterId &&
     session.owner.sessionGeneration === owner.sessionGeneration &&
     session.owner.appInstanceId === appInstanceId;
-  if (currentOwnerSession) {
-    if (session.workspaceType === "command") {
-      if (session.scenarioId === "normal-attack") {
-        return { ok: false, reason: "Сначала завершите текущую команду рабочего пространства." };
-      }
-      if (session.dirty || session.appliedUnsaved) {
-        return { ok: false, reason: "Сначала завершите или отмените незаписанный ввод текущего сценария." };
-      }
-      return { ok: false, reason: "Сначала закройте текущую команду рабочего пространства." };
-    }
+  if (session && !currentOwnerSession) {
+    return { ok: false, reason: "Рабочая панель относится к другому сеансу персонажа." };
+  }
+  if (currentOwnerSession && session.workspaceType === "attack") {
     if (!explicitTarget) return resumeWorkspace(session.workspaceSessionId);
     const sameSequence = selectedSequence?.id === session.sequenceId;
     const sameAttack = selected.attack
       ? selected.attack.id === session.attackId
       : sameSequence && !session.selectedDamage;
-    const sameMode = session.historicalOnly === historicalOnly;
-    if (sameSequence && sameAttack && sameMode) {
+    if (sameSequence && sameAttack && session.historicalOnly === historicalOnly) {
       return resumeWorkspace(session.workspaceSessionId);
     }
-    if (session.dirty || session.appliedUnsaved) {
-      return { ok: false, reason: "Сначала завершите или отмените незаписанный ввод текущего удара." };
-    }
+  }
+  if (currentOwnerSession && session.dirty) {
+    return { ok: false, reason: "Сначала завершите или сверните незаписанный ввод текущего удара." };
+  }
+  if (session && !suspendCurrentSession()) {
+    return { ok: false, reason: "Сначала завершите сохранение текущего результата." };
   }
   if (!initWorkspaceHost({ onAction: handleAction, onInput: updateInput, onSubmit: handleSubmit })) {
     return { ok: false, reason: "Рабочая панель не смонтирована." };
@@ -380,7 +440,9 @@ export function openNormalAttack({ sequenceId = null, attackId = null, mode = "c
   const attackIdForDraft = selectedAttack?.id ??
     selectedSequence?.resolvedAttacks?.[nextAttack]?.id ?? createId("sara-attack");
   const firstAttempt = !selectedSequence;
-  const available = !selectedSequence || sequenceCurrentForAttack(selectedSequence, state);
+  const sequenceKind = selectedSequence?.kind ?? "attack-action";
+  const available = !selectedSequence ||
+    sequenceCurrentForAttack(selectedSequence, state, sequenceKind);
   session = {
     workspaceSessionId: createId("attack-workspace"),
     workspaceType: "attack",
@@ -390,7 +452,8 @@ export function openNormalAttack({ sequenceId = null, attackId = null, mode = "c
       ownTurnId: state.battleConsole?.current?.ownTurnId ?? null,
     },
     sequenceId: selectedSequence?.id ?? createId("sara-normal-attack"),
-    sequenceKind: "attack-action",
+    sequenceKind,
+    command: selectedSequence ? getCommandDescriptor(state, sequenceKind) : null,
     attackId: attackIdForDraft,
     currentStep: selectedAttack ? "damage-input"
       : !historical && (!selectedSequence || available &&
@@ -455,8 +518,10 @@ export function openNormalAttack({ sequenceId = null, attackId = null, mode = "c
   return { ok: true, sessionId: session.workspaceSessionId };
 }
 
-export function openSaraBattleCommand(commandId, invoker = null) {
-  if (commandId === "normal-attack") return openNormalAttack({ invoker });
+export function openSaraBattleCommand(commandId, invoker = null, options = {}) {
+  if (commandId === "normal-attack") {
+    return openNormalAttack({ sequenceId: options.sequenceId ?? null, invoker });
+  }
   const state = getState();
   const owner = getWorkspaceAttackContext();
   const command = getCommandDescriptor(state, commandId);
@@ -471,15 +536,20 @@ export function openSaraBattleCommand(commandId, invoker = null) {
   if (!isWorkspaceOwnerCurrent(owner)) {
     return { ok: false, reason: "Сеанс персонажа изменился. Команда не открыта." };
   }
-  if (session && session.owner.characterId === owner.characterId &&
-      session.owner.sessionGeneration === owner.sessionGeneration) {
+  const sameOwner = session &&
+    session.owner.characterId === owner.characterId &&
+    session.owner.sessionGeneration === owner.sessionGeneration &&
+    session.owner.appInstanceId === appInstanceId;
+  if (session && !sameOwner) {
+    return { ok: false, reason: "Рабочая панель относится к другому сеансу персонажа." };
+  }
+  if (sameOwner) {
     if (session.workspaceType === "command" && session.scenarioId === commandId) {
       return resumeWorkspace(session.workspaceSessionId);
     }
-    if (session.dirty || session.appliedUnsaved) {
-      return { ok: false, reason: "Сначала завершите или отмените незаписанный ввод текущего сценария." };
+    if (!suspendCurrentSession()) {
+      return { ok: false, reason: "Сначала завершите сохранение текущего результата." };
     }
-    return { ok: false, reason: "Сначала сверните или завершите текущую последовательность." };
   }
   if (!initWorkspaceHost({ onAction: handleAction, onInput: updateInput, onSubmit: handleSubmit })) {
     return { ok: false, reason: "Рабочая панель не смонтирована." };
@@ -522,9 +592,10 @@ export function openSaraBattleCommand(commandId, invoker = null) {
     status: "",
   };
   if (commandId === "character-roll") {
+    const preset = options.rollPreset ?? {};
     session.rawInputsByStep[session.currentStepKey] = {
-      kind: "ability-check",
-      id: "strength",
+      kind: preset.kind ?? "ability-check",
+      id: preset.id ?? "strength",
       rollMode: "normal",
       firstD20: "",
       secondD20: "",
@@ -568,10 +639,23 @@ export function requestCloseWorkspace() {
 }
 
 export function resumeWorkspace(workspaceSessionId) {
-  if (!session || session.workspaceSessionId !== workspaceSessionId ||
-      !isWorkspaceOwnerCurrent(session.owner) || session.owner.appInstanceId !== appInstanceId) {
+  const target = session?.workspaceSessionId === workspaceSessionId
+    ? session
+    : suspendedSessions.find((entry) => entry.workspaceSessionId === workspaceSessionId);
+  if (!target || !isWorkspaceOwnerCurrent(target.owner) ||
+      target.owner.appInstanceId !== appInstanceId) {
     return { ok: false, reason: "Рабочая панель относится к другому сеансу персонажа." };
   }
+  if (target !== session) {
+    if (session && !suspendCurrentSession()) {
+      return { ok: false, reason: "Сначала завершите сохранение текущего результата." };
+    }
+    const index = suspendedSessions.indexOf(target);
+    if (index >= 0) suspendedSessions.splice(index, 1);
+    session = target;
+  }
+  session.suspended = false;
+  session.minimized = false;
   const state = getState();
   if (session.workspaceType === "attack") rehydrateFromState(state);
   render();
@@ -690,6 +774,15 @@ function requireOwner() {
     isWorkspaceOwnerCurrent(session.owner));
 }
 
+function refreshWorkspaceOwnerRevision() {
+  if (!session) return;
+  const current = getSessionContext();
+  if (current.characterId === session.owner.characterId &&
+      current.sessionGeneration === session.owner.sessionGeneration) {
+    session.owner = { ...session.owner, stateRevision: current.stateRevision };
+  }
+}
+
 function setError(reason) {
   session.error = ({
     "stale-session": "Сеанс персонажа изменился. Операция не отправлена.",
@@ -798,6 +891,7 @@ function submitAttack(outcome, button = null) {
     render();
     return;
   }
+  refreshWorkspaceOwnerRevision();
   session.dirty = false;
   session.naturalExceptionOutcome = null;
   session.firstAttempt = false;
@@ -864,6 +958,7 @@ function submitDamage() {
     render();
     return;
   }
+  refreshWorkspaceOwnerRevision();
   const after = getState();
   const recordedParent = getCurrentWorkspaceStrikeParent(after, sequence.id, attack.id);
   session.appliedUnsaved = result.persistence?.ok === false;
@@ -939,6 +1034,7 @@ function applyStrikeToCurrentHit() {
     render();
     return;
   }
+  refreshWorkspaceOwnerRevision();
   const after = getState();
   const updatedSequence = getWorkspaceAttackSequence(after, sequence.id);
   const updatedAttack = updatedSequence?.resolvedAttacks.find((entry) => entry.id === attack.id);
@@ -970,6 +1066,7 @@ function startCommandAttack(kind, values, { parentFeature = null } = {}) {
     parentFeature,
   }, operation);
   if (result.status !== "applied") return result;
+  refreshWorkspaceOwnerRevision();
   const after = getState();
   const sequence = getWorkspaceAttackSequence(after, session.sequenceId);
   if (!sequence) return { status: "rejected", reason: "Последовательность применена, но не найдена в состоянии персонажа." };
@@ -1011,6 +1108,9 @@ function commandOutcomeSummary(result) {
   if (outcome.usefulHealing != null) {
     return `Полезное лечение: ${outcome.usefulHealing} HP; HP ${outcome.hpAfter}/${getDerivedStats(getState()).maxHitPoints}; ци ${outcome.kiAfter}.`;
   }
+  if (outcome.absorbedByTemp != null) {
+    return `Получено урона: ${outcome.damage}; временные HP поглотили ${outcome.absorbedByTemp}; HP ${outcome.hpAfter}.`;
+  }
   if (outcome.rawReduction != null || outcome.rawRemainder != null) {
     return `Сырое снижение: ${outcome.rawReduction ?? outcome.rawRemainder}; остаток после поправок: ${outcome.finalRemainder ?? outcome.remainingDamage ?? "—"}.`;
   }
@@ -1042,6 +1142,7 @@ function finishRollMutation(result) {
     render();
     return false;
   }
+  refreshWorkspaceOwnerRevision();
   session.dirty = false;
   session.rollRecord = result.record;
   session.resultMessage = `${result.record.label}: к20 ${result.record.rawD20Rolls.join(" и ")}; итог ${result.record.total}.`;
@@ -1201,6 +1302,7 @@ function submitCommand() {
   if (id === "mystic-regeneration") {
     result = commitRegeneration(session.owner, values.dieResult, operation, {
       confirmNoHealing: values.confirmNoHealing === true,
+      allowOutsideCombat: !getActiveBattle(state),
     });
   } else if (id.startsWith("racial-spell:")) {
     result = castSaraRacialSpell(session.owner, id.slice("racial-spell:".length), {
@@ -1271,6 +1373,11 @@ function submitCommand() {
       status: "rejected",
       reason: "Выберите «Успех», «Провал» или «Пока неизвестно» после физического броска.",
     };
+  } else if (id === "incoming-damage") {
+    result = recordSaraIncomingDamage(session.owner, values.damage, {
+      confirmed: values.confirmed === true,
+      operationId: operation,
+    });
   } else if (id === "resource-correction") {
     result = correctSaraResource(session.owner, values.resourceId, values.value, operation);
   } else {
@@ -1282,6 +1389,7 @@ function submitCommand() {
     render();
     return;
   }
+  refreshWorkspaceOwnerRevision();
   if (session.workspaceType === "attack") {
     session.dirty = false;
     session.appliedUnsaved = result.persistence?.ok === false;
@@ -1323,6 +1431,32 @@ function openMissileReturnForm() {
   render();
 }
 
+function declineMissileReturn() {
+  if (!session?.canReturnMissile || session.appliedUnsaved ||
+      session.submitting || !requireOwner()) return;
+  session.submitting = true;
+  const result = declineDeflectMissileReturn(
+    session.owner,
+    session.returnContinuationId,
+  );
+  session.submitting = false;
+  if (result.status !== "applied") {
+    setError(result.reason);
+    render();
+    return;
+  }
+  refreshWorkspaceOwnerRevision();
+  session.canReturnMissile = false;
+  session.appliedUnsaved = result.persistence?.ok === false;
+  session.resultMessage = "Возврат снаряда отклонён. Дополнительная стоимость не потрачена.";
+  if (session.appliedUnsaved) {
+    session.status = "Решение применено, но не сохранено.";
+    render();
+    return;
+  }
+  finishCurrentSession();
+}
+
 function startDeflectCounter() {
   if (!session?.canDeflectCounter || session.appliedUnsaved) return;
   session.parentSequenceId = session.parentOperationId;
@@ -1360,6 +1494,7 @@ function submitMissileReturn() {
     render();
     return;
   }
+  refreshWorkspaceOwnerRevision();
   session.dirty = false;
   session.appliedUnsaved = result.persistence?.ok === false;
   session.canReturnMissile = false;
@@ -1389,6 +1524,7 @@ function markDamageOutside() {
     render();
     return;
   }
+  refreshWorkspaceOwnerRevision();
   const after = getState();
   const recordedParent = getCurrentWorkspaceStrikeParent(after, sequence.id, attack.id);
   session.appliedUnsaved = result.persistence?.ok === false;
@@ -1538,36 +1674,34 @@ function confirmClose() {
     render();
     return;
   }
+  finishCurrentSession();
+}
+
+function closeAttackRemainder() {
   const sequence = getSequence();
-  if (sequence?.status === "open" &&
-      sequence.resolvedAttacks.length < sequence.maximumAttacks) {
-    if (!requireOwner() || session.appliedUnsaved) {
-      setError("Сначала сохраните применённое изменение.");
-      render();
-      return;
-    }
-    session.submitting = true;
-    const result = abandonWorkspaceSequence(
-      session.owner,
-      sequence.id,
-      operationId(`abandon:${sequence.id}`),
-    );
-    session.submitting = false;
-    if (result.status !== "applied") {
-      setError(result.reason);
-      render();
-      return;
-    }
-    session.appliedUnsaved = result.persistence?.ok === false;
-    if (session.appliedUnsaved) {
-      setError("Последовательность закрыта в памяти, но не сохранена. Повторите сохранение перед закрытием панели.");
-      render();
-      return;
-    }
+  if (!session || !sequence || sequence.status !== "open" ||
+      sequence.resolvedAttacks.length >= sequence.maximumAttacks ||
+      session.submitting || session.appliedUnsaved || !requireOwner()) return;
+  session.submitting = true;
+  const result = abandonWorkspaceSequence(
+    session.owner,
+    sequence.id,
+    operationId(`abandon:${sequence.id}`),
+  );
+  session.submitting = false;
+  if (result.status !== "applied") {
+    setError(result.reason);
+    render();
+    return;
   }
-  session = null;
-  document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
-  closeWorkspaceHost();
+  refreshWorkspaceOwnerRevision();
+  session.appliedUnsaved = result.persistence?.ok === false;
+  if (session.appliedUnsaved) {
+    setError("Остаток закрыт в памяти, но не сохранён. Повторите сохранение перед выходом.");
+    render();
+    return;
+  }
+  finishCurrentSession();
 }
 
 function retrySave() {
@@ -1590,6 +1724,7 @@ function updateRollResult(result) {
     render();
     return;
   }
+  refreshWorkspaceOwnerRevision();
   session.submitting = false;
   session.rollRecord = result.record;
   session.dirty = false;
@@ -1697,6 +1832,8 @@ function handleAction(action, button = null) {
     submitCommand();
   } else if (action === "return-missile") {
     openMissileReturnForm();
+  } else if (action === "decline-return-missile") {
+    declineMissileReturn();
   } else if (action === "deflect-counter") {
     startDeflectCounter();
   } else if (action === "submit-missile-return") {
@@ -1714,11 +1851,9 @@ function handleAction(action, button = null) {
   } else if (action === "roll-amend-spirit") {
     applyRollAmendment("ll-monk:indomitable-spirit");
   } else if (action === "done") {
-    if (session.currentStep === "command-result" && session.canReturnMissile) {
-      openMissileReturnForm();
-    } else {
-      confirmClose();
-    }
+    confirmClose();
+  } else if (action === "close-attack-remainder") {
+    closeAttackRemainder();
   } else if (action === "outside-damage") {
     markDamageOutside();
   } else if (action === "next-attack") {
@@ -1792,58 +1927,94 @@ export function reconcileWorkspaceAfterStateChange(state, metadata = null) {
 }
 
 export function hasDirtyWorkspaceDraft(owner = null) {
-  return Boolean(session && session.dirty &&
-    (!owner || (owner.characterId === session.owner.characterId &&
-      owner.sessionGeneration === session.owner.sessionGeneration)));
+  return getAllWorkspaceSessions().some((entry) => entry.dirty &&
+    (!owner || (owner.characterId === entry.owner.characterId &&
+      owner.sessionGeneration === entry.owner.sessionGeneration)));
 }
 
 export function hasUnsavedWorkspaceOperation(owner = null) {
-  return Boolean(session && session.appliedUnsaved &&
-    (!owner || (owner.characterId === session.owner.characterId &&
-      owner.sessionGeneration === session.owner.sessionGeneration)));
+  return getAllWorkspaceSessions().some((entry) => entry.appliedUnsaved &&
+    (!owner || (owner.characterId === entry.owner.characterId &&
+      owner.sessionGeneration === entry.owner.sessionGeneration)));
 }
 
 export function prepareWorkspaceCharacterTransition(target, continuation = null) {
-  if (!session) return { ok: true };
-  if (session.appliedUnsaved) {
+  const sessions = getAllWorkspaceSessions();
+  if (!sessions.length) return { ok: true };
+  if (sessions.some((entry) => entry.appliedUnsaved)) {
     const saved = retryPersistedState();
     if (!saved.ok) return { ok: false, reason: "Изменение применено, но не сохранено. Переключение персонажа отменено." };
-    session.appliedUnsaved = false;
+    for (const entry of sessions) entry.appliedUnsaved = false;
   }
-  if (session.dirty && !window.confirm("Есть незавершённый ввод. Остаться — Отмена. Закрыть без применения и перейти к другому персонажу?")) {
+  if (sessions.some((entry) => entry.dirty) &&
+      !window.confirm("Есть незавершённый ввод. Остаться — Отмена. Закрыть без применения и перейти к другому персонажу?")) {
     return { ok: false, reason: "Переход отменён." };
   }
-  if (continuation) session.pendingTransition = { target, continuation };
+  if (continuation && session) session.pendingTransition = { target, continuation };
   return { ok: true };
 }
 
 export function disposeWorkspaceOwner(owner, reason = "disposed") {
-  if (!session || !owner ||
-      owner.characterId !== session.owner.characterId ||
-      owner.sessionGeneration !== session.owner.sessionGeneration) return false;
-  session.status = reason;
-  session = null;
-  closeWorkspaceHost({
-    restoreFocus: !["session-changed", "character-transition", "character-picker", "character-reset"].includes(reason),
-  });
-  return true;
+  if (!owner) return false;
+  const matchesOwner = (entry) => entry.owner.characterId === owner.characterId &&
+    entry.owner.sessionGeneration === owner.sessionGeneration;
+  const before = suspendedSessions.length + (session ? 1 : 0);
+  for (let index = suspendedSessions.length - 1; index >= 0; index -= 1) {
+    if (matchesOwner(suspendedSessions[index])) suspendedSessions.splice(index, 1);
+  }
+  if (session && matchesOwner(session)) {
+    session.status = reason;
+    session = null;
+    closeWorkspaceHost({
+      restoreFocus: !["session-changed", "character-transition", "character-picker", "character-reset"].includes(reason),
+    });
+  }
+  return before !== suspendedSessions.length + (session ? 1 : 0);
 }
 
 export function isWorkspaceOpen() {
   return workspaceHostIsOpen();
 }
 
-export function getMinimizedWorkspaceSession() {
-  if (!session || !session.minimized) return null;
-  return {
-    workspaceSessionId: session.workspaceSessionId,
-    label: session.workspaceType === "command" && session.currentStep === "roll-result"
-      ? session.rollRecord?.consequence?.status === "awaiting-outcome"
+function getWorkspaceSessionLabel(entry) {
+  return entry.workspaceType === "command" && entry.currentStep === "roll-result"
+      ? entry.rollRecord?.consequence?.status === "awaiting-outcome"
         ? "Указать исход броска" : "Продолжить последствие броска"
-      : session.currentStep === "damage-input" ? "Продолжить запись урона"
-      : session.currentStep === "attack-input" ? "Продолжить действие «Атака»"
-        : "Продолжить рабочую панель атаки",
-  };
+      : entry.currentStep === "damage-input" ? "Продолжить запись урона"
+      : entry.currentStep === "attack-input" ? "Продолжить действие «Атака»"
+        : "Продолжить рабочую панель атаки";
+}
+
+function getAllWorkspaceSessions() {
+  return [...new Set([...(session ? [session] : []), ...suspendedSessions])];
+}
+
+export function getWorkspaceSessions() {
+  return getAllWorkspaceSessions().map((entry) => ({
+    workspaceSessionId: entry.workspaceSessionId,
+    label: getWorkspaceSessionLabel(entry),
+    dirty: entry.dirty === true,
+    appliedUnsaved: entry.appliedUnsaved === true,
+    minimized: entry.minimized === true,
+    suspended: entry.suspended === true,
+  }));
+}
+
+export function getMinimizedWorkspaceSessions() {
+  return getAllWorkspaceSessions()
+    .filter((entry) => entry.minimized || entry.suspended)
+    .map((entry) => ({
+      workspaceSessionId: entry.workspaceSessionId,
+      label: getWorkspaceSessionLabel(entry),
+      dirty: entry.dirty === true,
+      appliedUnsaved: entry.appliedUnsaved === true,
+      minimized: entry.minimized === true,
+      suspended: entry.suspended === true,
+    }));
+}
+
+export function getMinimizedWorkspaceSession() {
+  return getMinimizedWorkspaceSessions()[0] ?? null;
 }
 
 export function initActionWorkspace() {

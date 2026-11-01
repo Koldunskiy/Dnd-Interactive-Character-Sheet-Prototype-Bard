@@ -392,8 +392,11 @@ test("production normal attack workspace records one action, snapshot damage and
   assert.equal(getState().monk.combatAssistant.activeSequences.find((item) =>
     item.id === additionalSequenceId).status, "open");
   fireAction(dialog, "close");
+  assert.match(dialog.footer.innerHTML, /data-workspace-action="close-attack-remainder"/);
+  assert.equal(getState().monk.combatAssistant.activeSequences.find((item) =>
+    item.id === additionalSequenceId).status, "open");
   globalThis.workspaceStorageFailures = true;
-  fireAction(dialog, "confirm-close");
+  fireAction(dialog, "close-attack-remainder");
   globalThis.workspaceStorageFailures = false;
   assert.equal(getState().monk.combatAssistant.activeSequences.find((item) =>
     item.id === additionalSequenceId).status, "abandoned");

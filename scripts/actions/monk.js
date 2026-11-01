@@ -92,7 +92,8 @@ function parseKiCost(technique, input) {
   return Number(fixed[1]);
 }
 
-function markActivation(character, technique) {
+function markActivation(character, technique, { countTurnBudget = true } = {}) {
+  if (!countTurnBudget) return;
   const turn = character.ui.turn;
   if (technique.activation === "action") turn.actionUsed = true;
   if (technique.activation === "bonus-action") turn.bonusActionUsed = true;
@@ -113,6 +114,26 @@ function applySaraDamage(character, damage) {
   return result;
 }
 
+export function recordSaraIncomingDamage(context, damage, { confirmed = false, operationId } = {}) {
+  if (confirmed !== true) return { status: "rejected", reason: "Запись урона не подтверждена." };
+  if (!operationId) return { status: "rejected", reason: "Для записи урона требуется идентификатор операции." };
+  let outcome;
+  const result = updateSessionState(context, (draft) => {
+    if (!isSara(draft)) throw new Error("Запись урона доступна только в листе Сары.");
+    const parsedDamage = parsePhysicalInteger(
+      damage, 0, Number.MAX_SAFE_INTEGER, "Полученный урон",
+    );
+    if (!parsedDamage.ok) throw new Error(parsedDamage.reason);
+    outcome = applySaraDamage(draft, parsedDamage.value);
+    if (!outcome.ok) throw new Error(outcome.reason);
+    return draft;
+  }, {
+    operationId,
+    metadata: { kind: "sara-incoming-damage" },
+  });
+  return result.status === "applied" ? { ...result, outcome } : result;
+}
+
 function applyToCharacter(character, techniqueId, input) {
   if (!isSara(character)) return { ok: false, reason: "Эта операция доступна только в листе Сары." };
   const technique = MONK_TECHNIQUE_BY_ID.get(techniqueId);
@@ -124,10 +145,13 @@ function applyToCharacter(character, techniqueId, input) {
     return { ok: false, reason: "Техника сохранена в выборе, но сейчас недоступна по уровню, предварительным требованиям или выбору стиля." };
   }
   if (input.confirmed !== true) return { ok: false, reason: "Применение не подтверждено." };
+  const battle = character.battleConsole?.current;
+  const outsideRegeneration = techniqueId === "ll-monk:mystic-regeneration" &&
+    input.allowOutsideCombat === true && (!battle || battle.phase === "ended");
   const activationContext = technique.eligibleStrike && input.unarmedHitConfirmed === true
     ? "reaction"
     : technique.activation;
-  const phaseReason = getBattlePhaseReason(character, activationContext);
+  const phaseReason = outsideRegeneration ? null : getBattlePhaseReason(character, activationContext);
   if (phaseReason) return { ok: false, reason: phaseReason };
 
   character.monk.techniqueRuntime ??= {};
@@ -228,7 +252,7 @@ function applyToCharacter(character, techniqueId, input) {
     character.combat.practiced.current -= 1;
     character.monk.techniqueRuntime.practicedUsedThisTurn = true;
   }
-  markActivation(character, technique);
+  markActivation(character, technique, { countTurnBudget: !outsideRegeneration });
   if (technique.limit === "once-per-turn") {
     character.monk.techniqueRuntime[techniqueId] = { ...runtime, usedThisTurn: true };
   }
@@ -344,7 +368,9 @@ export function castSaraRacialSpell(context, spellId, input = {}) {
   let outcome;
   const result = updateSessionState(context, (draft) => {
     if (!isSara(draft)) throw new Error("Расовая магия доступна только в листе Сары.");
-    const phaseReason = getBattlePhaseReason(draft, "action");
+    const battle = draft.battleConsole?.current;
+    const outsideBattle = !battle || battle.phase === "ended";
+    const phaseReason = outsideBattle ? null : getBattlePhaseReason(draft, "action");
     if (phaseReason) throw new Error(phaseReason);
     const record = draft.spellcasting?.racialSpells?.find((entry) =>
       entry.id === spellId && entry.source === "racial" && entry.mode === spell.mode);
@@ -359,7 +385,7 @@ export function castSaraRacialSpell(context, spellId, input = {}) {
          input.expectedConcentration !== currentConcentration)) {
       throw new Error("Подтвердите замену текущей концентрации перед применением.");
     }
-    draft.ui.turn.actionUsed = true;
+    if (!outsideBattle) draft.ui.turn.actionUsed = true;
     if (spell.mode === "limited-racial") {
       record.uses.current -= 1;
     }
@@ -376,7 +402,9 @@ export function castSaraRacialSpell(context, spellId, input = {}) {
     metadata: { kind: "sara-racial-spell", spellId },
     validate: (current) => {
       if (!isSara(current)) return "Расовая магия доступна только в листе Сары.";
-      const phaseReason = getBattlePhaseReason(current, "action");
+      const battle = current.battleConsole?.current;
+      const outsideBattle = !battle || battle.phase === "ended";
+      const phaseReason = outsideBattle ? null : getBattlePhaseReason(current, "action");
       if (phaseReason) return phaseReason;
       const record = current.spellcasting?.racialSpells?.find((entry) =>
         entry.id === spellId && entry.source === "racial" && entry.mode === spell.mode);
@@ -606,6 +634,32 @@ export function continueDeflectMissile(
     metadata: { kind: "monk-missile-return" }
   });
   return result.status === "applied" ? { ...result, outcome } : result;
+}
+
+export function declineDeflectMissileReturn(context, continuationId) {
+  const operationId = `missile-decline:${continuationId}`;
+  const result = updateSessionState(context, (draft) => {
+    const token = draft.monk?.techniqueRuntime?.deflectContinuation;
+    if (!token || token.id !== continuationId || token.kind !== "missile-return" ||
+        token.sourceSessionGeneration !== context.sessionGeneration ||
+        token.reactionAlreadyUsed !== true) {
+      throw new Error("Продолжение отражения снаряда устарело или недействительно.");
+    }
+    if (token.battleId) {
+      const battle = draft.battleConsole?.current;
+      if (!battle || battle.id !== token.battleId ||
+          !["waiting", "own-turn"].includes(battle.phase) ||
+          token.ownTurnId && token.ownTurnId !== battle.ownTurnId) {
+        throw new Error("Продолжение отражения снаряда вышло за границы своего боевого контекста.");
+      }
+    }
+    delete draft.monk.techniqueRuntime.deflectContinuation;
+    return draft;
+  }, {
+    operationId,
+    metadata: { kind: "monk-missile-return-declined" },
+  });
+  return result;
 }
 
 export function clearSaraTurnTechniqueMarks(context) {

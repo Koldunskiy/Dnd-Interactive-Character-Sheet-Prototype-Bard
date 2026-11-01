@@ -74,6 +74,8 @@ function command(
 function getDefinitions(state, derived, effective, budget) {
   const level = Number(state.profile?.level ?? 1);
   const selected = (id) => effective.has(id);
+  const outsideBattle = !getActiveBattle(state);
+  const actionAvailable = outsideBattle || budget.actionAvailable;
   const actionPhase = isInOwnTurn(state);
   const reactionPhase = isReactionWindow(state);
   const openAction = (enabled, reasonRu = "") => ({
@@ -93,10 +95,10 @@ function getDefinitions(state, derived, effective, budget) {
       entry.id === spell.id && entry.source === spell.source && entry.mode === spell.mode);
     const uses = saved?.uses;
     const hasUses = !uses || Number.isInteger(Number(uses.current)) && Number(uses.current) > 0;
-    const availability = openAction(Boolean(saved) && hasUses && budget.actionAvailable,
+    const availability = openAction(Boolean(saved) && hasUses && actionAvailable,
       !saved ? "Расовое заклинание отсутствует в активном листе."
         : !hasUses ? "Применение восстановится после долгого отдыха."
-          : !budget.actionAvailable ? "Действие уже использовано." : "");
+          : !actionAvailable ? "Действие уже использовано." : "");
     if (spell.concentration && state.combat?.concentration && availability.enabled) {
       availability.reasonRu = `Потребуется явно заменить концентрацию «${state.combat.concentration}».`;
     }
@@ -149,10 +151,10 @@ function getDefinitions(state, derived, effective, budget) {
         budget.actionAvailable || normalSequenceOpen ? "" : "Действие уже использовано.")),
     command("mystic-regeneration", "Мистическая регенерация", ["action"], "action", regeneration?.payment ?? "Стоимость не задана",
       "Техника должна быть выбрана; физическая кость Боевых искусств.", regeneration?.description ?? "",
-      openAction(selected("ll-monk:mystic-regeneration") && budget.actionAvailable &&
+      openAction(selected("ll-monk:mystic-regeneration") && actionAvailable &&
         Number(state.combat?.ki?.current) >= 2,
       !selected("ll-monk:mystic-regeneration") ? "Техника не выбрана или сейчас недоступна."
-        : !budget.actionAvailable ? "Действие уже использовано."
+        : !actionAvailable ? "Действие уже использовано."
           : "Недостаточно ци для применения.")),
     ...racialSpells,
     command("dash", "Рывок", ["action", "movement"], "action", "Действие",

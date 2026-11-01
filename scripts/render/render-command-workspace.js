@@ -36,6 +36,11 @@ function renderCommandForm(session, state) {
     numberField(name, label, min, max, draft[name] ?? "");
   const check = (name, label) => checkbox(name, label, draft[name] === true);
   const select = (name, label, options) => selectField(name, label, options, draft[name] ?? "");
+  if (id === "incoming-damage") {
+    return `<p>Введите итоговый урон, полученный от ведущего. Реакция не требуется; временные HP учитываются автоматически.</p>
+      ${number("damage", "Полученный урон", 0)}
+      ${check("confirmed", "Подтверждаю полученный итоговый урон.")}`;
+  }
   if (id === "character-roll") {
     const kind = draft.kind === "saving-throw" ? "saving-throw" : "ability-check";
     const rollMode = ["normal", "advantage", "disadvantage"].includes(draft.rollMode)
@@ -408,7 +413,7 @@ export function renderCommandWorkspace(session, state) {
       ? renderRollFooter(session)
     : session.canReturnMissile
         ? `<button type="button" class="btn btn--primary" data-workspace-action="return-missile">Решить: вернуть пойманный снаряд · 1 ци</button>
-          <button type="button" class="btn btn--utility" data-workspace-action="done">Не возвращать · завершить</button>`
+          <button type="button" class="btn btn--utility" data-workspace-action="decline-return-missile">Не возвращать снаряд</button>`
         : session.canDeflectCounter
           ? `<button type="button" class="btn btn--primary" data-workspace-action="deflect-counter">Ответить одним безоружным ударом · та же реакция</button>
             <button type="button" class="btn btn--utility" data-workspace-action="done">Завершить без ответа</button>`

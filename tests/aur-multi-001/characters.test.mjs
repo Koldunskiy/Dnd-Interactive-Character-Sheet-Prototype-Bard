@@ -23,6 +23,7 @@ import {
   castSaraRacialSpell,
   completeAwakenThirdEyeMeditation,
   continueDeflectMissile,
+  declineDeflectMissileReturn,
   endAwakenThirdEye,
   executeMonkTechnique
 } from "../../scripts/actions/monk.js";
@@ -492,16 +493,42 @@ test("Deflect Missile creates a same-reaction continuation and charges return Ki
   ).status, "rejected");
 });
 
+test("declining a caught projectile clears its continuation without charging Ki or refunding reaction", () => {
+  persisted.clear();
+  assert.equal(openCharacterSession("sara-velaris").status, "missing");
+  const result = executeMonkTechnique(getSessionContext(), "ll-monk:deflect-missile", {
+    confirmed: true,
+    mode: "weapon",
+    incomingDamage: 12,
+    deflectRoll: 10,
+    caught: true,
+    freeHand: true,
+    physicalProjectile: true,
+    operationId: "missile-decline-event"
+  });
+  assert.equal(result.status, "applied");
+  const continuationId = getState().monk.techniqueRuntime.deflectContinuation.id;
+  const kiBeforeDecline = getState().combat.ki.current;
+  const declined = declineDeflectMissileReturn(getSessionContext(), continuationId);
+  assert.equal(declined.status, "applied");
+  assert.equal(getState().monk.techniqueRuntime.deflectContinuation, undefined);
+  assert.equal(getState().combat.ki.current, kiBeforeDecline);
+  assert.equal(getState().ui.turn.reactionUsed, true);
+  assert.equal(declineDeflectMissileReturn(getSessionContext(), continuationId).status, "rejected");
+});
+
 test("racial Suggestion spends its own use, asks for concentration replacement, and never spends Ki", () => {
   persisted.clear();
   const opened = openCharacterSession("sara-velaris");
   assert.equal(opened.status, "missing");
   updateSessionState(getSessionContext(), (draft) => {
     draft.combat.concentration = "existing-effect";
+    draft.ui.turn.actionUsed = true;
     return draft;
   });
   const beforeContext = getSessionContext();
   const beforeKi = getState().combat.ki.current;
+  const actionUsedBefore = getState().ui.turn.actionUsed;
   const rejected = castSaraRacialSpell(beforeContext, "suggestion-2014", { confirmed: true });
   assert.equal(rejected.status, "rejected");
   assert.equal(getState().spellcasting.racialSpells.find((spell) => spell.id === "suggestion-2014").uses.current, 1);
@@ -516,7 +543,7 @@ test("racial Suggestion spends its own use, asks for concentration replacement, 
   assert.equal(applied.status, "applied");
   assert.equal(getState().combat.concentration, "suggestion-2014");
   assert.equal(getState().combat.ki.current, beforeKi);
-  assert.equal(getState().ui.turn.actionUsed, true);
+  assert.equal(getState().ui.turn.actionUsed, actionUsedBefore);
   assert.equal(getState().spellcasting.racialSpells.find((spell) => spell.id === "suggestion-2014").uses.current, 0);
   assert.equal(castSaraRacialSpell(getSessionContext(), "suggestion-2014", {
     confirmed: true, operationId: "racial-suggestion-operation"

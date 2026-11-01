@@ -309,13 +309,18 @@ export function renderAttackWorkspace(session, state) {
     footer = `<button type="button" class="btn btn--utility" data-workspace-action="no-technique-continue" ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Без техники → ${session.capabilities.canContinueSequence ? "следующий удар" : "завершить"}</button>
       <button type="button" class="btn btn--primary" data-workspace-action="apply-strike" ${session.submitting || session.appliedUnsaved || !canApplyStrike(session, state) ? "disabled" : ""}>${technique ? `Применить за ${escapeHtml(paymentLabel)}` : "Выберите технику"}</button>`;
   } else if (session.currentStep === "confirm-close") {
-    const abandonment = sequence?.status === "open" && sequence.resolvedAttacks.length < sequence.maximumAttacks;
-    body = `<p>${abandonment
-      ? "Оставшиеся удары будут закрыты. Уже записанные удары, расходы и ожидающие результаты сохранятся."
+    const hasRemainder = sequence?.status === "open" &&
+      sequence.resolvedAttacks.length < sequence.maximumAttacks;
+    body = `<p>${hasRemainder
+      ? "У этой атаки ещё есть удары. Продолжение, сворачивание и закрытие остатка — разные решения; уже записанные результаты и расходы сохранятся."
       : session.dirty ? "Есть незавершённый ввод." : "Закрыть только эту рабочую панель?"}</p>
       ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}`;
-    footer = `<button type="button" class="btn btn--utility" data-workspace-action="stay">Остаться</button>
-      <button type="button" class="btn btn--primary" data-workspace-action="confirm-close">${abandonment ? "Закрыть оставшиеся удары" : "Закрыть без применения"}</button>`;
+    footer = hasRemainder
+      ? `<button type="button" class="btn btn--primary" data-workspace-action="stay">Продолжить</button>
+        <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
+        <button type="button" class="btn btn--utility" data-workspace-action="close-attack-remainder">Закрыть остаток</button>`
+      : `<button type="button" class="btn btn--utility" data-workspace-action="stay">Вернуться</button>
+        <button type="button" class="btn btn--primary" data-workspace-action="confirm-close">${session.dirty ? "Закрыть без применения" : "Готово"}</button>`;
   } else {
     const attacks = sequence?.resolvedAttacks ?? [];
     const strikeParent = session.currentStep === "checkpoint"
