@@ -34,11 +34,20 @@
 }
 
 .battle-console-hud {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
   gap: 8px 14px;
   margin: 10px 0;
   color: var(--muted);
+}
+
+.battle-console-hud > span {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(5, 3, 7, 0.24);
+  overflow-wrap: anywhere;
 }
 
 .battle-console-hud strong {
@@ -181,6 +190,21 @@
   color: var(--muted);
 }
 
+.battle-console-initiative summary {
+  min-height: 44px;
+  padding: 9px 0;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.battle-console-initiative[open] {
+  margin-bottom: 10px;
+}
+
+.battle-console-initiative .battle-console-init-form {
+  margin: 4px 0 12px;
+}
+
 .battle-console-status {
   min-height: 1.4em;
   color: #ff9a9a;
@@ -198,5 +222,10 @@
 
   .battle-category-tabs [role="tab"] {
     font-size: 0.82rem;
+  }
+
+  .battle-console-hud {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
   }
 }

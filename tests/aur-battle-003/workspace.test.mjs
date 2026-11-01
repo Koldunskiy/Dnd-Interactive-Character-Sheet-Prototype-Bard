@@ -37,6 +37,7 @@ class FakeNode {
   }
   contains() { return true; }
   focus() {}
+  querySelectorAll() { return []; }
   getBoundingClientRect() { return { top: 210 }; }
   querySelector() { return null; }
 }
@@ -67,6 +68,12 @@ class FakeDialog extends FakeNode {
     this.hp = new FakeNode();
     this.ki = new FakeNode();
     this.preview = new FakeNode();
+    this.attackTotal = new FakeNode();
+    this.attackFormula = new FakeNode();
+    this.attackStatus = new FakeNode();
+    this.attackValidation = new FakeNode();
+    this.damageTotal = new FakeNode();
+    this.damageFormula = new FakeNode();
     this.damagePreview = new FakeNode();
     this.secondD20 = new FakeNode();
     this.secondD20.hidden = true;
@@ -86,6 +93,12 @@ class FakeDialog extends FakeNode {
     if (selector === "[data-workspace-hp]") return this.hp;
     if (selector === "[data-workspace-ki]") return this.ki;
     if (selector === "[data-workspace-preview]") return this.preview;
+    if (selector === "[data-attack-total]") return this.attackTotal;
+    if (selector === "[data-attack-formula]") return this.attackFormula;
+    if (selector === "[data-attack-status]") return this.attackStatus;
+    if (selector === "[data-attack-validation]") return this.attackValidation;
+    if (selector === "[data-damage-total]") return this.damageTotal;
+    if (selector === "[data-damage-formula]") return this.damageFormula;
     if (selector === "[data-workspace-damage-preview]") return this.damagePreview;
     if (selector === "[data-workspace-second-d20]") return this.secondD20;
     if (selector === 'input[name="secondD20"]') return this.secondD20Input;
@@ -134,6 +147,12 @@ function installDomFixture() {
       if (selector === "#actionWorkspaceRoot [data-workspace-ki]") return dialog.ki;
       if (selector === "#actionWorkspaceRoot [data-workspace-preview]") return dialog.preview;
       if (selector === "#actionWorkspaceRoot [data-workspace-damage-preview]") return dialog.damagePreview;
+      if (selector === "#actionWorkspaceRoot [data-attack-total]") return dialog.attackTotal;
+      if (selector === "#actionWorkspaceRoot [data-attack-formula]") return dialog.attackFormula;
+      if (selector === "#actionWorkspaceRoot [data-attack-status]") return dialog.attackStatus;
+      if (selector === "#actionWorkspaceRoot [data-attack-validation]") return dialog.attackValidation;
+      if (selector === "#actionWorkspaceRoot [data-damage-total]") return dialog.damageTotal;
+      if (selector === "#actionWorkspaceRoot [data-damage-formula]") return dialog.damageFormula;
       return null;
     },
     querySelectorAll() { return [invoker]; },
@@ -144,7 +163,11 @@ function installDomFixture() {
 
 function fireAction(dialog, action) {
   const button = {
-    dataset: { workspaceAction: action },
+    dataset: {
+      workspaceAction: action,
+      workspaceAttackId: ["attack-hit", "attack-miss"].includes(action)
+        ? getWorkspaceSessionForTests()?.attackId : undefined,
+    },
     closest(selector) { return selector === "[data-workspace-action]" ? this : null; },
   };
   dialog.fire("click", { target: button });
@@ -203,7 +226,7 @@ test("production normal attack workspace records one action, snapshot damage and
   };
   dialog.fire("input", { target: previewInput });
   assert.equal(getSessionContext().stateRevision, initialRevision);
-  assert.match(dialog.preview.textContent, /Выбранный к20 10/);
+  assert.match(dialog.attackStatus.textContent, /К20 10/);
   const confirmTransition = window.confirm;
   window.confirm = () => false;
   const cancelledTransition = prepareWorkspaceCharacterTransition("aurelia");
@@ -228,11 +251,11 @@ test("production normal attack workspace records one action, snapshot damage and
   assert.equal(getWorkspaceSessionForTests().currentStep, "attack-input");
 
   dialog.forms.attack = new FakeForm("attack", {
-    kind: "attack-action", profileId: "unarmed", targetLabel: "Стражник",
+    kind: "attack-action", profileId: "unarmed", targetLabel: "Старая цель",
     rollMode: "advantage", firstD20: "10", secondD20: "15",
-    targetArmorClass: "24", dmHitResult: "", confirmSeparateAction: false,
+    targetArmorClass: "99", dmHitResult: "miss", confirmSeparateAction: false,
   });
-  fireAction(dialog, "submit-attack");
+  fireAction(dialog, "attack-hit");
   const sequence = getState().monk.combatAssistant.activeSequences.find((item) =>
     item.id === getWorkspaceSessionForTests().sequenceId);
   const firstAttack = sequence.resolvedAttacks[0];
@@ -240,6 +263,8 @@ test("production normal attack workspace records one action, snapshot damage and
   assert.equal(sequence.maximumAttacks, 2);
   assert.equal(firstAttack.chosenD20, 15);
   assert.equal(firstAttack.hitResult, "hit");
+  assert.equal(firstAttack.hitResolutionSource, "dm");
+  assert.equal(firstAttack.optionalTargetLabel, "");
   assert.equal(firstAttack.damageStatus, "awaiting-damage");
   assert.equal(getState().ui.turn.actionUsed, true);
   assert.equal(getWorkspaceSessionForTests().currentStep, "damage-input");
@@ -335,9 +360,9 @@ test("production normal attack workspace records one action, snapshot damage and
   dialog.forms.attack = new FakeForm("attack", {
     kind: "attack-action", profileId: "unarmed", targetLabel: "",
     rollMode: "normal", firstD20: "20", secondD20: "",
-    targetArmorClass: "", dmHitResult: "", confirmSeparateAction: false,
+    confirmSeparateAction: false,
   });
-  fireAction(dialog, "submit-attack");
+  fireAction(dialog, "attack-hit");
   const completed = getState().monk.combatAssistant.activeSequences[0];
   assert.equal(completed.status, "complete");
   assert.equal(completed.resolvedAttacks[1].hitResult, "hit");
@@ -360,9 +385,9 @@ test("production normal attack workspace records one action, snapshot damage and
   dialog.forms.attack = new FakeForm("attack", {
     kind: "attack-action", profileId: "unarmed", targetLabel: "",
     rollMode: "normal", firstD20: "1", secondD20: "",
-    targetArmorClass: "", dmHitResult: "", confirmSeparateAction: true,
+    confirmSeparateAction: true,
   });
-  fireAction(dialog, "submit-attack");
+  fireAction(dialog, "attack-miss");
   const additionalSequenceId = getWorkspaceSessionForTests().sequenceId;
   assert.equal(getState().monk.combatAssistant.activeSequences.find((item) =>
     item.id === additionalSequenceId).status, "open");

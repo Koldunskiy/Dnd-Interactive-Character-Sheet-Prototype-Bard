@@ -1,6 +1,7 @@
 import { getDerivedStats } from "../calculations.js";
 import {
   getWorkspaceAttackSequence,
+  getCurrentWorkspaceStrikeParent,
   findAwaitingWorkspaceDamage,
   getWorkspaceAttackContext,
   getNormalAttackFingerprint,
@@ -8,6 +9,7 @@ import {
   getNormalAttackSequence,
   findAwaitingNormalDamage,
   isWorkspaceOwnerCurrent,
+  calculateWorkspaceAttackPreview,
   calculateWorkspaceDamagePreview,
   submitWorkspaceAttack,
   submitWorkspaceSequenceAttack,
@@ -57,6 +59,8 @@ import {
   renderWorkspaceDamagePreview,
 } from "../render/render-attack-workspace.js";
 import { retryPersistedState, getState } from "../state.js";
+import { MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
+import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
 
 const appInstanceId = createId("workspace-app");
 let session = null;
@@ -162,6 +166,7 @@ function setStep(step, attackId = session.attackId) {
     "attack-input": "Физический бросок · проверка попадания",
     "damage-input": "Физические кости урона",
     checkpoint: "Результат записан · выберите продолжение",
+    "strike-input": "Необязательная техника после записанного урона",
     summary: "Записанные удары и оставшиеся задачи",
     "command-result": "Результат записан",
     "missile-return": "Продолжение после отражения снаряда · отдельное решение",
@@ -191,10 +196,39 @@ function render() {
   if (session.currentStep === "damage-input") renderWorkspaceDamagePreview(session);
 }
 
+function clearAttackInputFeedback({ hideNaturalException = false } = {}) {
+  const root = getWorkspaceHost();
+  const error = root?.querySelector(".workspace-error");
+  if (error) {
+    error.textContent = "";
+    error.hidden = true;
+  }
+  if (hideNaturalException) {
+    const exception = root?.querySelector("[data-natural-exception]");
+    if (exception) exception.hidden = true;
+  }
+}
+
 function updateInput(field) {
   if (!session || session.submitting) return;
   const draft = getStepDraft();
+  const previousValue = draft[field.name];
   draft[field.name] = field.type === "checkbox" ? field.checked : field.value;
+  if (session.currentStep === "strike-input" &&
+      ((field.name === "techniqueId" && previousValue !== field.value) ||
+       (field.name === "paymentMode" && previousValue !== field.value))) {
+    draft.paymentMode = field.name === "techniqueId" ? "ki" : field.value;
+    draft.effect = "";
+    draft.practicedConditions = false;
+  }
+  if (session.currentStep === "attack-input" &&
+      ["firstD20", "secondD20", "rollMode"].includes(field.name)) {
+    session.naturalExceptionOutcome = null;
+    draft.dmExceptionConfirmed = false;
+    clearAttackInputFeedback({ hideNaturalException: true });
+  } else if (session.currentStep === "attack-input") {
+    clearAttackInputFeedback();
+  }
   if (session.workspaceType === "command" && field.name === "kind") {
     draft.id = "strength";
   } else if (session.workspaceType === "command" &&
@@ -216,6 +250,9 @@ function updateInput(field) {
     renderWorkspaceAttackPreview(session, getState());
   } else if (session.currentStep === "damage-input") {
     renderWorkspaceDamagePreview(session);
+  } else if (session.currentStep === "strike-input" &&
+      ["techniqueId", "paymentMode"].includes(field.name)) {
+    render();
   } else if (session.workspaceType === "command" &&
       ["kind", "spellSaveSource"].includes(field.name)) {
     render();
@@ -342,6 +379,11 @@ export function openNormalAttack({ sequenceId = null, attackId = null, mode = "c
     rawInputsByStep: {},
     operationIdsByIntent: {},
     relevantPreviewFingerprint: "",
+    naturalExceptionOutcome: null,
+    strikeParent: selectedAttack ? {
+      sequenceId: selectedSequence.id,
+      attackId: selectedAttack.id,
+    } : null,
     dirty: false,
     submitting: false,
     minimized: false,
@@ -374,6 +416,8 @@ export function openNormalAttack({ sequenceId = null, attackId = null, mode = "c
   session.stepLabel = ({
     "attack-input": "Физический бросок · проверка попадания",
     "damage-input": "Физические кости урона",
+    checkpoint: "Результат записан · выберите продолжение",
+    "strike-input": "Необязательная техника после записанного урона",
     summary: "Записанные удары и оставшиеся задачи",
   })[session.currentStep] ?? "Действие «Атака»";
   session.rawInputsByStep[session.currentStepKey] ??= {};
@@ -561,6 +605,25 @@ function rehydrateFromState(state) {
     session.capabilities.canRecordDamage = true;
     return;
   }
+  const resolvedAttack = sequence.resolvedAttacks.find((entry) => entry.id === session.attackId);
+  if (resolvedAttack && ["checkpoint", "strike-input"].includes(session.currentStep) &&
+      resolvedAttack.damageStatus !== "awaiting-damage") {
+    session.selectedDamage = null;
+    const currentSequence = sequenceCurrentForAttack(sequence, state);
+    const canContinue = !session.historicalOnly && currentSequence &&
+      sequence.resolvedAttacks.length < sequence.maximumAttacks;
+    session.capabilities.canContinueSequence = canContinue;
+    session.capabilities.canRecordAttack = canContinue;
+    session.strikeParent = getCurrentWorkspaceStrikeParent(state, sequence.id, resolvedAttack.id)
+      ? { sequenceId: sequence.id, attackId: resolvedAttack.id }
+      : null;
+    if (session.currentStep === "strike-input" && !session.strikeParent) {
+      session.currentStep = "summary";
+      session.currentStepKey = stepKey("summary", resolvedAttack.id);
+      session.readOnly = true;
+    }
+    return;
+  }
   session.selectedDamage = null;
   const currentSequence = sequenceCurrentForAttack(sequence, state);
   const canContinue = !session.historicalOnly && currentSequence &&
@@ -610,8 +673,12 @@ function setError(reason) {
   })[reason] ?? reason ?? "Операция не выполнена.";
 }
 
-function submitAttack() {
-  if (!session || session.submitting || session.appliedUnsaved || session.readOnly) return;
+function submitAttack(outcome, button = null) {
+  if (!session || session.workspaceType !== "attack" ||
+      session.currentStep !== "attack-input" ||
+      !["hit", "miss"].includes(outcome) ||
+      session.submitting || session.appliedUnsaved || session.readOnly) return;
+  if (button && button.dataset.workspaceAttackId !== session.attackId) return;
   const state = getState();
   if (!requireOwner()) {
     setError("stale-session");
@@ -620,9 +687,50 @@ function submitAttack() {
   }
   const form = getWorkspaceHost()?.querySelector('[data-workspace-form="attack"]');
   if (!form) return;
-  const values = parseForm(form);
-  session.rawInputsByStep[session.currentStepKey] = values;
+  const parsed = parseForm(form);
+  const previous = session.rawInputsByStep[session.currentStepKey] ?? {};
+  const raw = {
+    rollMode: parsed.rollMode || previous.rollMode || "normal",
+    firstD20: parsed.firstD20 ?? previous.firstD20 ?? "",
+    secondD20: parsed.secondD20 ?? previous.secondD20 ?? "",
+    confirmSeparateAction: parsed.confirmSeparateAction === true,
+    dmExceptionConfirmed: parsed.dmExceptionConfirmed === true,
+  };
+  session.rawInputsByStep[session.currentStepKey] = raw;
   session.dirty = true;
+  session.error = "";
+  const values = {
+    rollMode: raw.rollMode,
+    firstD20: raw.firstD20,
+    secondD20: raw.secondD20,
+    dmHitResult: outcome,
+    confirmSeparateAction: raw.confirmSeparateAction,
+  };
+  const preview = calculateWorkspaceAttackPreview(state, values);
+  if (!preview.ok) {
+    setError(preview.reason);
+    render();
+    return;
+  }
+  const ordinaryOutcome = preview.naturalMiss ? "miss" : preview.critical ? "hit" : null;
+  if (ordinaryOutcome && ordinaryOutcome !== outcome) {
+    if (session.naturalExceptionOutcome !== outcome) {
+      session.naturalExceptionOutcome = outcome;
+      raw.dmExceptionConfirmed = false;
+      session.error = "";
+      render();
+      return;
+    }
+    if (raw.dmExceptionConfirmed !== true) {
+      setError(preview.naturalMiss
+        ? "По обычному правилу это натуральная 1 и промах. Подтвердите, что мастер назначил исключение."
+        : "По обычному правилу это натуральная 20 и попадание. Подтвердите, что мастер назначил исключение.");
+      render();
+      return;
+    }
+  } else {
+    session.naturalExceptionOutcome = null;
+  }
   const sequence = getSequence(state);
   if (!sequence && !canOpenNewSequence(state)) {
     session.readOnly = true;
@@ -641,7 +749,7 @@ function submitAttack() {
     if (nextFingerprint !== session.relevantPreviewFingerprint) {
       session.relevantPreviewFingerprint = nextFingerprint;
       session.confirmationRequired = true;
-      session.error = "Профиль или боевой контекст изменился. Проверьте новый расчёт и нажмите запись ещё раз.";
+      session.error = "Профиль или боевой контекст изменился. Проверьте новый расчёт и выберите исход ещё раз.";
       render();
       return;
     }
@@ -666,12 +774,14 @@ function submitAttack() {
     return;
   }
   session.dirty = false;
+  session.naturalExceptionOutcome = null;
   session.firstAttempt = false;
   session.isExistingSequence = true;
   session.appliedUnsaved = result.persistence?.ok === false;
   const sequenceAfter = getWorkspaceAttackSequence(after, session.sequenceId);
   const attack = sequenceAfter?.resolvedAttacks?.find((entry) => entry.id === currentAttackId);
   if (!attack) {
+    session.readOnly = true;
     setError("Атака применена, но запись не найдена в текущем состоянии.");
     render();
     return;
@@ -693,7 +803,8 @@ function submitAttack() {
 }
 
 function submitDamage() {
-  if (!session || session.submitting || session.appliedUnsaved || !requireOwner()) return;
+  if (!session || session.currentStep !== "damage-input" ||
+      session.submitting || session.appliedUnsaved || !requireOwner()) return;
   const form = getWorkspaceHost()?.querySelector('[data-workspace-form="damage"]');
   if (!form || !session.selectedDamage) return;
   const values = parseForm(form);
@@ -728,34 +839,72 @@ function submitDamage() {
     render();
     return;
   }
+  const after = getState();
+  const recordedParent = getCurrentWorkspaceStrikeParent(after, sequence.id, attack.id);
   session.appliedUnsaved = result.persistence?.ok === false;
   session.dirty = false;
   session.selectedDamage = null;
+  session.strikeParent = recordedParent
+    ? { sequenceId: sequence.id, attackId: attack.id }
+    : null;
+  session.status = session.appliedUnsaved ? "Урон применён, но ещё не сохранён." : "Физический урон записан.";
   setStep("checkpoint", attack.id);
 }
 
 function applyStrikeToCurrentHit() {
-  if (!session || session.submitting || session.appliedUnsaved ||
-      !session.selectedDamage || !requireOwner()) return;
-  const form = getWorkspaceHost()?.querySelector('[data-workspace-form="damage"]');
+  if (!session || session.currentStep !== "strike-input" || session.submitting ||
+      session.appliedUnsaved || !requireOwner()) return;
+  const parentRef = session.strikeParent;
+  const state = getState();
+  const parent = parentRef
+    ? getCurrentWorkspaceStrikeParent(state, parentRef.sequenceId, parentRef.attackId) : null;
+  if (!parent || parent.sequence.id !== session.sequenceId) {
+    setError("Попадание больше не является текущим. Техника не применена.");
+    render();
+    return;
+  }
+  const form = getWorkspaceHost()?.querySelector('[data-workspace-form="strike"]');
   if (!form) return;
   const values = parseForm(form);
-  session.rawInputsByStep[session.currentStepKey] = {
-    ...session.rawInputsByStep[session.currentStepKey],
-    damage1: values.damage1 ?? "",
-    damage2: values.damage2 ?? "",
-    techniqueId: values.techniqueId ?? "",
-    paymentMode: values.paymentMode ?? "ki",
-    effect: values.effect ?? "",
-    practicedConditions: values.practicedConditions === true,
-  };
-  const { sequence, attack } = session.selectedDamage;
-  session.submitting = true;
+  session.rawInputsByStep[session.currentStepKey] = values;
+  session.dirty = true;
+  const techniqueId = values.techniqueId;
+  const technique = MONK_TECHNIQUE_BY_ID.get(techniqueId);
+  if (!technique || !getEffectiveSelectedTechniqueIds(state).has(techniqueId)) {
+    setError("Выберите технику, которая сейчас выбрана и доступна.");
+    render();
+    return;
+  }
+  if (technique.id === "ll-monk:crippling-strike" &&
+      !["blinded", "deafened", "unable-to-speak"].includes(values.effect)) {
+    setError("Выберите эффект «Калечащего удара».");
+    render();
+    return;
+  }
   const paymentMode = values.paymentMode || "ki";
-  const result = applyTechniqueToHit(session.owner, sequence.id, attack.id, values.techniqueId, {
+  if (!["ki", "practiced"].includes(paymentMode)) {
+    setError("Выберите допустимый способ оплаты.");
+    render();
+    return;
+  }
+  const battle = state.battleConsole?.current;
+  const ownTurn = !battle || battle.phase === "own-turn";
+  const runtime = state.monk?.techniqueRuntime ?? {};
+  if (paymentMode === "practiced" &&
+      (!technique.practicedStrikesEligible || !ownTurn ||
+       Number(state.combat?.practiced?.current) < 1 ||
+       runtime.practicedUsedThisTurn === true ||
+       values.practicedConditions !== true)) {
+    setError("Practiced требует подходящую технику, свой ход, доступный заряд и подтверждение безоружного попадания.");
+    render();
+    return;
+  }
+  const { sequence, attack } = parent;
+  session.submitting = true;
+  const result = applyTechniqueToHit(getWorkspaceAttackContext(), sequence.id, attack.id, values.techniqueId, {
     confirmed: true,
     paymentMode,
-    ownTurnConfirmed: paymentMode === "practiced" && values.practicedConditions === true,
+    ownTurnConfirmed: paymentMode === "practiced" && ownTurn,
     unarmedHitConfirmed: paymentMode === "practiced" && values.practicedConditions === true,
     effect: values.effect || undefined,
   }, operationId(`strike:${attack.id}`));
@@ -765,19 +914,24 @@ function applyStrikeToCurrentHit() {
     render();
     return;
   }
-  const updatedSequence = getWorkspaceAttackSequence(getState(), sequence.id);
+  const after = getState();
+  const updatedSequence = getWorkspaceAttackSequence(after, sequence.id);
   const updatedAttack = updatedSequence?.resolvedAttacks.find((entry) => entry.id === attack.id);
-  if (updatedSequence && updatedAttack) {
-    session.selectedDamage = { sequence: updatedSequence, attack: updatedAttack };
+  if (!updatedAttack?.techniqueApplicationId) {
+    session.readOnly = true;
+    setError("Техника применена, но её запись не найдена в текущем состоянии.");
+    render();
+    return;
   }
-  const raw = session.rawInputsByStep[session.currentStepKey];
-  session.dirty = Boolean(raw.damage1 || raw.damage2);
+  const application = (after.monk?.combatAssistant?.pendingApplications ?? [])
+    .find((entry) => entry.id === updatedAttack.techniqueApplicationId);
+  session.dirty = false;
   session.appliedUnsaved = result.persistence?.ok === false;
   session.error = "";
   session.status = result.persistence?.ok === false
     ? "Техника применена, но не сохранена."
-    : "Техника привязана к этому попаданию; повторная оплата для него недоступна.";
-  render();
+    : `Техника применена · ${application?.paymentAmount ?? "—"} ${application?.paymentKind === "practiced" ? "заряд Practiced потрачен" : "ци потрачено"} · результат мастера ожидается.`;
+  setStep("checkpoint", attack.id);
 }
 
 function startCommandAttack(kind, values, { parentFeature = null } = {}) {
@@ -1034,7 +1188,8 @@ function submitMissileReturn() {
 
 function markDamageOutside() {
   if (!session || session.submitting || session.appliedUnsaved ||
-      !session.selectedDamage || !requireOwner()) return;
+      session.currentStep !== "damage-input" || !session.selectedDamage ||
+      !requireOwner()) return;
   const { sequence, attack } = session.selectedDamage;
   session.submitting = true;
   const result = markWorkspaceDamageOutside(
@@ -1049,15 +1204,25 @@ function markDamageOutside() {
     render();
     return;
   }
+  const after = getState();
+  const recordedParent = getCurrentWorkspaceStrikeParent(after, sequence.id, attack.id);
   session.appliedUnsaved = result.persistence?.ok === false;
   session.selectedDamage = null;
+  session.strikeParent = recordedParent
+    ? { sequenceId: sequence.id, attackId: attack.id }
+    : null;
   session.dirty = false;
+  session.status = session.appliedUnsaved ? "Урон учтён вне приложения, изменение не сохранено." : "Урон учтён вне приложения.";
   setStep("checkpoint", attack.id);
   session.capabilities.canRecordDamage = false;
 }
 
 function handleSubmit(form) {
-  if (form.dataset.workspaceForm === "attack") submitAttack();
+  if (!session) return;
+  if (form.dataset.workspaceForm === "attack") {
+    session.error = "Итог рассчитан. Выберите «Попадание» или «Промах» после ответа ведущего.";
+    render();
+  }
   if (form.dataset.workspaceForm === "damage") submitDamage();
   if (form.dataset.workspaceForm === "command") submitCommand();
   if (form.dataset.workspaceForm === "missile-return") submitMissileReturn();
@@ -1065,6 +1230,7 @@ function handleSubmit(form) {
 
 function nextAttack() {
   if (!session || session.appliedUnsaved || !requireOwner() ||
+      !["checkpoint", "strike-input"].includes(session.currentStep) ||
       !session.capabilities.canContinueSequence || session.historicalOnly) return;
   const state = getState();
   const sequence = getSequence(state);
@@ -1083,10 +1249,67 @@ function nextAttack() {
   }
   const newAttackId = createId("sara-attack");
   session.rawInputsByStep[stepKey("attack-input", newAttackId)] = {};
+  session.strikeParent = null;
   session.relevantPreviewFingerprint = getRelevantFingerprint(state, sequence.id, false);
   session.dirty = false;
   session.capabilities.canRecordAttack = true;
   setStep("attack-input", newAttackId);
+}
+
+function selectAttackMode(mode) {
+  if (!session || session.workspaceType !== "attack" ||
+      session.currentStep !== "attack-input" ||
+      !["normal", "advantage", "disadvantage"].includes(mode) ||
+      session.submitting) return;
+  const draft = getStepDraft();
+  draft.rollMode = mode;
+  draft.dmExceptionConfirmed = false;
+  session.naturalExceptionOutcome = null;
+  clearAttackInputFeedback({ hideNaturalException: true });
+  session.dirty = true;
+  session.error = "";
+  const root = getWorkspaceHost();
+  const secondRoll = root?.querySelector("[data-workspace-second-d20]");
+  const secondInput = secondRoll?.querySelector('input[name="secondD20"]');
+  const needsSecond = mode === "advantage" || mode === "disadvantage";
+  if (secondRoll) secondRoll.hidden = !needsSecond;
+  if (secondInput) secondInput.required = needsSecond;
+  for (const button of root?.querySelectorAll('[data-workspace-action^="attack-mode-"]') ?? []) {
+    button.setAttribute("aria-pressed", String(button.dataset.workspaceAction === `attack-mode-${mode}`));
+  }
+  renderWorkspaceAttackPreview(session, getState());
+}
+
+function openStrikeInput() {
+  if (!session || session.currentStep !== "checkpoint" ||
+      session.appliedUnsaved || session.historicalOnly || !requireOwner()) return;
+  const parent = getCurrentWorkspaceStrikeParent(getState(), session.sequenceId, session.attackId);
+  const effective = getEffectiveSelectedTechniqueIds(getState());
+  if (!parent || ![
+    "ll-monk:empowered-strike",
+    "ll-monk:stunning-strike",
+    "ll-monk:crippling-strike",
+    "ll-monk:slowing-strike",
+  ].some((id) => effective.has(id))) return;
+  session.strikeParent = { sequenceId: parent.sequence.id, attackId: parent.attack.id };
+  const key = stepKey("strike-input", parent.attack.id);
+  session.rawInputsByStep[key] ??= {};
+  setStep("strike-input", parent.attack.id);
+}
+
+function continueWithoutTechnique() {
+  if (!session || !["checkpoint", "strike-input"].includes(session.currentStep) ||
+      session.appliedUnsaved || session.historicalOnly || !requireOwner()) return;
+  if (session.currentStep === "strike-input") {
+    delete session.rawInputsByStep[session.currentStepKey];
+    session.dirty = false;
+    session.error = "";
+  }
+  if (session.capabilities.canContinueSequence) {
+    nextAttack();
+  } else {
+    setStep("summary", session.attackId);
+  }
 }
 
 function confirmClose() {
@@ -1175,7 +1398,7 @@ function submitRollFollowup() {
   updateRollResult(result);
 }
 
-function handleAction(action) {
+function handleAction(action, button = null) {
   if (!session) return;
   if (action === "minimize") {
     minimizeWorkspace();
@@ -1186,7 +1409,14 @@ function handleAction(action) {
   } else if (action === "confirm-close") {
     confirmClose();
   } else if (action === "submit-attack") {
-    submitAttack();
+    session.error = "Выберите исход атаки кнопкой «Попадание» или «Промах».";
+    render();
+  } else if (action === "attack-hit") {
+    submitAttack("hit", button);
+  } else if (action === "attack-miss") {
+    submitAttack("miss", button);
+  } else if (action.startsWith("attack-mode-")) {
+    selectAttackMode(action.slice("attack-mode-".length));
   } else if (action === "submit-damage") {
     submitDamage();
   } else if (action === "apply-command") {
@@ -1199,6 +1429,10 @@ function handleAction(action) {
     submitMissileReturn();
   } else if (action === "apply-strike") {
     applyStrikeToCurrentHit();
+  } else if (action === "open-strike") {
+    openStrikeInput();
+  } else if (action === "no-technique-continue") {
+    continueWithoutTechnique();
   } else if (action === "submit-roll-followup") {
     submitRollFollowup();
   } else if (action === "roll-amend-mantle") {
@@ -1230,13 +1464,8 @@ function handleAction(action) {
   }
 }
 
-function handleSubmitFromAction(action) {
-  if (action === "submit-attack") submitAttack();
-}
-
-function handleHostAction(action) {
-  if (action === "submit-attack") handleSubmitFromAction(action);
-  else handleAction(action);
+function handleHostAction(action, button) {
+  handleAction(action, button);
 }
 
 export function reconcileWorkspaceAfterStateChange(state, metadata = null) {

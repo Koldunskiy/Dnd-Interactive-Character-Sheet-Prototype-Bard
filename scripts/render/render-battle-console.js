@@ -20,13 +20,15 @@ function renderInitiative(battle) {
   if (!initiative) return "";
   const details = initiative.sources.map((source) =>
     `${source.label} ${source.value >= 0 ? "+" : ""}${source.value}`).join(" · ");
-  return `<p class="battle-console-initiative">Инициатива: <strong>${initiative.rawD20} + ${escapeHtml(details)} = ${initiative.total}</strong></p>
+  return `<details class="battle-console-initiative">
+    <summary>Инициатива: <strong>${initiative.rawD20} + ${escapeHtml(details)} = ${initiative.total}</strong></summary>
     <form class="battle-console-init-form" data-battle-form="correct-initiative">
       <label>Исправить физический к20
         <input name="rawD20" type="number" min="1" max="20" required inputmode="numeric" value="${initiative.rawD20}">
       </label>
       <button type="submit" class="btn btn--utility">Исправить инициативу</button>
-    </form>`;
+    </form>
+  </details>`;
 }
 
 export function renderBattleConsole(state) {

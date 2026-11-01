@@ -18,14 +18,12 @@ test("W-01 preserves a dirty second-attack intent across minimize and resume", (
   const { dialog, unsubscribe } = installWorkspaceFixture();
   const opened = openNormalAttack();
   dialog.forms.attack = new FixtureForm("attack", {
-    kind: "attack-action", profileId: "unarmed", targetLabel: "",
-    rollMode: "normal", firstD20: "10", targetArmorClass: "",
-    dmHitResult: "hit", confirmSeparateAction: false,
+    rollMode: "normal", firstD20: "10", confirmSeparateAction: false,
   });
-  fireWorkspaceAction(dialog, "submit-attack");
+  fireWorkspaceAction(dialog, "attack-hit");
   dialog.forms.damage = new FixtureForm("damage", { damage1: "4" });
   fireWorkspaceAction(dialog, "submit-damage");
-  fireWorkspaceAction(dialog, "next-attack");
+  fireWorkspaceAction(dialog, "no-technique-continue");
 
   const before = getWorkspaceSessionForTests();
   const revision = getSessionContext().stateRevision;

@@ -9,6 +9,8 @@ import {
 import { calculateAttackDamage, calculateAttackPreview } from "../combat/sara-combat.js";
 import { getSessionContext, getState, isCurrentSession } from "../state.js";
 
+export { getSaraAttackCount };
+
 export function getWorkspaceAttackContext() {
   return getSessionContext();
 }
@@ -27,6 +29,25 @@ export function getWorkspaceAttackSequence(state, sequenceId) {
     sequence.id === sequenceId &&
     ["attack-action", "flurry", "bonus-unarmed", "reaction-unarmed", "returned-projectile"]
       .includes(sequence.kind)) ?? null;
+}
+
+export function getCurrentWorkspaceStrikeParent(state, sequenceId, attackId) {
+  const sequence = getWorkspaceAttackSequence(state, sequenceId);
+  const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
+  if (!sequence || !attack || attack.hitResult !== "hit" ||
+      attack.profileId !== "unarmed" ||
+      !["recorded", "recorded-outside-app"].includes(attack.damageStatus) ||
+      attack.techniqueApplicationId ||
+      !["open", "complete"].includes(sequence.status) ||
+      Number(sequence.turnMarker) !== Number(state.ui?.turn?.turnNumber ?? 1)) return null;
+  const battle = state.battleConsole?.current;
+  const reactionParent = ["reaction-unarmed", "returned-projectile"].includes(sequence.kind);
+  if (sequence.battleId && sequence.battleId !== battle?.id) return null;
+  if (battle && (battle.phase === "paused" || battle.phase === "ended" ||
+      reactionParent && !["waiting", "own-turn"].includes(battle.phase) ||
+      !reactionParent && battle.phase !== "own-turn" ||
+      sequence.ownTurnId && sequence.ownTurnId !== battle.ownTurnId)) return null;
+  return { sequence, attack };
 }
 
 export function findAwaitingNormalDamage(state, { sequenceId = null, attackId = null } = {}) {
