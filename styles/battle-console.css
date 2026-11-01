@@ -370,13 +370,16 @@
 
 .battle-resource-tiles {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .battle-resource-tile {
   display: grid;
   min-width: 0;
+  max-width: 100%;
   min-height: 72px;
   place-content: center;
   gap: 4px;
@@ -387,6 +390,14 @@
   background: var(--surface-2);
   font: inherit;
   font-weight: 700;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.battle-resource-tile > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .battle-resource-tile strong {
@@ -522,7 +533,6 @@
   .battle-resource-tile {
     min-height: 68px;
     padding: 7px 4px;
-    font-size: 0.9rem;
   }
 
   .battle-menu-heading {

@@ -17,8 +17,14 @@
 
 .action-workspace[open] {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   animation: workspace-appear 120ms ease-out;
+}
+
+.action-workspace > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .action-workspace::backdrop {
@@ -33,12 +39,17 @@
 
 .workspace-nav {
   display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: space-between;
   margin-bottom: 8px;
 }
 
 .workspace-nav .btn {
+  min-width: 0;
+  max-width: 100%;
   min-height: 48px;
   padding-inline: 10px;
 }
@@ -56,6 +67,9 @@
 
 .workspace-resources {
   display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
   gap: 14px;
   margin-top: 8px;
   color: var(--accent-strong);
@@ -63,6 +77,8 @@
 }
 
 .action-workspace__body {
+  min-width: 0;
+  max-width: 100%;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -72,11 +88,15 @@
 
 .action-workspace__body > * {
   width: min(100%, 620px);
+  min-width: 0;
+  max-width: 100%;
   margin-inline: auto;
 }
 
 .workspace-field {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   gap: 7px;
   margin: 12px 0;
   color: var(--muted);
@@ -85,6 +105,8 @@
 .workspace-field input,
 .workspace-field select {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 48px;
   padding: 9px 11px;
   border: 1px solid var(--line-gold);
@@ -290,6 +312,8 @@
 }
 
 .action-workspace__footer {
+  min-width: 0;
+  max-width: 100%;
   padding: 10px 14px max(10px, env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--line-gold);
   background: var(--surface-2);
@@ -297,11 +321,15 @@
 
 .action-workspace__footer > div {
   display: flex;
+  min-width: 0;
+  max-width: 100%;
   flex-wrap: wrap;
   gap: 8px;
 }
 
 .action-workspace__footer .btn {
+  min-width: 0;
+  max-width: 100%;
   min-height: 48px;
   flex: 1 1 140px;
   white-space: normal;

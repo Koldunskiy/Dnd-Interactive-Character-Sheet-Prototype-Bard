@@ -219,9 +219,27 @@ test("player-first attacks, natural exceptions, damage, and optional techniques 
     assert.equal(damagedSequence.resolvedAttacks[1].damageTotalBeforeTargetModifiers, 17);
     assert.equal(getState().ui.turn.actionUsed, actionUsedBeforeSecondAttack);
     assert.match(dialog.footer.innerHTML, /Завершить без техники/);
+    const kiBeforeFinalTechnique = getState().combat.ki.current;
+    fireWorkspaceAction(dialog, "open-strike");
+    dialog.forms.strike = new FixtureForm("strike", {
+      techniqueId: "ll-monk:stunning-strike",
+      paymentMode: "ki",
+    });
+    fireWorkspaceAction(dialog, "apply-strike");
+    const pendingSave = getState().monk.combatAssistant.pendingApplications.at(-1);
+    assert.equal(pendingSave.targetOutcome, "unknown");
+    assert.equal(getState().combat.ki.current, kiBeforeFinalTechnique - 1);
     fireWorkspaceAction(dialog, "no-technique-continue");
     assert.equal(getWorkspaceSessionForTests().currentStep, "summary");
-    assert.doesNotMatch(dialog.footer.innerHTML, /data-workspace-action="next-attack"/);
+    assert.match(dialog.footer.innerHTML, /data-workspace-action="finish-workspace"/);
+    const phaseBeforeFinish = getState().battleConsole?.current?.phase ?? null;
+    const actionBeforeFinish = getState().ui.turn.actionUsed;
+    const kiBeforeFinish = getState().combat.ki.current;
+    fireWorkspaceAction(dialog, "finish-workspace");
+    assert.equal(dialog.open, false);
+    assert.equal(getState().battleConsole?.current?.phase ?? null, phaseBeforeFinish);
+    assert.equal(getState().ui.turn.actionUsed, actionBeforeFinish);
+    assert.equal(getState().combat.ki.current, kiBeforeFinish);
   } finally {
     cleanup(unsubscribe);
   }

@@ -112,9 +112,19 @@ class FixtureDialog extends FixtureNode {
   toggleAttribute() {}
 }
 
+let reusableDialog = null;
+let reusableInvoker = null;
+
 export function installWorkspaceFixture() {
-  const dialog = new FixtureDialog();
-  const invoker = new FixtureNode();
+  const dialog = reusableDialog ??= new FixtureDialog();
+  const invoker = reusableInvoker ??= new FixtureNode();
+  dialog.open = false;
+  dialog.forms = {};
+  for (const node of [dialog.header, dialog.body, dialog.footer, dialog.status]) {
+    node.innerHTML = "";
+    node.textContent = "";
+    node.scrollTop = 0;
+  }
   invoker.dataset.workspaceInvoker = "normal-attack";
   const rollRoot = { hidden: true };
   globalThis.HTMLDialogElement = FixtureDialog;
@@ -184,7 +194,8 @@ export function fireWorkspaceAction(dialog, action, data = {}) {
 }
 
 export function fireWorkspaceInput(dialog, name, value, type = "number") {
-  const form = dialog.forms.attack ?? dialog.forms.damage ?? dialog.forms.strike;
+  const form = dialog.forms.attack ?? dialog.forms.damage ?? dialog.forms.strike ??
+    dialog.forms.command ?? dialog.forms.missileReturn;
   const control = form?.elements?.find((entry) => entry.name === name);
   if (control) {
     if (type === "checkbox") control.checked = value === true;
@@ -194,7 +205,7 @@ export function fireWorkspaceInput(dialog, name, value, type = "number") {
     name,
     value,
     type,
-    checked: false,
+    checked: type === "checkbox" && value === true,
     closest(selector) { return selector === "[data-workspace-field]" ? this : null; },
   };
   dialog.fire("input", { target: field });

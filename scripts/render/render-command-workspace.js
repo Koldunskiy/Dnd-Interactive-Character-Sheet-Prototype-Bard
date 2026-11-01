@@ -388,7 +388,14 @@ export function renderCommandWorkspace(session, state) {
       <span>HP <b data-workspace-hp>${state.combat?.hp?.current ?? "—"}/${derived.maxHitPoints}</b></span>
       <span>Ци <b data-workspace-ki>${state.combat?.ki?.current ?? "—"}</b></span>
     </div>`;
-  const body = session.currentStep === "command-input"
+  const body = session.currentStep === "confirm-close"
+    ? `<section class="workspace-close-confirmation">
+        <p>${session.dirty
+          ? "Этот ввод ещё не записан и будет потерян, если закрыть панель."
+          : "Закрыть рабочую панель?"}</p>
+        ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}
+      </section>`
+    : session.currentStep === "command-input"
     ? `<form data-workspace-form="command" novalidate>${renderCommandForm(session, state)}
         ${unavailableReason ? `<p class="workspace-error" role="status">${escapeHtml(unavailableReason)}</p>` : ""}
         ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}
@@ -401,7 +408,11 @@ export function renderCommandWorkspace(session, state) {
       ? renderRollResult(session, state)
     : `<p role="status">${escapeHtml(session.resultMessage ?? "Результат записан.")}</p>
       ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}`;
-  const footer = session.currentStep === "command-input" && session.scenarioId === "character-roll"
+  const footer = session.currentStep === "confirm-close"
+    ? `<button type="button" class="btn btn--utility" data-workspace-action="stay">Остаться</button>
+      <button type="button" class="btn btn--primary" data-workspace-action="confirm-close"
+        ${session.appliedUnsaved ? "disabled" : ""}>${session.dirty ? "Закрыть без применения" : "Закрыть"}</button>`
+    : session.currentStep === "command-input" && session.scenarioId === "character-roll"
     ? renderCharacterRollFooter(session)
     : session.currentStep === "command-input"
     ? `<button type="button" class="btn btn--primary" data-workspace-action="apply-command"
@@ -421,7 +432,7 @@ export function renderCommandWorkspace(session, state) {
   const retry = session.appliedUnsaved
     ? `<p class="workspace-error" role="alert">Применено, но не сохранено.</p>
       <button type="button" class="btn btn--utility" data-workspace-action="retry-save">Повторить сохранение</button>` : "";
-  return { header, body, footer: `${footer}${retry}` };
+  return { header, body, footer: session.appliedUnsaved ? retry : footer };
 }
 
 function renderRollResult(session, state) {

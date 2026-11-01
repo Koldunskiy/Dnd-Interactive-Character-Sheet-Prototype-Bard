@@ -159,14 +159,39 @@
 :root[data-theme="teal-slate"] body,
 :root[data-theme="teal-slate"] .page,
 :root[data-theme="teal-slate"] .app-shell,
+:root[data-theme="teal-slate"] .action-workspace,
+:root[data-theme="teal-slate"] .action-workspace__header,
+:root[data-theme="teal-slate"] .action-workspace__footer,
+:root[data-theme="teal-slate"] .battle-console,
+:root[data-theme="teal-slate"] .battle-player-console,
+:root[data-theme="teal-slate"] .battle-category-panel,
+:root[data-theme="teal-slate"] dialog,
+:root[data-theme="teal-slate"] .topbar,
 :root[data-theme="teal-slate"] .card,
 :root[data-theme="teal-slate"] [class*="-card"]:not([class*="__"]),
 :root[data-theme="teal-slate"] [class*="-panel"]:not([class*="__"]),
-:root[data-theme="teal-slate"] .battle-console,
-:root[data-theme="teal-slate"] .battle-command-card,
-:root[data-theme="teal-slate"] .battle-category-panel,
+:root[data-theme="teal-slate"] .battle-command-card {
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+}
+
+:root[data-theme="teal-slate"] body {
+  background: linear-gradient(180deg, var(--bg-elevated), var(--bg) 42%, var(--bg-deep));
+}
+
+:root[data-theme="teal-slate"] .page,
+:root[data-theme="teal-slate"] .app-shell {
+  background: linear-gradient(180deg, var(--bg), var(--bg-deep));
+}
+
+:root[data-theme="teal-slate"] .action-workspace,
 :root[data-theme="teal-slate"] dialog {
-  background-image: none;
+  background: var(--surface-2);
+}
+
+:root[data-theme="teal-slate"] .action-workspace__header,
+:root[data-theme="teal-slate"] .action-workspace__footer,
+:root[data-theme="teal-slate"] .topbar {
+  background: var(--surface-2);
 }
 
 :root[data-theme="teal-slate"] .workspace-error {
@@ -175,6 +200,29 @@
 
 :root[data-theme="wine-gold"] .workspace-success {
   border-inline-start: 3px solid var(--success);
+}
+
+:root[data-theme] .btn:disabled,
+:root[data-theme] .btn:disabled:hover,
+:root[data-theme] .sheet-action-btn:disabled,
+:root[data-theme] .sheet-action-btn:disabled:hover,
+:root[data-theme] .battle-command-card__open:disabled,
+:root[data-theme] .battle-command-card__open:disabled:hover {
+  opacity: 0.62;
+  transform: none;
+}
+
+:root[data-theme] .action-workspace__footer [data-workspace-action="attack-hit"]:not(:disabled) {
+  border-color: var(--success);
+  color: var(--text-strong);
+  background: var(--success-surface);
+}
+
+:root[data-theme] .workspace-roll-mode__option[aria-pressed="true"] {
+  border-color: var(--accent-strong);
+  color: var(--text-strong);
+  background: var(--selected-surface);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
 }
 
 .theme-control {

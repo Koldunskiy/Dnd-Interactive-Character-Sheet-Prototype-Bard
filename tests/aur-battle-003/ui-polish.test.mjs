@@ -27,6 +27,7 @@ import {
 import { getSaraRollBreakdown } from "../../scripts/rolls/providers/sara.js";
 import { renderBattleConsole } from "../../scripts/render/render-battle-console.js";
 import { renderCommandWorkspace } from "../../scripts/render/render-command-workspace.js";
+import { renderAttackWorkspace } from "../../scripts/render/render-attack-workspace.js";
 
 test("battle cards separate full-width titles from wrapping costs and keep full spell details accessible", () => {
   const markup = renderBattleConsole(structuredClone(sara));
@@ -56,6 +57,36 @@ test("battle cards and global surfaces have wrapping and theme-token safeguards"
   assert.match(tokens, /:root\[data-theme="teal-slate"\]/);
   assert.match(tokens, /--color-accent:\s*var\(--accent\)/);
   assert.match(workspaceCss, /font-size:\s*clamp\(4rem,\s*18vw,\s*4\.75rem\)/);
+  assert.match(battleCss, /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*8rem\),\s*1fr\)\)/);
+  assert.match(battleCss, /\.battle-resource-tile\s*\{[\s\S]*?overflow-wrap:\s*anywhere/);
+  assert.match(battleCss, /\.battle-resource-tile\s*>\s*\*\s*\{[\s\S]*?max-width:\s*100%/);
+  assert.match(workspaceCss, /\.action-workspace\[open\]\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(workspaceCss, /\.action-workspace__body\s*\{[\s\S]*?overflow-y:\s*auto/);
+  assert.match(workspaceCss, /\.workspace-nav\s*\{[\s\S]*?flex-wrap:\s*wrap/);
+  assert.match(tokens, /:root\[data-theme="teal-slate"\][\s\S]*?--panel-glow:\s*none/);
+  assert.match(themeCss, /:root\[data-theme\] \.btn:disabled:hover[\s\S]*?opacity:\s*0\.62/);
+  assert.match(themeCss, /:root\[data-theme\] \.action-workspace__footer \[data-workspace-action="attack-hit"\]:not\(:disabled\)/);
+  assert.match(themeCss, /:root\[data-theme\] \.workspace-roll-mode__option\[aria-pressed="true"\]/);
+});
+
+test("applied-unsaved workspace puts retry first and avoids replay controls", () => {
+  const command = renderCommandWorkspace({
+    scenarioId: "resource-correction",
+    currentStep: "command-result",
+    command: { titleRu: "Исправить ресурс", availability: { enabled: true } },
+    appliedUnsaved: true,
+  }, structuredClone(sara));
+  assert.match(command.footer, /data-workspace-action="retry-save"/);
+  assert.doesNotMatch(command.footer, /apply-command|data-workspace-action="done"/);
+
+  const attack = renderAttackWorkspace({
+    currentStep: "summary",
+    appliedUnsaved: true,
+    sequenceId: null,
+    command: { titleRu: "Атака" },
+  }, structuredClone(sara));
+  assert.match(attack.footer, /data-workspace-action="retry-save"/);
+  assert.doesNotMatch(attack.footer, /finish-workspace|next-attack|confirm-close/);
 });
 
 test("new roll form omits DC and consequence inputs and renders a live total", () => {

@@ -344,6 +344,13 @@ export function renderAttackWorkspace(session, state) {
     } else if (session.currentStep === "checkpoint" && session.capabilities.canContinueSequence) {
       footer = `<button type="button" class="btn btn--primary" data-workspace-action="next-attack">Следующий удар · ${sequence.resolvedAttacks.length + 1} из ${sequence.maximumAttacks}</button>
         <button type="button" class="btn btn--utility" data-workspace-action="summary">Завершить ввод атак</button>`;
+    } else if (session.currentStep === "summary" && sequence?.status === "open" &&
+        session.capabilities.canContinueSequence && !session.readOnly) {
+      footer = `<button type="button" class="btn btn--primary" data-workspace-action="next-attack">Продолжить следующий удар</button>
+        <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
+        <button type="button" class="btn btn--utility" data-workspace-action="close-attack-remainder">Закрыть остаток</button>`;
+    } else if (session.currentStep === "summary") {
+      footer = `<button type="button" class="btn btn--primary" data-workspace-action="finish-workspace">Готово · к моему ходу</button>`;
     } else {
       footer = `<button type="button" class="btn btn--primary" data-workspace-action="summary">К итогам</button>`;
     }
@@ -354,7 +361,7 @@ export function renderAttackWorkspace(session, state) {
   return {
     header,
     body,
-    footer: `${footer}${appliedUnsaved}`,
+    footer: session.appliedUnsaved ? appliedUnsaved : footer,
   };
 }
 
