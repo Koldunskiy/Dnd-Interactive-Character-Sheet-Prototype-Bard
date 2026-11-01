@@ -59,6 +59,13 @@ import {
 } from "./lore-notes.js";
 import { getSpellPersonalHint } from "./rule-reference.js";
 import { buildCharacterSpellCollections } from "./selectors/spellcasting.js";
+import {
+  applyResolvedTheme,
+  clearRuntimeCharacterThemeOverride,
+  getSelectedCharacterTheme,
+  resolveCharacterTheme,
+  setRuntimeCharacterThemeOverride,
+} from "./themes.js";
 
 import { createActionHandlers, STATELESS_ACTIONS } from "./actions.js";
 import {
@@ -659,6 +666,7 @@ function renderApp() {
   const spellsPanel = document.getElementById("spellsPanel");
 
   renderHeader(state);
+  syncThemePreferenceControl(state.profile?.id);
   renderPortraitMedia(state);
   renderQuickStats(state, derived);
   renderSidebarSummary(state);
@@ -674,6 +682,74 @@ function renderApp() {
   bindUi(document);
   bindBattleConsole(document.getElementById("meleePanel") ?? document);
   initPortraitControls();
+}
+
+function syncThemePreferenceControl(characterId) {
+  const control = document.getElementById("themePreference");
+  if (!characterId) return;
+  const preferences = readAppPreferences();
+  if (control) control.value = getSelectedCharacterTheme(
+    characterId,
+    preferences.status === "loaded" ? preferences.preferences : null,
+  );
+  const status = document.getElementById("themePreferenceStatus");
+  if (status && preferences.status !== "loaded" && preferences.status !== "missing") {
+    status.textContent = preferences.status === "invalid"
+      ? "Сохранённые настройки оформления повреждены. Текущая тема выбрана временно; исходные настройки не изменены."
+      : "Настройки оформления недоступны. Текущая тема выбрана временно.";
+    status.hidden = false;
+  } else if (status && !status.dataset.themeWriteFailure) {
+    status.textContent = "";
+    status.hidden = true;
+  }
+}
+
+function handleThemePreferenceChange(control) {
+  const characterId = getState().profile?.id;
+  const status = document.getElementById("themePreferenceStatus");
+  if (!characterId || !["character", "teal-slate", "wine-gold"].includes(control.value)) {
+    if (status) {
+      status.textContent = "Не удалось изменить оформление: выбрана неизвестная тема.";
+      status.hidden = false;
+    }
+    return;
+  }
+  const themeId = control.value === "character" ? null : control.value;
+  setRuntimeCharacterThemeOverride(characterId, themeId);
+  const preferences = readAppPreferences();
+  applyResolvedTheme(resolveCharacterTheme(
+    characterId,
+    preferences.status === "loaded" ? preferences.preferences : null,
+  ));
+  if (preferences.status === "invalid" || preferences.status === "unavailable") {
+    if (status) {
+      status.textContent = preferences.status === "invalid"
+        ? "Настройки оформления повреждены. Тема действует до перезапуска; сохранённые настройки не изменены."
+        : "Настройки оформления недоступны. Тема действует до перезапуска.";
+      status.hidden = false;
+    }
+    return;
+  }
+  const nextPreferences = preferences.status === "loaded"
+    ? preferences.preferences : {};
+  const themeOverrides = { ...(nextPreferences.themeOverrides ?? {}) };
+  if (themeId == null) delete themeOverrides[characterId];
+  else themeOverrides[characterId] = themeId;
+  const saved = saveAppPreferences({ ...nextPreferences, themeOverrides });
+  if (!saved.ok) {
+    if (status) {
+      status.textContent = "Оформление действует до перезапуска, но настройку не удалось сохранить.";
+      status.hidden = false;
+      status.dataset.themeWriteFailure = "true";
+    }
+    return;
+  }
+  clearRuntimeCharacterThemeOverride(characterId);
+  if (status) {
+    status.textContent = "";
+    status.hidden = true;
+    delete status.dataset.themeWriteFailure;
+  }
 }
 
 function isActiveSheetTarget(target) {
@@ -930,6 +1006,11 @@ function completeCharacterOpen(characterId, warning = "") {
   if (picker) picker.hidden = true;
   if (page) page.dataset.screen = "sheet";
   isSheetVisible = true;
+  const preferences = readAppPreferences();
+  applyResolvedTheme(resolveCharacterTheme(
+    characterId,
+    preferences.status === "loaded" ? preferences.preferences : null,
+  ));
   clearTechniqueDrafts(characterId);
   clearCharacterRollDraft();
   activateLoreCharacter(characterId);
@@ -1058,6 +1139,13 @@ function bindAppControls() {
     });
     button.dataset.bound = "true";
   });
+  document.querySelectorAll("[data-theme-preference]").forEach((control) => {
+    if (control.dataset.bound === "true") return;
+    control.addEventListener("change", () => {
+      if (control.isConnected) handleThemePreferenceChange(control);
+    });
+    control.dataset.bound = "true";
+  });
 }
 
 function getTelegramWebApp() {
@@ -1102,7 +1190,10 @@ function initApp() {
     return;
   }
   if (preferences.status === "invalid" || preferences.status === "unavailable") {
-    showPicker(`Настройки приложения недоступны: ${preferences.reason}`, true);
+    showPicker(
+      "Настройки приложения повреждены или недоступны. Выберите персонажа вручную; сохранённые настройки не изменены.",
+      true,
+    );
   } else {
     showPicker("Выберите персонажа.");
   }

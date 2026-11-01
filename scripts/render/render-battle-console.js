@@ -14,6 +14,7 @@ import {
 } from "../battle/command-registry.js";
 import { getDerivedStats } from "../calculations.js";
 import { getState } from "../state.js";
+import { isRollConsequencePending } from "../rolls/commands.js";
 
 function renderInitiative(battle) {
   const initiative = battle?.initiative;
@@ -41,19 +42,18 @@ export function renderBattleConsole(state) {
         attack.damageStatus === "awaiting-damage").length, 0) +
     (assistant.pendingApplications ?? []).filter((entry) =>
       !["success", "failure"].includes(entry.targetOutcome)).length;
-  const pendingRollCount = (state.characterRolls?.records ?? []).filter((entry) =>
-    ["pending", "awaiting-outcome"].includes(entry.consequence?.status)).length;
+  const pendingRolls = (state.characterRolls?.records ?? []).filter(isRollConsequencePending);
+  const pendingRollCount = pendingRolls.length;
   const pendingSaveControls = (assistant.pendingApplications ?? [])
     .filter((entry) => !["success", "failure"].includes(entry.targetOutcome))
     .slice(-3).map((entry) => `<button type="button" class="btn btn--utility"
       data-battle-command-open="pending-save:${escapeHtml(entry.id)}">
       Продолжить спасбросок цели · СЛ ${escapeHtml(String(entry.dc ?? "—"))}</button>`).join("");
-  const pendingRollControls = (state.characterRolls?.records ?? [])
-    .filter((entry) => entry.kind === "saving-throw" &&
-      entry.consequence?.status === "pending" && typeof entry.dcResult === "boolean")
+  const pendingRollControls = pendingRolls
     .slice(-3).map((entry) => `<button type="button" class="btn btn--utility"
       data-battle-command-open="pending-roll:${escapeHtml(entry.id)}">
-      Продолжить последствие спасброска · ${escapeHtml(entry.label ?? "цель")}</button>`).join("");
+      ${entry.consequence.status === "awaiting-outcome" ? "Указать исход" : "Продолжить последствие"} ·
+      ${escapeHtml(entry.label ?? "бросок")}</button>`).join("");
   const turn = state.ui?.turn ?? {};
   const budget = getActionBudget(state);
   const minimizedWorkspace = getMinimizedWorkspaceSession();
@@ -67,8 +67,10 @@ export function renderBattleConsole(state) {
   const commandCards = commands.map((entry) => {
     if (entry.id === "movement-reference") {
         return `<article class="battle-command-card battle-command-card--reference">
-          <h3>${escapeHtml(entry.titleRu)}</h3><p>${escapeHtml(entry.ruleReference)}</p>
-          <span>${escapeHtml(entry.resourceCost)}</span>
+          <h3 class="battle-command-card__title">${escapeHtml(entry.titleRu)}</h3>
+          <div class="battle-command-card__chips">${entry.displayCostTokens
+            .map((token) => `<span class="battle-command-card__chip">${escapeHtml(token)}</span>`).join("")}</div>
+          <p>${escapeHtml(entry.ruleReference)}</p>
         </article>`;
     }
     return `<article class="battle-command-card ${entry.availability.enabled ? "" : "is-unavailable"}">
@@ -76,10 +78,13 @@ export function renderBattleConsole(state) {
           data-battle-command-open="${escapeHtml(entry.id)}"
           ${entry.availability.enabled ? "" : "disabled"}>
           <span class="battle-command-card__title">${escapeHtml(entry.titleRu)}</span>
-          <span class="battle-command-card__cost">${escapeHtml(entry.resourceCost)}</span>
         </button>
-        <p>${escapeHtml(entry.trigger)}</p>
+        <div class="battle-command-card__chips">${entry.displayCostTokens
+          .map((token) => `<span class="battle-command-card__chip">${escapeHtml(token)}</span>`).join("")}</div>
+        <p>${escapeHtml(entry.displaySummaryRu ?? entry.trigger)}</p>
         ${entry.availability.reasonRu ? `<p class="battle-command-card__reason">${escapeHtml(entry.availability.reasonRu)}</p>` : ""}
+        ${entry.ruleReference && entry.ruleReference !== entry.trigger
+          ? `<details class="battle-command-card__details"><summary>Подробнее</summary><p>${escapeHtml(entry.ruleReference)}</p></details>` : ""}
         ${entry.navigationGroups.length > 1 ? `<small>Также: ${escapeHtml(entry.navigationGroups.filter((group) => group !== category.id).map((group) => BATTLE_CATEGORIES.find((item) => item.id === group)?.label ?? group).join(", "))}</small>` : ""}
     </article>`;
   }).join("");

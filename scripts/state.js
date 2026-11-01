@@ -10,6 +10,7 @@ import {
   APP_PREFERENCES_KEY,
   getCharacterDescriptor
 } from "./characters.js";
+import { isThemeId } from "./themes.js";
 import { getDerivedStats } from "./calculations.js";
 
 let state = normalizeCharacterState(character);
@@ -201,7 +202,10 @@ export function readAppPreferences(storage) {
     }
     if (!value || typeof value !== "object" || Array.isArray(value) ||
         (value.lastCharacterId != null && !getCharacterDescriptor(value.lastCharacterId)) ||
-        (value.lastTab != null && typeof value.lastTab !== "object")) {
+        (value.lastTab != null && (typeof value.lastTab !== "object" || Array.isArray(value.lastTab))) ||
+        (value.themeOverrides != null &&
+          (typeof value.themeOverrides !== "object" || Array.isArray(value.themeOverrides) ||
+            Object.values(value.themeOverrides).some((themeId) => !isThemeId(themeId))))) {
       return { status: "invalid", reason: "Application preferences have an invalid shape." };
     }
     return { status: "loaded", preferences: value };

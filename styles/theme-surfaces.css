@@ -1,0 +1,175 @@
+:root[data-theme] body {
+  color: var(--text);
+  background:
+    var(--panel-glow),
+    linear-gradient(180deg, var(--bg-elevated), var(--bg) 42%, var(--bg-deep));
+}
+
+:root[data-theme] .page,
+:root[data-theme] .app-shell {
+  background:
+    var(--panel-glow),
+    linear-gradient(180deg, var(--bg), var(--bg-deep));
+}
+
+:root[data-theme] .topbar,
+:root[data-theme] .card,
+:root[data-theme] [class*="-card"]:not([class*="__"]),
+:root[data-theme] [class*="-panel"]:not([class*="__"]),
+:root[data-theme] .battle-command-card,
+:root[data-theme] .battle-category-panel,
+:root[data-theme] .battle-console-hud > span,
+:root[data-theme] .workspace-resource,
+:root[data-theme] .character-picker {
+  border-color: var(--line);
+  background:
+    var(--panel-glow),
+    linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow);
+}
+
+:root[data-theme] .btn,
+:root[data-theme] .sheet-action-btn,
+:root[data-theme] .tab-btn,
+:root[data-theme] .battle-command-card__open {
+  border-color: var(--line);
+  color: var(--text);
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
+}
+
+:root[data-theme] .btn:hover,
+:root[data-theme] .sheet-action-btn:hover,
+:root[data-theme] .tab-btn:hover,
+:root[data-theme] .battle-command-card__open:hover {
+  border-color: var(--accent-border);
+  color: var(--text-strong);
+  background: linear-gradient(180deg, var(--accent-wash), var(--surface-2));
+}
+
+:root[data-theme] .btn--primary,
+:root[data-theme] .tab-btn.is-active,
+:root[data-theme] .battle-category-tabs [role="tab"][aria-selected="true"] {
+  border-color: var(--accent-border);
+  color: var(--text-strong);
+  background:
+    radial-gradient(circle at top center, var(--accent-glow), transparent 68%),
+    linear-gradient(180deg, var(--selected-surface), var(--surface-2));
+}
+
+:root[data-theme] .btn--utility,
+:root[data-theme] .battle-command-card__chip,
+:root[data-theme] .battle-budget-item,
+:root[data-theme] .workspace-resources > span {
+  border-color: var(--line);
+  color: var(--muted);
+  background: var(--surface-soft);
+}
+
+:root[data-theme] .input,
+:root[data-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+:root[data-theme] select,
+:root[data-theme] textarea,
+:root[data-theme] .inventory-input,
+:root[data-theme] .inventory-textarea,
+:root[data-theme] .battle-console-init-form input {
+  border-color: var(--line);
+  color: var(--text);
+  background: var(--bg-deep);
+}
+
+:root[data-theme] .input::placeholder,
+:root[data-theme] input::placeholder,
+:root[data-theme] textarea::placeholder {
+  color: var(--muted-2);
+}
+
+:root[data-theme] .input:focus,
+:root[data-theme] input:focus,
+:root[data-theme] select:focus,
+:root[data-theme] textarea:focus,
+:root[data-theme] .inventory-input:focus,
+:root[data-theme] .inventory-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+:root[data-theme] .tab-btn.is-active::before {
+  border-color: var(--accent-border);
+}
+
+:root[data-theme] .battle-command-card__title,
+:root[data-theme] .battle-command-card__details summary,
+:root[data-theme] .battle-command-card__chip,
+:root[data-theme] .battle-category-tabs [role="tab"][aria-selected="true"],
+:root[data-theme] .workspace-attack-result__label {
+  color: var(--accent-strong);
+}
+
+:root[data-theme] dialog {
+  border-color: var(--line);
+  color: var(--text);
+  background:
+    var(--panel-glow),
+    linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow-lg);
+}
+
+:root[data-theme] dialog::backdrop {
+  background: var(--backdrop);
+}
+
+:root[data-theme] :focus-visible {
+  outline-color: var(--accent-strong);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+:root[data-theme] .workspace-error,
+:root[data-theme] .battle-console-status,
+:root[data-theme] .spell-diagnostic,
+:root[data-theme] .lore-notes-issue,
+:root[data-theme] [role="alert"] {
+  color: var(--error);
+}
+
+:root[data-theme] .workspace-warning,
+:root[data-theme] .spell-limit-warning,
+:root[data-theme] .lore-note-status,
+:root[data-theme] [data-status="warning"] {
+  color: var(--warning);
+}
+
+:root[data-theme] .workspace-success,
+:root[data-theme] [data-status="success"] {
+  color: var(--success);
+}
+
+.theme-control {
+  display: grid;
+  gap: 5px;
+  min-width: 10rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.theme-control select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg-deep);
+}
+
+.theme-preference-status {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--warning);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 899px) {
+  .theme-control {
+    flex: 1 1 100%;
+  }
+}

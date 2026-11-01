@@ -4,6 +4,7 @@ import { MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
 import { getSaraAttackCount } from "../actions/sara-combat.js";
 import { getActiveBattle, getActionBudget } from "./model.js";
 import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
+import { ABILITY_LABELS_RU } from "../rules.js";
 
 export const BATTLE_CATEGORIES = Object.freeze([
   Object.freeze({ id: "action", label: "Действие" }),
@@ -25,12 +26,25 @@ function isReactionWindow(state) {
   return !battle || ["waiting", "own-turn"].includes(battle.phase);
 }
 
-function command(id, titleRu, navigationGroups, activationBudget, resourceCost, trigger, ruleReference, availability) {
+function command(
+  id,
+  titleRu,
+  navigationGroups,
+  activationBudget,
+  resourceCost,
+  trigger,
+  ruleReference,
+  availability,
+  { displaySummaryRu = null, displayCostTokens = null } = {},
+) {
   const activationCostLabel = ({
     action: "Действие",
     "bonus-action": "Бонусное действие",
     reaction: "Реакция",
   })[activationBudget];
+  const costWithoutActivation = activationCostLabel && resourceCost.startsWith(`${activationCostLabel} · `)
+    ? resourceCost.slice(activationCostLabel.length + 3)
+    : resourceCost === activationCostLabel ? "" : resourceCost;
   return Object.freeze({
     id,
     scenarioId: id,
@@ -42,6 +56,9 @@ function command(id, titleRu, navigationGroups, activationBudget, resourceCost, 
         ? resourceCost
         : `${activationCostLabel} · ${resourceCost}`
       : resourceCost,
+    displayCostTokens: Object.freeze(displayCostTokens ??
+      [activationCostLabel, costWithoutActivation].filter(Boolean)),
+    displaySummaryRu,
     trigger,
     effectiveSelectionRequirement: id.startsWith("racial-spell:")
       ? "Сохранённая запись расового заклинания"
@@ -83,6 +100,19 @@ function getDefinitions(state, derived, effective, budget) {
     if (spell.concentration && state.combat?.concentration && availability.enabled) {
       availability.reasonRu = `Потребуется явно заменить концентрацию «${state.combat.concentration}».`;
     }
+    const saveLabel = spell.save ? ABILITY_LABELS_RU[spell.save] : null;
+    const displaySummaryRu = spell.id === "animal-friendship-2014"
+      ? "Подходящая змея; спасбросок Мудрости."
+      : spell.id === "suggestion-2014"
+        ? "Цель слышит и понимает предложение; спасбросок Мудрости."
+        : saveLabel ? `Спасбросок ${saveLabel} цели.` : `${spell.range ?? "Условия по записи"}.`;
+    const displayCostTokens = [
+      "Действие",
+      "Без ци",
+      spell.mode === "limited-racial"
+        ? `${uses?.max ?? 1}/долгий отдых · осталось ${uses?.current ?? 0}`
+        : ["cantrip", "at-will-racial"].includes(spell.mode) ? "Без лимита" : null,
+    ].filter(Boolean);
     return command(
       `racial-spell:${spell.id}`,
       spell.nameRu ?? spellTitleRu(spell.id),
@@ -92,6 +122,7 @@ function getDefinitions(state, derived, effective, budget) {
       `${spell.range ?? "Дальность по записи"} · компоненты: ${(spell.components ?? []).join(", ")} · ${spell.description}`,
       spell.description,
       availability,
+      { displaySummaryRu, displayCostTokens },
     );
   });
 

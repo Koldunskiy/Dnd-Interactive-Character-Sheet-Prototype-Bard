@@ -12,7 +12,7 @@ import {
   installWorkspaceFixture,
 } from "./workspace-fixture.mjs";
 
-test("shared command workspace applies attack, manual action, correction, and own-check scenarios", () => {
+test("shared workspace applies battle commands, explicit roll outcomes, and save consequences", () => {
   const { dialog, unsubscribe } = installWorkspaceFixture();
 
   const flurry = openSaraBattleCommand("flurry");
@@ -68,12 +68,50 @@ test("shared command workspace applies attack, manual action, correction, and ow
     advantageReason: "",
     disadvantageReason: "",
   });
-  fireWorkspaceAction(dialog, "apply-command");
+  fireWorkspaceAction(dialog, "record-roll", { rollOutcome: "success" });
   const record = getState().characterRolls.records.at(-1);
   assert.equal(record.skillId, "athletics");
   assert.equal(record.chosenD20, 12);
+  assert.equal(record.dc, null);
+  assert.equal(record.manualOutcome, "success");
   assert.equal(getWorkspaceSessionForTests().currentStep, "roll-result");
   assert.equal(getState().ui.turn.actionUsed, true);
+
+  disposeWorkspaceOwner(getSessionContext(), "test-complete");
+  assert.equal(openSaraBattleCommand("character-roll").ok, true);
+  dialog.forms.command = new FixtureForm("command", {
+    kind: "saving-throw",
+    id: "dexterity",
+    rollMode: "normal",
+    firstD20: "5",
+    secondD20: "",
+    dc: "18",
+    incomingDamage: "99",
+    consequenceProfile: "save-half",
+    spellSaveSource: false,
+    advantageReason: "",
+    disadvantageReason: "",
+  });
+  fireWorkspaceAction(dialog, "record-roll", { rollOutcome: "failure" });
+  assert.ok(getState().characterRolls, getWorkspaceSessionForTests()?.error);
+  const saveRecord = getState().characterRolls.records.at(-1);
+  assert.equal(saveRecord.dc, null);
+  assert.equal(saveRecord.incomingDamage, null);
+  assert.equal(saveRecord.consequence.status, "awaiting-damage-decision");
+
+  fireWorkspaceAction(dialog, "roll-has-damage");
+  dialog.forms.rollConsequence = new FixtureForm("roll-consequence", {
+    damage: "9",
+    damageBasis: "full-effect",
+    effectProfile: "save-half",
+  });
+  const hpBefore = getState().combat.hp.current;
+  fireWorkspaceAction(dialog, "roll-apply-consequence");
+  const resolved = getState().characterRolls.records.at(-1);
+  assert.equal(resolved.consequence.finalDamage, 4);
+  assert.equal(resolved.consequence.evasionUsed, true);
+  assert.equal(getState().combat.hp.current, hpBefore - 4);
+  assert.equal(getWorkspaceSessionForTests().currentStep, "roll-result");
 
   disposeWorkspaceOwner(getSessionContext(), "test-complete");
   unsubscribe();

@@ -1,7 +1,7 @@
 .battle-console {
   border: 1px solid var(--line-gold);
   background:
-    radial-gradient(circle at 90% 0, rgba(128, 83, 169, 0.13), transparent 35%),
+    radial-gradient(circle at 90% 0, var(--accent-glow-secondary), transparent 35%),
     var(--surface-2);
 }
 
@@ -46,7 +46,7 @@
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgba(5, 3, 7, 0.24);
+  background: var(--bg-deep);
   overflow-wrap: anywhere;
 }
 
@@ -62,7 +62,7 @@
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(5, 3, 7, 0.45);
+  background: var(--bg-deep);
 }
 
 .battle-category-tabs [role="tab"] {
@@ -81,7 +81,7 @@
 .battle-category-tabs [role="tab"][aria-selected="true"] {
   border-color: var(--line-gold);
   color: var(--text);
-  background: rgba(128, 83, 169, 0.24);
+  background: var(--selected-surface);
 }
 
 .battle-category-tabs [role="tab"]:focus-visible,
@@ -96,7 +96,7 @@
   border: 1px solid var(--line);
   border-top: 0;
   border-radius: 0 0 14px 14px;
-  background: rgba(5, 3, 7, 0.28);
+  background: var(--bg-deep);
 }
 
 .battle-category-panel > h3 {
@@ -110,7 +110,10 @@
 }
 
 .battle-command-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
+  max-width: 100%;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -123,47 +126,99 @@
   overflow-wrap: anywhere;
 }
 
+.battle-command-card__open {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 48px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line-gold);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--accent-wash);
+  text-align: left;
+  font: inherit;
+  font-weight: 700;
+}
+
+.battle-command-card__title {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.battle-command-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 8px;
+}
+
+.battle-command-card__chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--accent-strong);
+  background: var(--surface-soft);
+  font-size: 0.84em;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.battle-command-card__details {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 7px;
+  color: var(--muted);
+}
+
+.battle-command-card__details summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--accent-strong);
+}
+
+.battle-command-card__details p {
+  margin-top: 4px;
+}
+
 .battle-command-card small,
 .battle-command-card__reason {
   display: block;
   margin-top: 7px;
   color: var(--accent-strong);
   overflow-wrap: anywhere;
-}
-
-.battle-command-card__open {
-  display: flex;
-  width: 100%;
-  min-height: 48px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 7px 10px;
-  border: 1px solid var(--line-gold);
-  border-radius: 9px;
-  color: var(--text);
-  background: rgba(128, 83, 169, 0.18);
-  text-align: left;
-  font: inherit;
-  font-weight: 700;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .battle-command-card__open:disabled {
   border-color: var(--line);
   color: var(--muted);
-  background: rgba(5, 3, 7, 0.24);
+  background: var(--bg-deep);
   opacity: 1;
 }
 
-.battle-command-card__cost {
-  flex: none;
-  color: var(--accent-strong);
-  font-size: 0.88em;
+.battle-command-card--reference .battle-command-card__chips {
+  margin-top: 8px;
 }
 
-.battle-command-card--reference .battle-command-card__cost {
-  display: inline-block;
-  margin-top: 8px;
+.battle-command-card--reference .battle-command-card__chip {
+  color: var(--muted);
 }
 
 .battle-console-pending {
@@ -207,7 +262,7 @@
 
 .battle-console-status {
   min-height: 1.4em;
-  color: #ff9a9a;
+  color: var(--error);
 }
 
 @media (max-width: 520px) {
@@ -227,5 +282,9 @@
   .battle-console-hud {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
+  }
+
+  .battle-command-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

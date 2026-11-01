@@ -36,6 +36,8 @@ import { getSaraBattleCommandRegistry } from "../battle/command-registry.js";
 import {
   amendCharacterRoll,
   correctCharacterRollOutcome,
+  isRollConsequencePending,
+  recordAndAmendCharacterRoll,
   recordCharacterRoll,
   resolveCharacterRollConsequence,
 } from "../rolls/commands.js";
@@ -52,13 +54,15 @@ import {
 } from "./host.js";
 import {
   renderCommandWorkspace,
+  renderWorkspaceConsequencePreview,
+  renderWorkspaceRollPreview,
 } from "../render/render-command-workspace.js";
 import {
   renderAttackWorkspace,
   renderWorkspaceAttackPreview,
   renderWorkspaceDamagePreview,
 } from "../render/render-attack-workspace.js";
-import { retryPersistedState, getState } from "../state.js";
+import { getSessionContext, retryPersistedState, getState } from "../state.js";
 import { MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
 import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
 
@@ -119,17 +123,20 @@ function getCommandDescriptor(state, commandId) {
   if (commandId.startsWith("pending-roll:")) {
     const rollId = commandId.slice("pending-roll:".length);
     const roll = state.characterRolls?.records?.find((entry) =>
-      entry.id === rollId && entry.kind === "saving-throw" &&
-      entry.consequence?.status === "pending" && typeof entry.dcResult === "boolean");
+      entry.id === rollId && isRollConsequencePending(entry));
     if (!roll) return null;
     return {
       id: commandId,
       scenarioId: commandId,
-      titleRu: "Последствие спасброска",
+      titleRu: roll.consequence.status === "awaiting-outcome"
+        ? roll.kind === "saving-throw" ? "Исход спасброска" : "Исход проверки"
+        : "Последствие спасброска",
       navigationGroups: [],
       activationBudget: "none",
       resourceCost: "Без расхода",
-      trigger: "Применить урон с учётом временных HP или отметить учёт вне листа.",
+      trigger: roll.consequence.status === "awaiting-outcome"
+        ? "Записать полученный от ведущего исход без повторного броска."
+        : "Указать наличие урона, применить его или отметить учёт вне листа.",
       parentRequirement: roll.id,
       availability: { enabled: true, reasonCode: null, reasonRu: "" },
     };
@@ -194,6 +201,11 @@ function render() {
   if (ki) ki.textContent = String(state.combat?.ki?.current ?? "—");
   if (session.currentStep === "attack-input") renderWorkspaceAttackPreview(session, state);
   if (session.currentStep === "damage-input") renderWorkspaceDamagePreview(session);
+  if (session.workspaceType === "command" && session.scenarioId === "character-roll" &&
+      session.currentStep === "command-input") renderWorkspaceRollPreview(session, state);
+  if (session.workspaceType === "command" && session.currentStep === "roll-result") {
+    renderWorkspaceConsequencePreview(session, state);
+  }
 }
 
 function clearAttackInputFeedback({ hideNaturalException = false } = {}) {
@@ -250,6 +262,15 @@ function updateInput(field) {
     renderWorkspaceAttackPreview(session, getState());
   } else if (session.currentStep === "damage-input") {
     renderWorkspaceDamagePreview(session);
+  } else if (session.workspaceType === "command" &&
+      session.scenarioId === "character-roll" && session.currentStep === "command-input" &&
+      ["kind", "spellSaveSource"].includes(field.name)) {
+    render();
+  } else if (session.workspaceType === "command" &&
+      session.scenarioId === "character-roll" && session.currentStep === "command-input") {
+    renderWorkspaceRollPreview(session, getState());
+  } else if (session.workspaceType === "command" && session.currentStep === "roll-result") {
+    renderWorkspaceConsequencePreview(session, getState());
   } else if (session.currentStep === "strike-input" &&
       ["techniqueId", "paymentMode"].includes(field.name)) {
     render();
@@ -439,6 +460,10 @@ export function openSaraBattleCommand(commandId, invoker = null) {
   const state = getState();
   const owner = getWorkspaceAttackContext();
   const command = getCommandDescriptor(state, commandId);
+  const pendingRollRecord = commandId.startsWith("pending-roll:")
+    ? state.characterRolls?.records?.find((entry) =>
+      entry.id === commandId.slice("pending-roll:".length)) ?? null
+    : null;
   if (!command) return { ok: false, reason: "Неизвестная команда боевого пульта." };
   if (!command.availability.enabled) {
     return { ok: false, reason: command.availability.reasonRu || "Команда сейчас недоступна." };
@@ -472,8 +497,8 @@ export function openSaraBattleCommand(commandId, invoker = null) {
     sequenceId: createId(`sara-${commandId}`),
     sequenceKind: commandId,
     attackId: createId("sara-attack"),
-    currentStep: "command-input",
-    currentStepKey: stepKey("command-input", commandId),
+    currentStep: pendingRollRecord ? "roll-result" : "command-input",
+    currentStepKey: stepKey(pendingRollRecord ? "roll-result" : "command-input", commandId),
     rawInputsByStep: {},
     operationIdsByIntent: {},
     relevantPreviewFingerprint: "",
@@ -485,6 +510,8 @@ export function openSaraBattleCommand(commandId, invoker = null) {
     internalScrollByStep: {},
     returnTarget: null,
     expectedConcentration: String(state.combat?.concentration ?? ""),
+    rollRecord: pendingRollRecord,
+    resultMessage: pendingRollRecord ? `${pendingRollRecord.label}: итог ${pendingRollRecord.total}.` : "",
     capabilities: {
       canRecordAttack: false,
       canRecordDamage: false,
@@ -499,14 +526,12 @@ export function openSaraBattleCommand(commandId, invoker = null) {
       kind: "ability-check",
       id: "strength",
       rollMode: "normal",
-      consequenceProfile: "none",
       firstD20: "",
       secondD20: "",
-      dc: "",
-      incomingDamage: "",
       spellSaveSource: false,
       advantageReason: "",
       disadvantageReason: "",
+      timingConfirmed: false,
     };
   }
   if (invoker) {
@@ -997,6 +1022,163 @@ function commandOutcomeSummary(result) {
   return "Результат записан.";
 }
 
+function getWhitelistedRollInput(values) {
+  return {
+    kind: values.kind,
+    id: values.id,
+    rollMode: values.rollMode,
+    firstD20: values.firstD20,
+    secondD20: values.secondD20,
+    spellSaveSource: values.spellSaveSource === true,
+    advantageReason: typeof values.advantageReason === "string" ? values.advantageReason : "",
+    disadvantageReason: typeof values.disadvantageReason === "string" ? values.disadvantageReason : "",
+  };
+}
+
+function finishRollMutation(result) {
+  session.submitting = false;
+  if (result.status !== "applied") {
+    setError(result.reason);
+    render();
+    return false;
+  }
+  session.dirty = false;
+  session.rollRecord = result.record;
+  session.resultMessage = `${result.record.label}: к20 ${result.record.rawD20Rolls.join(" и ")}; итог ${result.record.total}.`;
+  session.appliedUnsaved = result.persistence?.ok === false;
+  session.status = session.appliedUnsaved ? "Применено, но не сохранено." : "";
+  session.error = "";
+  session.currentStep = "roll-result";
+  session.currentStepKey = stepKey("roll-result", session.scenarioId);
+  session.stepLabel = "Результат броска · исход и последствие";
+  session.parentOperationId = session.operationIdsByIntent.lastRollOperation ?? null;
+  render();
+  return true;
+}
+
+function submitCharacterRoll(outcome) {
+  if (!session || session.workspaceType !== "command" ||
+      session.scenarioId !== "character-roll" || session.currentStep !== "command-input" ||
+      session.submitting || session.appliedUnsaved ||
+      !["success", "failure", "unknown"].includes(outcome)) return;
+  if (!requireOwner()) {
+    setError("stale-session");
+    render();
+    return;
+  }
+  const form = getWorkspaceHost()?.querySelector('[data-workspace-form="command"]');
+  if (!form) return;
+  const values = parseForm(form);
+  session.rawInputsByStep[session.currentStepKey] = values;
+  session.dirty = true;
+  const currentCommand = getCommandDescriptor(getState(), "character-roll");
+  if (!currentCommand?.availability.enabled) {
+    setError(currentCommand?.availability.reasonRu || "Команда броска больше недоступна.");
+    render();
+    return;
+  }
+  session.submitting = true;
+  const operation = operationId("record-character-roll");
+  session.operationIdsByIntent.lastRollOperation = operation;
+  const result = recordCharacterRoll(getWhitelistedRollInput(values), {
+    owner: getSessionContext(),
+    operationId: operation,
+    outcome: outcome === "unknown" ? null : outcome,
+    askForDamage: true,
+  });
+  finishRollMutation(result);
+}
+
+function submitRollWithAmendment(techniqueId) {
+  if (!session || session.workspaceType !== "command" ||
+      session.scenarioId !== "character-roll" || session.currentStep !== "command-input" ||
+      session.submitting || session.appliedUnsaved) return;
+  if (!requireOwner()) {
+    setError("stale-session");
+    render();
+    return;
+  }
+  const form = getWorkspaceHost()?.querySelector('[data-workspace-form="command"]');
+  if (!form) return;
+  const values = parseForm(form);
+  session.rawInputsByStep[session.currentStepKey] = values;
+  session.dirty = true;
+  session.submitting = true;
+  const operation = operationId(`record-roll-${techniqueId}`);
+  session.operationIdsByIntent.lastRollOperation = operation;
+  const result = recordAndAmendCharacterRoll(
+    getWhitelistedRollInput(values),
+    techniqueId,
+    {
+      owner: getSessionContext(),
+      operationId: operation,
+      timingConfirmed: values.timingConfirmed === true,
+    },
+  );
+  finishRollMutation(result);
+}
+
+function submitRollOutcome(outcome) {
+  if (session?.currentStep === "command-input" && session.scenarioId === "character-roll") {
+    submitCharacterRoll(outcome);
+    return;
+  }
+  const record = session?.rollRecord;
+  if (!session || session.currentStep !== "roll-result" || !record ||
+      (!session.correctingOutcome &&
+        (record.manualOutcome != null || record.dcResult != null)) ||
+      !["success", "failure"].includes(outcome) ||
+      session.submitting || session.appliedUnsaved) return;
+  if (!requireOwner()) {
+    setError("stale-session");
+    render();
+    return;
+  }
+  session.submitting = true;
+  const result = correctCharacterRollOutcome(record.id, outcome, {
+    owner: getSessionContext(),
+    operationId: createId("roll-outcome"),
+  });
+  session.submitting = false;
+  if (result.status === "applied") session.correctingOutcome = false;
+  updateRollResult(result);
+}
+
+function submitRollConsequence(resolution) {
+  const record = session?.rollRecord;
+  if (!session || session.currentStep !== "roll-result" || !record ||
+      session.submitting || session.appliedUnsaved) return;
+  if (!requireOwner()) {
+    setError("stale-session");
+    render();
+    return;
+  }
+  let input = null;
+  if (["apply-to-character", "tracked-elsewhere"].includes(resolution) &&
+      record.consequence?.status === "awaiting-damage-input") {
+    const form = getWorkspaceHost()?.querySelector('[data-workspace-form="roll-consequence"]');
+    if (!form) {
+      setError("Форма оценки урона больше не открыта.");
+      render();
+      return;
+    }
+    input = parseForm(form);
+    session.rawInputsByStep[session.currentStepKey] = input;
+  }
+  session.submitting = true;
+  const result = resolveCharacterRollConsequence(
+    record.id,
+    resolution,
+    input,
+    {
+      owner: getSessionContext(),
+      operationId: operationId(`roll-consequence-${record.id}-${resolution}`),
+    },
+  );
+  session.submitting = false;
+  updateRollResult(result);
+}
+
 function submitCommand() {
   if (!session || session.workspaceType !== "command" || session.submitting ||
       session.appliedUnsaved || !requireOwner()) return;
@@ -1085,7 +1267,10 @@ function submitCommand() {
       id.slice("pending-roll:".length), values.resolution,
     );
   } else if (id === "character-roll") {
-    result = recordCharacterRoll(values);
+    result = {
+      status: "rejected",
+      reason: "Выберите «Успех», «Провал» или «Пока неизвестно» после физического броска.",
+    };
   } else if (id === "resource-correction") {
     result = correctSaraResource(session.owner, values.resourceId, values.value, operation);
   } else {
@@ -1224,7 +1409,13 @@ function handleSubmit(form) {
     render();
   }
   if (form.dataset.workspaceForm === "damage") submitDamage();
-  if (form.dataset.workspaceForm === "command") submitCommand();
+  if (form.dataset.workspaceForm === "command") {
+    if (session.scenarioId !== "character-roll") submitCommand();
+  }
+  if (form.dataset.workspaceForm === "roll-consequence") {
+    setError("Проверьте расчёт и выберите способ учёта урона.");
+    render();
+  }
   if (form.dataset.workspaceForm === "missile-return") submitMissileReturn();
 }
 
@@ -1278,6 +1469,34 @@ function selectAttackMode(mode) {
     button.setAttribute("aria-pressed", String(button.dataset.workspaceAction === `attack-mode-${mode}`));
   }
   renderWorkspaceAttackPreview(session, getState());
+}
+
+function selectRollMode(mode) {
+  if (!session || session.workspaceType !== "command" ||
+      session.scenarioId !== "character-roll" ||
+      session.currentStep !== "command-input" ||
+      !["normal", "advantage", "disadvantage"].includes(mode) ||
+      session.submitting) return;
+  const draft = getStepDraft();
+  draft.rollMode = mode;
+  if (mode === "normal") draft.secondD20 = "";
+  session.dirty = true;
+  session.error = "";
+  const root = getWorkspaceHost();
+  const secondRoll = root?.querySelector("[data-workspace-second-d20]");
+  const secondInput = secondRoll?.querySelector('input[name="secondD20"]');
+  const needsSecond = mode !== "normal";
+  if (secondRoll) secondRoll.hidden = !needsSecond;
+  if (secondInput) {
+    secondInput.required = needsSecond;
+    if (!needsSecond) secondInput.value = "";
+  }
+  for (const button of root?.querySelectorAll('[data-workspace-action^="roll-mode-"]') ?? []) {
+    button.setAttribute("aria-pressed", String(button.dataset.workspaceAction === `roll-mode-${mode}`));
+  }
+  const modeInput = root?.querySelector('input[name="rollMode"]');
+  if (modeInput) modeInput.value = mode;
+  renderWorkspaceRollPreview(session, getState());
 }
 
 function openStrikeInput() {
@@ -1366,22 +1585,41 @@ function retrySave() {
 
 function updateRollResult(result) {
   if (result.status !== "applied") {
+    session.submitting = false;
     setError(result.reason);
     render();
     return;
   }
+  session.submitting = false;
   session.rollRecord = result.record;
+  session.dirty = false;
   session.resultMessage = `${result.record.label}: к20 ${result.record.rawD20Rolls.join(" и ")}; итог ${result.record.total}` +
     (result.record.dc == null ? "" : ` против СЛ ${result.record.dc}: ${result.record.dcResult ? "успех" : "провал"}.`);
   session.appliedUnsaved = result.persistence?.ok === false;
   session.error = "";
   session.status = session.appliedUnsaved ? "Применено, но не сохранено." : "";
+  session.error = "";
   render();
 }
 
 function applyRollAmendment(techniqueId) {
-  if (!session?.rollRecord || session.appliedUnsaved || !requireOwner()) return;
-  updateRollResult(amendCharacterRoll(session.rollRecord.id, techniqueId));
+  if (!session || session.appliedUnsaved) return;
+  if (!requireOwner()) {
+    setError("stale-session");
+    render();
+    return;
+  }
+  if (!session.rollRecord && session.currentStep === "command-input") {
+    submitRollWithAmendment(techniqueId);
+    return;
+  }
+  if (!session.rollRecord || session.submitting) return;
+  session.submitting = true;
+  updateRollResult(amendCharacterRoll(session.rollRecord.id, techniqueId, {
+    owner: getSessionContext(),
+    operationId: operationId(`amend-roll-${techniqueId}`),
+  }));
+  session.submitting = false;
 }
 
 function submitRollFollowup() {
@@ -1391,9 +1629,15 @@ function submitRollFollowup() {
   const values = parseForm(form);
   const record = session.rollRecord;
   const result = record.consequence?.status === "awaiting-outcome"
-    ? correctCharacterRollOutcome(record.id, values.outcome)
+    ? correctCharacterRollOutcome(record.id, values.outcome, {
+      owner: getSessionContext(),
+      operationId: operationId(`legacy-roll-outcome-${values.outcome}`),
+    })
     : record.consequence?.status === "pending"
-      ? resolveCharacterRollConsequence(record.id, values.resolution)
+      ? resolveCharacterRollConsequence(record.id, values.resolution, null, {
+        owner: getSessionContext(),
+        operationId: operationId(`legacy-roll-consequence-${values.resolution}`),
+      })
       : { status: "rejected", reason: "Последствие уже разрешено или больше не ожидается." };
   updateRollResult(result);
 }
@@ -1417,6 +1661,36 @@ function handleAction(action, button = null) {
     submitAttack("miss", button);
   } else if (action.startsWith("attack-mode-")) {
     selectAttackMode(action.slice("attack-mode-".length));
+  } else if (action.startsWith("roll-mode-")) {
+    selectRollMode(action.slice("roll-mode-".length));
+  } else if (action === "record-roll") {
+    submitRollOutcome(button?.dataset.rollOutcome);
+  } else if (action === "roll-outcome") {
+    submitRollOutcome(button?.dataset.rollOutcome);
+  } else if (action === "roll-edit-outcome") {
+    if (session.currentStep === "roll-result" && session.rollRecord &&
+        (session.rollRecord.manualOutcome != null || session.rollRecord.dcResult != null) &&
+        !session.appliedUnsaved) {
+      session.correctingOutcome = true;
+      render();
+    }
+  } else if (action === "roll-cancel-outcome") {
+    session.correctingOutcome = false;
+    render();
+  } else if (action === "roll-amend-mantle-preview" || action === "roll-amend-mantle") {
+    applyRollAmendment("ll-monk:mantle-of-courtesy");
+  } else if (action === "roll-amend-spirit-preview" || action === "roll-amend-spirit") {
+    applyRollAmendment("ll-monk:indomitable-spirit");
+  } else if (action === "roll-no-damage") {
+    submitRollConsequence("no-damage");
+  } else if (action === "roll-has-damage" || action === "roll-begin-damage") {
+    submitRollConsequence("has-damage");
+  } else if (action === "roll-apply-consequence") {
+    submitRollConsequence("apply-to-character");
+  } else if (action === "roll-track-consequence") {
+    submitRollConsequence("tracked-elsewhere");
+  } else if (action === "roll-defer") {
+    minimizeWorkspace();
   } else if (action === "submit-damage") {
     submitDamage();
   } else if (action === "apply-command") {
@@ -1563,7 +1837,10 @@ export function getMinimizedWorkspaceSession() {
   if (!session || !session.minimized) return null;
   return {
     workspaceSessionId: session.workspaceSessionId,
-    label: session.currentStep === "damage-input" ? "Продолжить запись урона"
+    label: session.workspaceType === "command" && session.currentStep === "roll-result"
+      ? session.rollRecord?.consequence?.status === "awaiting-outcome"
+        ? "Указать исход броска" : "Продолжить последствие броска"
+      : session.currentStep === "damage-input" ? "Продолжить запись урона"
       : session.currentStep === "attack-input" ? "Продолжить действие «Атака»"
         : "Продолжить рабочую панель атаки",
   };

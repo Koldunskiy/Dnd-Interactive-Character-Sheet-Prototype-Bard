@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#090607" />
   <title>Аурелия — лист персонажа</title>
 
   <link rel="icon" type="image/png" href="./bardfav.png" />
@@ -26,6 +27,7 @@
   <link rel="stylesheet" href="./styles/techniques.css">
   <link rel="stylesheet" href="./styles/battle-console.css">
   <link rel="stylesheet" href="./styles/action-workspace.css">
+  <link rel="stylesheet" href="./styles/theme-surfaces.css">
 </head>
 <body>
   <div class="page">
@@ -53,11 +55,19 @@
       </div>
 
       <div class="topbar-actions">
+        <label class="theme-control" for="themePreference">Оформление
+          <select id="themePreference" data-theme-preference>
+            <option value="character">По персонажу</option>
+            <option value="teal-slate">Сине-зелёная</option>
+            <option value="wine-gold">Бордово-золотая</option>
+          </select>
+        </label>
         <button class="btn" type="button" data-app-action="choose-characters">Персонажи</button>
         <button class="btn" type="button" data-action="reset-runtime">Сбросить лист</button>
         <button class="btn" type="button" data-action="short-rest">Короткий отдых</button>
         <button class="btn" type="button" data-action="long-rest">Долгий отдых</button>
       </div>
+      <p class="theme-preference-status" id="themePreferenceStatus" role="status" aria-live="polite" hidden></p>
     </header>
 
     <main class="app-layout">

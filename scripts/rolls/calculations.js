@@ -71,6 +71,9 @@ export function calculateCharacterRoll(input, breakdown) {
     consequenceProfile,
     evasionEligible: breakdown.evasionAvailable === true &&
       breakdown.ability === "dexterity" && consequenceProfile === "save-half",
+    featureSnapshot: input.kind === "saving-throw"
+      ? { evasionAvailable: breakdown.evasionAvailable === true }
+      : null,
     spellSaveSource: input.spellSaveSource === true && input.kind === "saving-throw",
     advantageReason: input.advantageReason?.trim() || null,
     disadvantageReason: input.disadvantageReason?.trim() || null,
