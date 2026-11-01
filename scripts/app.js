@@ -1018,6 +1018,15 @@ function completeCharacterOpen(characterId, warning = "") {
   configureTabs(characterId);
   if (warning) showPersistenceWarning(warning);
   renderApp();
+  if (preferences.status === "invalid" || preferences.status === "unavailable") {
+    const status = document.getElementById("themePreferenceStatus");
+    if (status) {
+      status.textContent = preferences.status === "invalid"
+        ? "Настройки оформления повреждены; сохранённые настройки не изменены."
+        : "Настройки оформления недоступны; тема действует только в текущем сеансе.";
+      status.hidden = false;
+    }
+  }
 }
 
 function selectCharacter(characterId) {

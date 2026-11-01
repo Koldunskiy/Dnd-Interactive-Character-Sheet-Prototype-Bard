@@ -100,7 +100,7 @@
   --accent-wash: rgba(121, 200, 189, 0.14);
   --accent-wash-strong: rgba(121, 200, 189, 0.24);
   --accent-glow: rgba(121, 200, 189, 0.12);
-  --accent-glow-secondary: rgba(138, 174, 197, 0.12);
+  --accent-glow-secondary: transparent;
   --selected-surface: rgba(121, 200, 189, 0.2);
   --focus-ring: rgba(161, 226, 217, 0.58);
   --backdrop: rgba(4, 12, 15, 0.88);
@@ -121,9 +121,7 @@
     0 24px 60px rgba(0, 0, 0, 0.42),
     0 8px 28px rgba(19, 84, 90, 0.22);
 
-  --panel-glow:
-    radial-gradient(circle at top right, rgba(121, 200, 189, 0.11), transparent 28%),
-    radial-gradient(circle at top left, rgba(138, 174, 197, 0.1), transparent 34%);
+  --panel-glow: none;
 
   --color-accent: var(--accent);
   --accent-blood: var(--error);

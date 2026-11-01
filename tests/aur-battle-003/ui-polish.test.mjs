@@ -96,6 +96,32 @@ test("late save-half profile can use the Evasion feature snapshot", () => {
   assert.equal(preview.featureSnapshot.evasionAvailable, true);
 });
 
+test("spell-source selection preserves the chosen saving-throw ability", async () => {
+  const controller = await readFile(
+    new URL("../../scripts/workspace/controller.js", import.meta.url), "utf8",
+  );
+  const inputBranch = controller.match(
+    /field\.name === "spellSaveSource" && field\.checked\) \{([\s\S]*?)\n  \}/,
+  )?.[1] ?? "";
+  assert.match(inputBranch, /draft\.kind = "saving-throw"/);
+  assert.match(inputBranch, /draft\.rollMode = "advantage"/);
+  assert.doesNotMatch(inputBranch, /draft\.id\s*=|firstD20|secondD20/);
+
+  const breakdown = getSaraRollBreakdown(structuredClone(sara), "saving-throw", "dexterity");
+  const preview = calculateCharacterRoll({
+    kind: "saving-throw",
+    id: "dexterity",
+    rollMode: "advantage",
+    firstD20: "8",
+    secondD20: "13",
+    spellSaveSource: true,
+  }, breakdown);
+  assert.equal(preview.ok, true);
+  assert.equal(preview.ability, "dexterity");
+  assert.equal(preview.totalModifier, breakdown.totalModifier);
+  assert.deepEqual(preview.rawD20Rolls, [8, 13]);
+});
+
 test("manual outcome updates both checks and saving throws without creating another roll", () => {
   openCharacterSession("sara-velaris", () => ({ status: "missing" }));
   const created = recordCharacterRoll({

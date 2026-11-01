@@ -307,7 +307,6 @@ function updateInput(field) {
   } else if (session.workspaceType === "command" &&
       field.name === "spellSaveSource" && field.checked) {
     draft.kind = "saving-throw";
-    draft.id = "strength";
     draft.rollMode = "advantage";
   }
   session.dirty = true;

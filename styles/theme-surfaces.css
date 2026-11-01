@@ -46,6 +46,19 @@
   background: linear-gradient(180deg, var(--accent-wash), var(--surface-2));
 }
 
+:root[data-theme] .btn:disabled,
+:root[data-theme] .btn:disabled:hover,
+:root[data-theme] .sheet-action-btn:disabled,
+:root[data-theme] .sheet-action-btn:disabled:hover,
+:root[data-theme] .battle-command-card__open:disabled,
+:root[data-theme] .battle-command-card__open:disabled:hover {
+  border-color: var(--line);
+  color: var(--muted);
+  background: var(--surface-soft);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
 :root[data-theme] .btn--primary,
 :root[data-theme] .tab-btn.is-active,
 :root[data-theme] .battle-category-tabs [role="tab"][aria-selected="true"] {
@@ -141,6 +154,27 @@
 :root[data-theme] .workspace-success,
 :root[data-theme] [data-status="success"] {
   color: var(--success);
+}
+
+:root[data-theme="teal-slate"] body,
+:root[data-theme="teal-slate"] .page,
+:root[data-theme="teal-slate"] .app-shell,
+:root[data-theme="teal-slate"] .card,
+:root[data-theme="teal-slate"] [class*="-card"]:not([class*="__"]),
+:root[data-theme="teal-slate"] [class*="-panel"]:not([class*="__"]),
+:root[data-theme="teal-slate"] .battle-console,
+:root[data-theme="teal-slate"] .battle-command-card,
+:root[data-theme="teal-slate"] .battle-category-panel,
+:root[data-theme="teal-slate"] dialog {
+  background-image: none;
+}
+
+:root[data-theme="teal-slate"] .workspace-error {
+  border-inline-start: 3px solid var(--error);
+}
+
+:root[data-theme="wine-gold"] .workspace-success {
+  border-inline-start: 3px solid var(--success);
 }
 
 .theme-control {
