@@ -4,6 +4,7 @@ let activeHost = null;
 let viewportListenersBound = false;
 let hostResizeObserver = null;
 const boundHosts = new WeakSet();
+const deferredHostMarkup = new Map();
 let viewportFrame = 0;
 let blurFrame = 0;
 
@@ -164,6 +165,7 @@ function bindHost(host) {
     if (blurFrame) cancelAnimationFrame(blurFrame);
     blurFrame = requestAnimationFrame(() => {
       blurFrame = 0;
+      flushDeferredHostMarkup(host);
       if (!host.contains(document.activeElement)) {
         host.dataset.editing = "false";
         host.dataset.focusedFieldKey = "";
@@ -234,7 +236,7 @@ export function renderWorkspaceHost({ header, body, footer, status = "", error =
   const statusNode = host.querySelector("[data-workspace-status]");
   const errorNode = host.querySelector("[data-workspace-error]");
   let keepFocusedForm = false;
-  if (headerNode && headerNode.innerHTML !== header) headerNode.innerHTML = header;
+  updateHostMarkup(headerNode, header, host);
   if (bodyNode && bodyNode.innerHTML !== body) {
     const activeElement = document.activeElement;
     const currentForm = bodyNode.querySelector?.("[data-workspace-form]");
@@ -242,14 +244,53 @@ export function renderWorkspaceHost({ header, body, footer, status = "", error =
     keepFocusedForm = !forceBody && currentForm && nextFormKind &&
       currentForm.dataset.workspaceForm === nextFormKind &&
       currentForm.contains(activeElement);
-    if (!keepFocusedForm) bodyNode.innerHTML = body;
+    if (keepFocusedForm || !forceBody && bodyNode.contains(activeElement)) {
+      deferredHostMarkup.set(bodyNode, body);
+    } else {
+      bodyNode.innerHTML = body;
+      deferredHostMarkup.delete(bodyNode);
+    }
+  } else if (bodyNode) {
+    deferredHostMarkup.delete(bodyNode);
   }
-  if (footerNode && footerNode.innerHTML !== footer) footerNode.innerHTML = footer;
+  updateHostMarkup(footerNode, footer, host);
   if (errorNode) {
     errorNode.textContent = keepFocusedForm ? error : "";
     errorNode.hidden = !keepFocusedForm || !error;
   }
   if (statusNode) statusNode.textContent = status;
+}
+
+function updateHostMarkup(node, markup, host) {
+  if (!node || node.innerHTML === markup) {
+    if (node) deferredHostMarkup.delete(node);
+    return;
+  }
+  if (node.contains(document.activeElement)) {
+    deferredHostMarkup.set(node, markup);
+    return;
+  }
+  node.innerHTML = markup;
+  deferredHostMarkup.delete(node);
+  if (!host.contains(node)) deferredHostMarkup.delete(node);
+}
+
+function flushDeferredHostMarkup(host) {
+  for (const [node, markup] of deferredHostMarkup) {
+    if (!host.contains(node)) {
+      deferredHostMarkup.delete(node);
+      continue;
+    }
+    if (node.contains(document.activeElement)) continue;
+    node.innerHTML = markup;
+    deferredHostMarkup.delete(node);
+  }
+}
+
+function clearDeferredHostMarkup(host) {
+  for (const node of deferredHostMarkup.keys()) {
+    if (host.contains(node)) deferredHostMarkup.delete(node);
+  }
 }
 
 export function updateWorkspaceResources(state, maximumHitPoints = null) {
@@ -264,6 +305,7 @@ export function updateWorkspaceResources(state, maximumHitPoints = null) {
 }
 
 export function closeWorkspaceHost({ restoreFocus = true, discardEmbedded = false } = {}) {
+  if (activeHost) clearDeferredHostMarkup(activeHost);
   if (isEmbeddedHost(activeHost)) {
     const closedHost = activeHost;
     activeHost.hidden = true;

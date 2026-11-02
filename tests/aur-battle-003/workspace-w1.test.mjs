@@ -12,6 +12,7 @@ import {
   getWorkspaceSessionForTests,
   minimizeWorkspace,
   openNormalAttack,
+  discardWorkspaceDraft,
 } from "../../scripts/workspace/controller.js";
 import {
   installWorkspaceFixture,
@@ -24,8 +25,10 @@ import { renderMeleePanel } from "../../scripts/render/render-melee.js";
 import {
   bindBattleConsole,
   renderBattleConsole,
+  updateBattleConsole,
 } from "../../scripts/render/render-battle-console.js";
 import { FixtureInput, FixtureNode } from "./workspace-fixture.mjs";
+import { sara } from "../../data/sara.js";
 
 test("W1 historical damage rejects a hit without its recorded profile snapshot", () => {
   const { unsubscribe } = installWorkspaceFixture();
@@ -173,11 +176,13 @@ test("W1 real Sara renderer updates preserve the connected focused workspace inp
     ["[data-sara-hud]", new FixtureNode()],
     ["[data-sara-budget]", new FixtureNode()],
     ["[data-sara-navigation]", new FixtureNode()],
+    ["[data-sara-phase-content]", new FixtureNode()],
     ["[data-sara-pending-work]", new FixtureNode()],
     ["[data-sara-turn-controls]", new FixtureNode()],
   ]);
   const taskRegion = new FixtureNode();
   const idle = new FixtureNode();
+  idle.appendChild(regions.get("[data-sara-phase-content]"));
   taskRegion.appendChild(idle);
   taskRegion.appendChild(dialog);
   shell.appendChild(regions.get("[data-sara-hud]"));
@@ -242,6 +247,113 @@ test("W1 real Sara renderer updates preserve the connected focused workspace inp
   panel.fire("click", { target: menuButton });
   assert.equal(panel.listeners.get("click").length, 1);
   assert.equal(shell.querySelector("[data-combat-workspace-root]"), workspaceBefore);
+  unsubscribe();
+});
+
+test("W1 a focused combat region applies its latest deferred update on focus leave", async () => {
+  const { unsubscribe } = installWorkspaceFixture();
+  updateState((state) => {
+    state.battleConsole ??= { current: null, history: [] };
+    state.battleConsole.current = {
+      id: "w1-deferred-update",
+      phase: "own-turn",
+      ownTurnNumber: 1,
+      ownTurnId: "w1-deferred-turn",
+    };
+    state.ui.turn ??= {};
+    state.ui.turn.actionUsed = false;
+    return state;
+  });
+  const panel = new FixtureNode();
+  panel.documentRoot = true;
+  const shell = new FixtureNode();
+  const phase = new FixtureNode();
+  const regions = new Map([
+    ["[data-sara-hud]", new FixtureNode()],
+    ["[data-sara-budget]", new FixtureNode()],
+    ["[data-sara-navigation]", new FixtureNode()],
+    ["[data-sara-phase-content]", phase],
+    ["[data-sara-pending-work]", new FixtureNode()],
+    ["[data-sara-turn-controls]", new FixtureNode()],
+  ]);
+  const taskRegion = new FixtureNode();
+  const idle = new FixtureNode();
+  idle.appendChild(phase);
+  taskRegion.appendChild(idle);
+  shell.appendChild(regions.get("[data-sara-hud]"));
+  shell.appendChild(regions.get("[data-sara-budget]"));
+  shell.appendChild(regions.get("[data-sara-navigation]"));
+  shell.appendChild(taskRegion);
+  shell.appendChild(regions.get("[data-sara-pending-work]"));
+  shell.appendChild(regions.get("[data-sara-turn-controls]"));
+  shell.querySelector = (selector) => selector === "[data-sara-task-region]" ||
+    selector === "[data-combat-task-region]" ? taskRegion
+    : selector === "[data-sara-idle-content]" ? idle
+      : regions.get(selector) ?? null;
+  panel.appendChild(shell);
+  panel.querySelector = (selector) => selector === ".sara-combat-shell" ? shell : null;
+  bindBattleConsole(panel);
+  updateBattleConsole(panel, getState());
+  const focusedButton = new FixtureNode();
+  phase.appendChild(focusedButton);
+  globalThis.document.activeElement = focusedButton;
+  const before = phase.innerHTML;
+  updateState((state) => {
+    state.battleConsole.current.phase = "waiting";
+    return state;
+  });
+  updateBattleConsole(panel, getState());
+  assert.equal(phase.innerHTML, before);
+  assert.equal(phase.contains(focusedButton), true);
+  updateState((state) => {
+    state.battleConsole.current.phase = "paused";
+    return state;
+  });
+  updateBattleConsole(panel, getState());
+  assert.equal(phase.innerHTML, before);
+
+  globalThis.document.activeElement = null;
+  panel.fire("focusout", {});
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.notEqual(phase.innerHTML, before);
+  assert.match(phase.innerHTML, /Текущий контекст сохранён/);
+  assert.doesNotMatch(phase.innerHTML, /Следи за событиями/);
+  unsubscribe();
+});
+
+test("W1 pending-task grouping follows consequence status, not Russian label wording", () => {
+  const state = structuredClone(sara);
+  state.characterRolls ??= { records: [] };
+  state.characterRolls.records = [
+    { id: "w1-awaiting-answer", label: "Переименованный результат", consequence: { status: "awaiting-outcome" } },
+    { id: "w1-required", label: "Указать исход — изменённая подпись", consequence: { status: "awaiting-damage-input" } },
+  ];
+  const work = getUnfinishedPlayerWork(state, []);
+  assert.equal(work.find((entry) => entry.id === "roll:w1-awaiting-answer").group, "awaiting-answer");
+  assert.equal(work.find((entry) => entry.id === "roll:w1-required").group, "required");
+});
+
+test("W1 discarding an unrecorded draft removes only workspace input", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture();
+  assert.equal(openNormalAttack().ok, true);
+  const session = getWorkspaceSessionForTests();
+  const workspaceId = session.workspaceSessionId;
+  const field = {
+    name: "firstD20",
+    type: "number",
+    value: "17",
+    closest(selector) { return selector === "[data-workspace-field]" ? this : null; },
+  };
+  field.parentElement = dialog;
+  dialog.fire("input", { target: field });
+  assert.equal(getWorkspaceSessionForTests().dirty, true);
+  minimizeWorkspace();
+
+  assert.deepEqual(discardWorkspaceDraft(workspaceId), { ok: true });
+  assert.equal(getWorkspaceSessions().some((entry) => entry.workspaceSessionId === workspaceId), false);
+  assert.equal(getState().ui.turn.actionUsed, false);
+  assert.equal(getState().monk.combatAssistant?.activeSequences?.length ?? 0, 0);
+  assert.equal(dialog.open, false);
   unsubscribe();
 });
 

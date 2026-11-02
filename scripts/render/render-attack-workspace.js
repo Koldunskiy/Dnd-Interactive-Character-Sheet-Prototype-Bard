@@ -95,8 +95,6 @@ function renderAttackForm(session, state) {
       ? "По обычному правилу это натуральная 20 и попадание. Подтвердите, что мастер назначил исключение."
       : "";
   return `<form data-workspace-form="attack" novalidate>
-    <div class="workspace-entry-heading" aria-label="Действия с вводом">
-      <button type="button" class="btn btn--utility" data-workspace-action="minimize">Отложить</button></div>
     <fieldset class="workspace-roll-mode">
       <legend>Режим броска</legend>
       <div role="group" aria-label="Режим броска">
@@ -155,13 +153,10 @@ function renderDamageForm(session, state) {
     Number.isFinite(Number(snapshot?.damageModifier));
   if (!hasTrustedProfile) {
     return `<p class="workspace-warning">Для этого старого попадания нет достоверного снимка профиля. Текущие характеристики не используются как исторический факт.</p>
-      <button type="button" class="btn btn--utility" data-workspace-action="outside-damage">Урон учтён вне приложения</button>
       ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}`;
   }
   const diceCount = attack.critical && attack.hitResult === "hit" ? 2 : 1;
   return `<form data-workspace-form="damage" novalidate>
-    <div class="workspace-entry-heading" aria-label="Действия с вводом">
-      <button type="button" class="btn btn--utility" data-workspace-action="minimize">Отложить</button></div>
     <p class="workspace-damage-origin">Попадание: ${recordedAttackFormula(attack)}</p>
     <section class="workspace-entry-options" aria-label="Кости урона">
       <span>${escapeHtml(snapshot.damageDice)} ${formatSigned(snapshot.damageModifier)}${attack.critical ? " · критическое попадание: две отдельные кости" : ""}</span>
@@ -191,8 +186,6 @@ function renderDamageForm(session, state) {
       <p>Профиль удара: ${escapeHtml(snapshot.damageDice)} ${formatSigned(snapshot.damageModifier)}. ${attack.critical ? "Критическое попадание: постоянный модификатор учитывается один раз." : ""}</p>
       <p>Урон до сопротивлений и других поправок цели.</p>
     </details>
-    <button type="button" class="btn btn--utility workspace-outside-damage"
-      data-workspace-action="outside-damage">Учтено вне приложения</button>
   </form>`;
 }
 
@@ -320,7 +313,8 @@ export function renderAttackWorkspace(session, state) {
         : session.currentStep === "summary" ? `Итог: ${commandTitle}` : "Продолжение атаки";
   const header = session.workspaceType === "attack"
     ? `<div class="workspace-task-heading"><h2 id="workspaceDialogTitle" tabindex="-1"
-        data-workspace-title>${heading}</h2></div>`
+        data-workspace-title>${escapeHtml(heading)}</h2>
+        <button type="button" class="workspace-defer" data-workspace-action="minimize">Отложить</button></div>`
     : `<div class="workspace-nav">
       <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
       <button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>
@@ -336,11 +330,22 @@ export function renderAttackWorkspace(session, state) {
   if (session.currentStep === "attack-input") {
     body = renderAttackForm(session, state);
     const disabled = session.submitting || session.appliedUnsaved || session.readOnly;
-    footer = `<button type="button" class="btn btn--utility" data-workspace-action="attack-miss" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: промах" : "Промах"}</button>
-      <button type="button" class="btn btn--primary" data-workspace-action="attack-hit" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: попадание" : "Попадание"}</button>`;
+    footer = `<div class="workspace-task-actions workspace-task-actions--split">
+      <button type="button" class="primary" data-workspace-action="attack-hit" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: попадание" : "Попадание"}</button>
+      <button type="button" data-workspace-action="attack-miss" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: промах" : "Промах"}</button>
+    </div>`;
   } else if (session.currentStep === "damage-input") {
     body = renderDamageForm(session, state);
-    footer = `<button type="button" class="btn btn--primary" data-workspace-action="submit-damage" ${session.submitting || session.appliedUnsaved || !session.selectedDamage?.attack?.profileSnapshot ? "disabled" : ""}>Записать урон</button>`;
+    const snapshot = session.selectedDamage?.attack?.profileSnapshot;
+    const dieSides = Number(String(snapshot?.damageDice ?? "").match(/d(\d+)/)?.[1]);
+    const trustedSnapshot = Number.isInteger(dieSides) && dieSides > 0 &&
+      Number.isFinite(Number(snapshot?.damageModifier));
+    footer = `<div class="workspace-task-actions">
+      <button type="button" class="primary" data-workspace-action="submit-damage"
+        ${session.submitting || session.appliedUnsaved || !trustedSnapshot ? "disabled" : ""}>Записать урон</button>
+      <button type="button" data-workspace-action="outside-damage"
+        ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Урон учтён вне приложения</button>
+    </div>`;
   } else if (session.currentStep === "strike-input") {
     body = renderStrikeForm(session, state);
     const technique = MONK_TECHNIQUE_BY_ID.get(currentInputs(session).techniqueId);
@@ -365,13 +370,24 @@ export function renderAttackWorkspace(session, state) {
         <button type="button" class="btn btn--primary" data-workspace-action="confirm-close">${session.dirty ? "Закрыть без применения" : "Готово"}</button>`;
   } else {
     const attacks = sequence?.resolvedAttacks ?? [];
+    const currentIndex = attacks.findIndex((attack) => attack.id === session.attackId);
+    const displayedIndex = currentIndex >= 0 ? currentIndex : attacks.length - 1;
+    const currentAttack = attacks[displayedIndex];
+    const previousAttacks = attacks.filter((_, index) => index !== displayedIndex);
     const strikeParent = session.currentStep === "checkpoint"
       ? getCurrentWorkspaceStrikeParent(
         state, session.strikeParent?.sequenceId, session.strikeParent?.attackId,
       )
       : null;
-    body = `${attacks.map((attack, index) =>
-      renderAttackRecord(attack, state, index, sequence?.maximumAttacks ?? attacks.length)).join("")}
+    body = `${currentAttack
+      ? `<section class="workspace-current-result" aria-label="Текущий результат">
+          ${renderAttackRecord(currentAttack, state, displayedIndex,
+            sequence?.maximumAttacks ?? attacks.length)}
+        </section>` : ""}
+      ${previousAttacks.length ? `<details class="workspace-history"><summary>Предыдущие результаты · ${previousAttacks.length}</summary>
+        ${previousAttacks.map((attack) => renderAttackRecord(
+          attack, state, attacks.indexOf(attack), sequence?.maximumAttacks ?? attacks.length,
+        )).join("")}</details>` : ""}
       ${session.currentStep === "checkpoint" && strikeParent
         ? `<section class="workspace-post-hit"><h3>Урон записан</h3><p>Техника необязательна. Можно продолжить без оплаты.</p></section>`
         : session.currentStep === "checkpoint" && session.capabilities.canContinueSequence

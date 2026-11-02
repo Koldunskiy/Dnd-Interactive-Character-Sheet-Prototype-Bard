@@ -26,6 +26,13 @@ class FakeNode {
     this.dataset = {};
     this.listeners = new Map();
     this.isConnected = true;
+    this.parentElement = null;
+    this.childNodes = [];
+  }
+  appendChild(node) {
+    node.parentElement = this;
+    this.childNodes.push(node);
+    return node;
   }
   addEventListener(type, handler) {
     const handlers = this.listeners.get(type) ?? [];
@@ -35,7 +42,12 @@ class FakeNode {
   fire(type, event) {
     for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
-  contains() { return true; }
+  contains(node) {
+    for (let current = node; current; current = current.parentElement) {
+      if (current === this) return true;
+    }
+    return false;
+  }
   focus() {}
   querySelectorAll() { return []; }
   getBoundingClientRect() { return { top: 210 }; }
@@ -81,6 +93,9 @@ class FakeDialog extends FakeNode {
     this.secondD20.querySelector = (selector) =>
       selector === 'input[name="secondD20"]' ? this.secondD20Input : null;
     this.forms = {};
+    for (const node of [this.header, this.body, this.footer, this.status]) {
+      this.appendChild(node);
+    }
   }
   querySelector(selector) {
     if (selector === "[data-workspace-header]") return this.header;
@@ -170,6 +185,7 @@ function fireAction(dialog, action) {
     },
     closest(selector) { return selector === "[data-workspace-action]" ? this : null; },
   };
+  button.parentElement = dialog;
   dialog.fire("click", { target: button });
 }
 
@@ -192,6 +208,7 @@ test("production normal attack workspace records one action, snapshot damage and
     selector === "[data-battle-status]" ? consoleStatus : null;
   bindBattleConsole(consoleRoot);
   const attackShortcut = new FakeNode();
+  attackShortcut.parentElement = consoleRoot;
   attackShortcut.dataset.battleCommandOpen = "normal-attack";
   attackShortcut.closest = (selector) =>
     selector === "[data-battle-command-open]" ? attackShortcut : null;
@@ -210,6 +227,7 @@ test("production normal attack workspace records one action, snapshot damage and
     name: "rollMode", type: "select", value: "advantage",
     closest(selector) { return selector === "[data-workspace-field]" ? this : null; },
   };
+  modeSelect.parentElement = dialog;
   dialog.fire("change", { target: modeSelect });
   assert.equal(dialog.body.innerHTML, attackMarkupBeforeModeChange);
   assert.equal(dialog.secondD20.hidden, false);
@@ -224,6 +242,7 @@ test("production normal attack workspace records one action, snapshot damage and
     name: "firstD20", type: "number", value: "10",
     closest(selector) { return selector === "[data-workspace-field]" ? this : null; },
   };
+  previewInput.parentElement = dialog;
   dialog.fire("input", { target: previewInput });
   assert.equal(getSessionContext().stateRevision, initialRevision);
   assert.match(dialog.attackStatus.textContent, /К20 10/);
@@ -345,6 +364,7 @@ test("production normal attack workspace records one action, snapshot damage and
     name: "firstD20", type: "number", value: "13",
     closest(selector) { return selector === "[data-workspace-field]" ? this : null; },
   };
+  secondRoll.parentElement = dialog;
   dialog.fire("input", { target: secondRoll });
   const secondDraftKey = getWorkspaceSessionForTests().currentStepKey;
   const resolvedBeforeResume = getState().monk.combatAssistant.activeSequences[0]

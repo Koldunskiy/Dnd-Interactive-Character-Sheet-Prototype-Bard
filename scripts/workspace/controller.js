@@ -2111,17 +2111,50 @@ function getAllWorkspaceSessions() {
   return [...new Set([...(session ? [session] : []), ...suspendedSessions])];
 }
 
+function isUnrecordedWorkspaceDraft(entry) {
+  return entry.dirty === true && !entry.appliedUnsaved && !entry.submitting &&
+    ["attack-input", "damage-input", "command-input", "strike-input"].includes(entry.currentStep);
+}
+
+export function discardWorkspaceDraft(workspaceSessionId) {
+  const entry = getAllWorkspaceSessions().find((candidate) =>
+    candidate.workspaceSessionId === workspaceSessionId);
+  if (!entry || !isUnrecordedWorkspaceDraft(entry)) {
+    return { ok: false, reason: "Эта панель больше не содержит удаляемого черновика." };
+  }
+  if (entry.rawInputsByStep && entry.currentStepKey) {
+    entry.rawInputsByStep[entry.currentStepKey] = {};
+  }
+  entry.dirty = false;
+  if (entry === session) {
+    session = null;
+    if (!restoreParentSession()) {
+      document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
+      closeWorkspaceHost({ restoreFocus: false });
+    }
+  } else {
+    const index = suspendedSessions.indexOf(entry);
+    if (index >= 0) suspendedSessions.splice(index, 1);
+  }
+  return { ok: true };
+}
+
 export function getWorkspaceSessions() {
   return getAllWorkspaceSessions().map((entry) => ({
     workspaceSessionId: entry.workspaceSessionId,
     label: getWorkspaceSessionLabel(entry),
+    workspaceType: entry.workspaceType,
     dirty: entry.dirty === true,
+    draft: isUnrecordedWorkspaceDraft(entry),
     appliedUnsaved: entry.appliedUnsaved === true,
     minimized: entry.minimized === true,
     suspended: entry.suspended === true,
     sequenceId: entry.sequenceId ?? null,
     attackId: entry.currentStep === "damage-input" ? entry.attackId ?? null : null,
     stage: entry.currentStep ?? null,
+    group: entry.appliedUnsaved ? "save-recovery"
+      : entry.currentStep === "damage-input" ? "required"
+        : isUnrecordedWorkspaceDraft(entry) ? "drafts" : "continuations",
   }));
 }
 
@@ -2131,10 +2164,18 @@ export function getMinimizedWorkspaceSessions() {
     .map((entry) => ({
       workspaceSessionId: entry.workspaceSessionId,
       label: getWorkspaceSessionLabel(entry),
+      workspaceType: entry.workspaceType,
       dirty: entry.dirty === true,
+      draft: isUnrecordedWorkspaceDraft(entry),
       appliedUnsaved: entry.appliedUnsaved === true,
       minimized: entry.minimized === true,
       suspended: entry.suspended === true,
+      sequenceId: entry.sequenceId ?? null,
+      attackId: entry.currentStep === "damage-input" ? entry.attackId ?? null : null,
+      stage: entry.currentStep ?? null,
+      group: entry.appliedUnsaved ? "save-recovery"
+        : entry.currentStep === "damage-input" ? "required"
+          : isUnrecordedWorkspaceDraft(entry) ? "drafts" : "continuations",
     }));
 }
 

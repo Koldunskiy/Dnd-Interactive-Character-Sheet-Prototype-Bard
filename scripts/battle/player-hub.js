@@ -60,6 +60,8 @@ export function getUnfinishedPlayerWork(character, workspaceSessions = []) {
         work.push({
           id: `damage:${sequence.id}:${attack.id}`,
           kind: "historical-damage",
+          group: "required",
+          consequenceStatus: "awaiting-damage",
           label: `Урон · удар ${attackNumber}/${sequence.maximumAttacks}`,
           sequenceId: sequence.id,
           attackId: attack.id,
@@ -72,6 +74,8 @@ export function getUnfinishedPlayerWork(character, workspaceSessions = []) {
       work.push({
         id: `save:${application.id}`,
         kind: "pending-save",
+        group: "awaiting-answer",
+        consequenceStatus: "awaiting-target-outcome",
         label: `Исход цели · СЛ ${application.dc ?? "—"}`,
         commandId: `pending-save:${application.id}`,
       });
@@ -82,6 +86,9 @@ export function getUnfinishedPlayerWork(character, workspaceSessions = []) {
       work.push({
         id: `roll:${record.id}`,
         kind: "pending-roll",
+        group: record.consequence?.status === "awaiting-outcome"
+          ? "awaiting-answer" : "required",
+        consequenceStatus: record.consequence?.status ?? "pending",
         label: record.consequence?.status === "awaiting-outcome"
           ? `Указать исход · ${record.label ?? "бросок"}`
           : `Продолжить последствие · ${record.label ?? "бросок"}`,
@@ -89,16 +96,36 @@ export function getUnfinishedPlayerWork(character, workspaceSessions = []) {
       });
     }
   }
+  for (const task of getOwnTurnContinuationTasks(character).filter((candidate) =>
+    !workspaceSessions.some((workspace) => workspace.sequenceId === candidate.sequenceId))) {
+    work.push({
+      id: `sequence:${task.sequenceId}`,
+      kind: "sequence-continuation",
+      group: "continuations",
+      label: `${task.label} · осталось ${task.remaining}`,
+      sequenceId: task.sequenceId,
+    });
+  }
   for (const workspace of workspaceSessions) {
     if (workspace.dirty || workspace.appliedUnsaved ||
         workspace.minimized || workspace.suspended) {
+      const group = workspace.appliedUnsaved ? "save-recovery"
+        : workspace.stage === "damage-input" ? "required"
+          : workspace.draft ? "drafts" : "continuations";
       work.push({
         id: `workspace:${workspace.workspaceSessionId}`,
         kind: "workspace",
+        group,
+        taskKind: workspace.workspaceType === "attack" ? "attack" : "command",
+        consequenceStatus: workspace.stage === "damage-input"
+          ? "awaiting-damage" : workspace.appliedUnsaved ? "applied-unsaved" : "in-progress",
         label: workspace.label ?? "Продолжить рабочую панель",
         workspaceSessionId: workspace.workspaceSessionId,
         dirty: workspace.dirty === true,
+        draft: workspace.draft === true && !workspace.appliedUnsaved,
         appliedUnsaved: workspace.appliedUnsaved === true,
+        sequenceId: workspace.sequenceId ?? null,
+        attackId: workspace.attackId ?? null,
       });
     }
   }

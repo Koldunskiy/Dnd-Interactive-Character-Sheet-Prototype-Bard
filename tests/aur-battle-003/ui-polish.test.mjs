@@ -30,7 +30,7 @@ import { renderCommandWorkspace } from "../../scripts/render/render-command-work
 import { renderAttackWorkspace } from "../../scripts/render/render-attack-workspace.js";
 import { getSaraInitiativeSnapshot } from "../../scripts/battle/providers/sara.js";
 
-test("battle cards separate full-width titles from wrapping costs and keep full spell details accessible", () => {
+test("battle cards use compact reference composition and keep full spell details accessible", () => {
   const markup = renderBattleConsole(structuredClone(sara));
   assert.match(markup, /battle-command-card__chips/);
   assert.match(markup, /Ядовитые брызги[\s\S]*?Без лимита/);
@@ -40,7 +40,8 @@ test("battle cards separate full-width titles from wrapping costs and keep full 
   assert.match(markup, /<details class="battle-command-card__details">/);
   assert.match(markup, /Только видимая змея/);
   assert.equal(markup.split("Только видимая змея-зверь").length - 1, 1);
-  assert.match(markup, /combat-turn-card__header/);
+  assert.match(markup, /sara-app-head/);
+  assert.match(markup, /sara-resources/);
   assert.match(markup, /data-combat-workspace-root/);
   const ownTurn = structuredClone(sara);
   ownTurn.battleConsole = {
@@ -53,11 +54,11 @@ test("battle cards separate full-width titles from wrapping costs and keep full 
   assert.doesNotMatch(ownTurnMarkup, /<strong>1<\/strong>|<strong>0<\/strong>/);
 });
 
-test("Sara combat home exposes derived resource bars and pre-combat initiative sources", () => {
+test("Sara combat home exposes compact resources and pre-combat initiative sources", () => {
   const character = structuredClone(sara);
   const markup = renderBattleConsole(character);
-  assert.match(markup, /battle-console-resource__track/);
-  assert.match(markup, /Временные HP:/);
+  assert.match(markup, /sara-resources/);
+  assert.doesNotMatch(markup, /battle-console-resource__track/);
   assert.match(markup, /data-initiative-entry/);
   assert.match(markup, /data-initiative-total/);
   assert.match(markup, /Начать бой/);
@@ -75,8 +76,8 @@ test("battle cards and global surfaces have wrapping and theme-token safeguards"
     readFile(new URL("../../styles/tokens.css", import.meta.url), "utf8"),
     readFile(new URL("../../styles/action-workspace.css", import.meta.url), "utf8"),
   ]);
-  assert.match(battleCss, /\.battle-command-card__open\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/);
-  assert.match(battleCss, /\.battle-command-card\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(battleCss, /\.battle-command-card__open\s*\{[\s\S]*?width:\s*100%/);
+  assert.match(battleCss, /\.battle-command-card,\s*\.battle-work-item,\s*\.workspace-record,\s*\.workspace-post-hit\s*\{[\s\S]*?display:\s*grid/);
   assert.match(battleCss, /\.battle-command-card__chips\s*\{[\s\S]*?flex-wrap:\s*wrap/);
   assert.match(battleCss, /\.battle-command-card__chip\s*\{[\s\S]*?overflow-wrap:\s*anywhere/);
   assert.match(themeCss, /:root\[data-theme\]\s+dialog::backdrop/);
@@ -84,9 +85,9 @@ test("battle cards and global surfaces have wrapping and theme-token safeguards"
   assert.match(tokens, /:root\[data-theme="teal-slate"\]/);
   assert.match(tokens, /--color-accent:\s*var\(--accent\)/);
   assert.match(workspaceCss, /font-size:\s*clamp\(4rem,\s*18vw,\s*4\.75rem\)/);
-  assert.match(battleCss, /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*8rem\),\s*1fr\)\)/);
-  assert.match(battleCss, /\.battle-resource-tile\s*\{[\s\S]*?overflow-wrap:\s*anywhere/);
-  assert.match(battleCss, /\.battle-resource-tile\s*>\s*\*\s*\{[\s\S]*?max-width:\s*100%/);
+  assert.match(battleCss, /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(battleCss, /--sara-bg:\s*#111b24/);
+  assert.match(battleCss, /--sara-active:\s*#294c48/);
   assert.match(workspaceCss, /\.action-workspace\[open\]\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   assert.match(workspaceCss, /\.action-workspace__body\s*\{[\s\S]*?overflow-y:\s*auto/);
   assert.match(workspaceCss, /\.workspace-nav\s*\{[\s\S]*?flex-wrap:\s*wrap/);
@@ -157,6 +158,7 @@ test("applied-unsaved workspace puts retry first and avoids replay controls", ()
 
 test("combat entry templates keep physical inputs beside totals and preserve critical dice", () => {
   const attackSession = {
+    workspaceType: "attack",
     currentStep: "attack-input",
     currentStepKey: "attack-input:test",
     rawInputsByStep: { "attack-input:test": { rollMode: "normal", firstD20: "10" } },
@@ -168,7 +170,8 @@ test("combat entry templates keep physical inputs beside totals and preserve cri
   assert.match(normal, /workspace-entry-core[\s\S]*?data-workspace-field="firstD20"[\s\S]*?data-attack-total/);
   assert.match(normal, /data-attack-formula/);
   assert.match(normal, /data-attack-status[\s\S]*?data-attack-validation/);
-  assert.match(normal, /data-workspace-action="minimize"/);
+  assert.match(renderAttackWorkspace(attackSession, structuredClone(sara)).header,
+    /workspace-task-heading[\s\S]*?data-workspace-action="minimize"/);
   assert.match(normal, /data-attack-status role="status"><\/p>/);
 
   attackSession.rawInputsByStep[attackSession.currentStepKey] = {
@@ -199,7 +202,7 @@ test("combat entry templates keep physical inputs beside totals and preserve cri
 
 test("battle console omits the empty unfinished/history panel", () => {
   const markup = renderBattleConsole(structuredClone(sara));
-  assert.doesNotMatch(markup, /Незавершённое и история · 0/);
+  assert.doesNotMatch(markup, /Требует внимания · 0/);
 });
 
 test("new roll form omits DC and consequence inputs and renders a live total", () => {

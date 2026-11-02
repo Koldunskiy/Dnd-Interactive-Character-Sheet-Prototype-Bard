@@ -6,11 +6,11 @@ import {
   openNormalAttack,
   openSaraBattleCommand,
   resumeWorkspace,
+  discardWorkspaceDraft,
 } from "../workspace/controller.js";
 import {
   BATTLE_CATEGORIES,
   getSaraBattleCommandRegistry,
-  selectBattleCategory,
 } from "../battle/command-registry.js";
 import { getDerivedStats } from "../calculations.js";
 import { getState } from "../state.js";
@@ -50,14 +50,10 @@ function renderBattleCommandCard(entry) {
     </article>`;
   }
   return `<article class="battle-command-card ${entry.availability.enabled ? "" : "is-unavailable"}">
-    <button type="button" class="battle-command-card__open"
-      data-battle-command-open="${escapeHtml(entry.id)}"
-      ${entry.availability.enabled ? "" : "disabled"}>
-      <span class="battle-command-card__title">${escapeHtml(entry.titleRu)}</span>
-    </button>
+    <h3 class="battle-command-card__title">${escapeHtml(entry.titleRu)}</h3>
+    <p>${escapeHtml(entry.displaySummaryRu ?? entry.trigger)}</p>
     <div class="battle-command-card__chips">${entry.displayCostTokens
       .map((token) => `<span class="battle-command-card__chip">${escapeHtml(token)}</span>`).join("")}</div>
-    <p>${escapeHtml(entry.displaySummaryRu ?? entry.trigger)}</p>
     ${entry.availability.reasonRu
       ? `<p class="battle-command-card__reason">${escapeHtml(entry.availability.reasonRu)}</p>` : ""}
     ${entry.ruleReference && entry.ruleReference !== entry.trigger
@@ -67,6 +63,9 @@ function renderBattleCommandCard(entry) {
         .filter((group) => group !== "movement")
         .map((group) => BATTLE_CATEGORIES.find((item) => item.id === group)?.label ?? group)
         .join(", "))}</small>` : ""}
+    <button type="button" class="battle-command-card__open"
+      data-battle-command-open="${escapeHtml(entry.id)}"
+      ${entry.availability.enabled ? "" : "disabled"}>Открыть</button>
   </article>`;
 }
 
@@ -80,17 +79,29 @@ function renderPlayerWork(work) {
     </section>`;
   }
   if (work.kind === "historical-damage") {
-    return `<button type="button" class="btn btn--utility"
+    return `<article class="battle-work-item"><h4>${escapeHtml(work.label)}</h4>
+      <small>Попадание записано · урон ещё не учтён</small><button type="button" class="primary"
       data-battle-open-historical-damage="${escapeHtml(work.sequenceId)}"
-      data-battle-attack-id="${escapeHtml(work.attackId)}">${escapeHtml(work.label)}</button>`;
+      data-battle-attack-id="${escapeHtml(work.attackId)}">Продолжить</button></article>`;
+  }
+  if (work.kind === "sequence-continuation") {
+    return `<article class="battle-work-item"><h4>${escapeHtml(work.label)}</h4>
+      <small>Последовательность ударов ещё открыта</small><button type="button" class="primary"
+        data-battle-resume-sequence="${escapeHtml(work.sequenceId)}">Продолжить</button></article>`;
   }
   if (work.commandId) {
-    return `<button type="button" class="btn btn--utility"
-      data-battle-command-open="${escapeHtml(work.commandId)}">${escapeHtml(work.label)}</button>`;
+    return `<article class="battle-work-item"><h4>${escapeHtml(work.label)}</h4>
+      <small>${work.group === "awaiting-answer" ? "Ожидается исход от ведущего" : "Последствие ещё не записано"}</small>
+      <button type="button" data-battle-command-open="${escapeHtml(work.commandId)}">
+        ${work.group === "awaiting-answer" ? "Записать исход" : "Продолжить"}</button></article>`;
   }
   if (work.workspaceSessionId) {
-    return `<button type="button" class="btn btn--utility"
-      data-workspace-resume="${escapeHtml(work.workspaceSessionId)}">${escapeHtml(work.label)}</button>`;
+    return `<article class="battle-work-item"><h4>${escapeHtml(work.label)}</h4>
+      <small>${work.appliedUnsaved ? "Результат применён, требуется сохранить" :
+        work.draft ? "Не записанный ввод" : "Рабочая панель приостановлена"}</small>
+      <div class="battle-work-item__actions"><button type="button" class="primary"
+        data-workspace-resume="${escapeHtml(work.workspaceSessionId)}">${work.draft ? "Вернуться" : "Продолжить"}</button>
+        ${work.draft ? `<button type="button" data-workspace-discard="${escapeHtml(work.workspaceSessionId)}">Удалить черновик</button>` : ""}</div></article>`;
   }
   return "";
 }
@@ -121,39 +132,47 @@ function buildBattleConsole(state) {
   const maxHp = Math.max(0, Number(derived.maxHitPoints ?? 0));
   const currentKi = Math.max(0, Number(state.combat?.ki?.current ?? 0));
   const maxKi = Math.max(0, Number(derived.monk.kiMaximum ?? 0));
-  const resources = `<section class="battle-console-hud" aria-label="Ресурсы персонажа">
-    <div class="battle-console-resource" aria-label="HP ${currentHp} из ${maxHp}; временные ${state.combat?.hp?.temp ?? 0}">
-      <div class="battle-console-resource__label"><strong>HP</strong><span>${currentHp}/${maxHp}</span></div>
-      <div class="battle-console-resource__track" aria-hidden="true"><span style="width:${maxHp ? Math.min(100, currentHp / maxHp * 100) : 0}%"></span></div>
-      <small>Временные HP: ${state.combat?.hp?.temp ?? 0}</small>
-    </div>
-    <div class="battle-console-resource" aria-label="Ци ${currentKi} из ${maxKi}">
-      <div class="battle-console-resource__label"><strong>Ци</strong><span>${currentKi}/${maxKi}</span></div>
-      <div class="battle-console-resource__track battle-console-resource__track--ki" aria-hidden="true"><span style="width:${maxKi ? Math.min(100, currentKi / maxKi * 100) : 0}%"></span></div>
-    </div>
-    <span class="battle-console-practiced">Practiced <strong>${state.combat?.practiced?.current ?? 0}/${derived.monk.practicedMaximum}</strong></span>
-  </section>`;
+  const resources = `<div class="sara-resources" aria-label="Ресурсы персонажа">
+    <span aria-label="HP ${currentHp} из ${maxHp}; временные ${state.combat?.hp?.temp ?? 0}">HP <b>${currentHp}/${maxHp}</b></span>
+    <span>Ци <b>${currentKi}/${maxKi}</b></span>
+    <span>Practiced <b>${state.combat?.practiced?.current ?? 0}/${derived.monk.practicedMaximum}</b></span>
+    ${Number(state.combat?.hp?.temp ?? 0) > 0
+      ? `<span>Временные HP <b>${state.combat.hp.temp}</b></span>` : ""}
+  </div>`;
   const budget = view.budget ? `<section class="combat-budget" aria-label="Бюджет хода">
     ${[
       ["action", "Действие", view.budget.actionAvailable],
       ["bonus", "Бонусное", view.budget.bonusActionAvailable],
       ["reaction", "Реакция", view.budget.reactionAvailable],
-    ].map(([id, label, available]) => view.phase === "own-turn"
-      ? `<button type="button" class="combat-budget__item ${available ? "is-available" : "is-spent"}"
-          data-battle-menu="${id}" aria-pressed="${selectedMenu === id}">
-          <strong>${label}</strong><span>${available ? "Доступно" : "Потрачено"}</span>
-        </button>`
-      : `<span class="combat-budget__item ${available ? "is-available" : "is-spent"}">
-          <strong>${label}</strong><span>${available ? "Доступно" : "Потрачено"}</span>
-        </span>`).join("")}
-    ${view.phase === "own-turn" ? `<button type="button" class="combat-budget__item"
-      data-battle-menu="movement" aria-pressed="${selectedMenu === "movement"}">
-      <strong>Перемещение</strong><span>${derived.monk?.speedFeet ?? state.profile?.speedFeet ?? "—"} фт.</span>
-    </button>` : ""}
+    ].map(([, label, available]) =>
+      `<span class="combat-budget__item ${available ? "is-available" : "is-spent"}">
+        ${label}<b>${available ? "Доступно" : "Потрачено"}</b></span>`).join("")}
   </section>` : "";
 
   let phaseBody = "";
+  let commandContent = "";
   let primaryFooter = "";
+  const selectedCategory = selectedMenu ?? "action";
+  const menuGroups = {
+    action: "action",
+    bonus: "bonus",
+    reaction: "reaction",
+    other: "other",
+  };
+  const selectedGroup = menuGroups[selectedCategory];
+  const menuEntries = selectedGroup === "other"
+    ? commands.filter((entry) => entry.navigationGroups.includes("movement") ||
+      entry.activationBudget === "none" || entry.id === "resource-correction")
+    : view.phase === "own-turn"
+      ? commands.filter((entry) => entry.navigationGroups.includes(selectedGroup) &&
+        entry.activationBudget !== "none")
+      : [];
+  const navigation = view.phase === "own-turn" ? `<nav class="battle-category-tabs"
+    aria-label="Категории команд">
+    ${[["action", "Действие"], ["bonus", "Бонусное"], ["reaction", "Реакция"], ["other", "Другое"]]
+      .map(([id, label]) => `<button type="button" data-battle-menu="${id}"
+        aria-pressed="${selectedCategory === id}">${label}</button>`).join("")}
+  </nav>` : "";
   if (view.phase === "outside") {
     const outsideAbilities = commands.filter((entry) =>
       entry.id.startsWith("racial-spell:") || entry.id === "mystic-regeneration");
@@ -213,42 +232,21 @@ function buildBattleConsole(state) {
     primaryFooter = `<button type="button" class="btn btn--primary"
       data-battle-command="begin-own-turn">Начался мой ход</button>`;
   } else if (view.phase === "own-turn") {
-    const sequenceCards = view.continuations.map((task) => `<button type="button"
-      class="btn btn--primary battle-continuation"
-      data-battle-resume-sequence="${escapeHtml(task.sequenceId)}">
-      ${escapeHtml(task.label)} · осталось ${task.remaining}</button>`).join("");
-    const menuGroups = {
-      action: "action",
-      bonus: "bonus",
-      movement: "movement",
-      reaction: "reaction",
-    };
-    const selectedGroup = menuGroups[selectedMenu];
-    const menuEntries = selectedGroup
-      ? commands.filter((entry) => entry.navigationGroups.includes(selectedGroup) &&
-        (selectedGroup === "movement" || entry.activationBudget !== "none"))
-      : [];
-    phaseBody = `<section class="battle-player-home">
-      ${sequenceCards.length ? `<section class="battle-continuations"><h4>Доступные продолжения</h4>${sequenceCards}</section>` : ""}
-      <div class="battle-quick-rolls">
-        <button type="button" class="btn btn--primary" data-battle-command-open="normal-attack"
-          ${commands.find((entry) => entry.id === "normal-attack")?.availability.enabled ? "" : "disabled"}>
-          Обычная атака</button>
-        <button type="button" class="btn btn--utility" data-battle-roll-shortcut="all">Проверка или спасбросок</button>
-      </div>
-      <p class="battle-console-guidance">Восстановление «Духа воина» отмечается вручную.</p>
-      <details class="battle-secondary-tools"><summary>Дополнительные инструменты</summary>
-        <button type="button" class="btn btn--utility" data-battle-command-open="resource-correction">Исправить ресурс вручную</button>
-        <p>Скорость: ${derived.monk?.speedFeet ?? state.profile?.speedFeet ?? "—"} фт.</p>
-      </details>
-      ${selectedMenu ? `<section class="battle-menu-panel" aria-label="${escapeHtml(BATTLE_CATEGORIES.find((item) => item.id === selectedGroup)?.label ?? "Команды")}">
-        <div class="battle-menu-heading"><h4>${escapeHtml(BATTLE_CATEGORIES.find((item) => item.id === selectedGroup)?.label ?? "Команды")}</h4>
-          <button type="button" class="btn btn--utility" data-battle-menu-close>Готово</button></div>
-        <div class="battle-command-grid">${menuEntries.map(renderBattleCommandCard).join("") ||
-          "<p>Нет доступных команд в этой категории.</p>"}</div>
-      </section>` : ""}
-      ${turnReviewOpen ? renderTurnReview(getEndTurnAdvice(state, getWorkspaceSessions())) : ""}
-    </section>`;
+    phaseBody = turnReviewOpen
+      ? `<section class="battle-player-home">${renderTurnReview(
+        getEndTurnAdvice(state, getWorkspaceSessions()),
+      )}</section>`
+      : "";
+    commandContent = `<section class="battle-menu-panel" aria-label="${selectedGroup === "other"
+      ? "Другое" : escapeHtml(BATTLE_CATEGORIES.find((item) => item.id === selectedGroup)?.label ?? "Команды")}">
+      <div class="battle-command-grid">${menuEntries.map(renderBattleCommandCard).join("") ||
+        "<p>Нет доступных команд в этой категории.</p>"}</div>
+    </section>
+    <details class="battle-secondary-tools"><summary>Броски и дополнительные инструменты</summary>
+      <button type="button" data-battle-roll-shortcut="all">Проверка или спасбросок</button>
+      <p>Скорость: ${derived.monk?.speedFeet ?? state.profile?.speedFeet ?? "—"} фт.</p>
+      <p>Восстановление «Духа воина» отмечается вручную.</p>
+    </details>`;
     primaryFooter = `<button type="button" class="btn btn--primary"
       data-battle-end-turn>Завершить мой ход</button>`;
   } else {
@@ -272,28 +270,23 @@ function buildBattleConsole(state) {
     ? [] : [...unfinished, ...minimized].filter((entry) => entry.appliedUnsaved);
   const minimizedWithoutRecovery = minimized.filter((entry) => !entry.appliedUnsaved);
   const visibleUnfinished = unfinished.filter((entry) => !entry.appliedUnsaved);
-  const requiredWork = visibleUnfinished.filter((entry) =>
-    entry.kind === "historical-damage" ||
-    entry.kind === "pending-roll" && !entry.label.startsWith("Указать исход"));
-  const externalAnswers = visibleUnfinished.filter((entry) =>
-    entry.kind === "pending-save" ||
-    entry.kind === "pending-roll" && entry.label.startsWith("Указать исход"));
-  const drafts = [
-    ...visibleUnfinished.filter((entry) => entry.kind === "workspace"),
-    ...minimizedWithoutRecovery,
-  ];
+  const groupedWork = [...visibleUnfinished, ...minimizedWithoutRecovery];
+  const requiredWork = groupedWork.filter((entry) => entry.group === "required");
+  const externalAnswers = groupedWork.filter((entry) => entry.group === "awaiting-answer");
+  const continuations = groupedWork.filter((entry) => entry.group === "continuations");
+  const drafts = groupedWork.filter((entry) => entry.group === "drafts" && entry.draft);
   const renderWorkGroup = (title, entries) => entries.length
     ? `<section class="battle-work-group"><h3>${title}</h3>
         <div class="battle-unfinished-list">${entries.map(renderPlayerWork).join("")}</div></section>`
     : "";
   const visibleWorkCount = visibleUnfinished.length + minimizedWithoutRecovery.length;
-  const workPanel = visibleWorkCount ? `<details class="battle-unfinished-work"
-      ${!activeWorkspace ? "open" : ""}>
-    <summary>Незавершённое и история · ${visibleWorkCount}</summary>
-    ${renderWorkGroup("Требуют завершения", requiredWork)}
-    ${renderWorkGroup("Ожидают ответа ведущего", externalAnswers)}
-    ${renderWorkGroup("Черновики и отложенные панели", drafts)}
-    ${requiredWork.length + externalAnswers.length + drafts.length === 0
+  const workPanel = visibleWorkCount ? `<details class="battle-unfinished-work">
+    <summary>Требует внимания · ${visibleWorkCount}</summary>
+    ${renderWorkGroup("Обязательные последствия", requiredWork)}
+    ${renderWorkGroup("Ожидается ответ", externalAnswers)}
+    ${renderWorkGroup("Доступные продолжения", continuations)}
+    ${renderWorkGroup("Черновики", drafts)}
+    ${requiredWork.length + externalAnswers.length + continuations.length + drafts.length === 0
       ? "<p>Нет ожидающих результатов или черновиков.</p>" : ""}
   </details>` : "";
   const workspaceHostMarkup = `<div class="combat-workspace-host" data-combat-workspace-root
@@ -308,17 +301,18 @@ function buildBattleConsole(state) {
   return {
     phase: view.phase,
     activeWorkspace: Boolean(activeWorkspace),
-    hud: `<header class="combat-turn-card__header">
-      <h2 id="battleConsoleTitle" tabindex="-1">${escapeHtml(state.profile?.name ?? "Сара")}</h2>
-      <span class="battle-console-phase">${escapeHtml(phaseLabels[view.phase])}</span>
+    hud: `<header class="sara-app-head">
+      <div class="sara-app-head__title"><h2 id="battleConsoleTitle" tabindex="-1">
+        ${escapeHtml(state.profile?.name ?? "Сара")} · ${escapeHtml(phaseLabels[view.phase])}</h2></div>
       ${resources}
     </header>`,
     budget,
-    navigation: phaseBody,
+    navigation,
+    phaseBody: `${phaseBody}${commandContent}`,
     pending: `${saveRecovery.length ? `<section class="combat-save-recovery" aria-label="Требуется повторное сохранение">
       ${saveRecovery.map(renderPlayerWork).join("")}</section>` : ""}
       ${workPanel}`,
-    turnControls: `${mainAction ? `<footer class="battle-primary-footer">${mainAction}</footer>` : ""}
+    turnControls: `${mainAction ? `<footer class="combat-primary-footer">${mainAction}</footer>` : ""}
       <p class="battle-console-status" data-battle-status role="status"></p>`,
     workspaceHostMarkup,
   };
@@ -326,19 +320,20 @@ function buildBattleConsole(state) {
 
 export function renderBattleConsole(state) {
   const regions = buildBattleConsole(state);
-  return `<section class="battle-console sara-combat-shell battle-player-console combat-turn-card panel-section"
+  return `<section class="sara-combat-shell combat-turn-card panel-section"
       data-player-scene-phase="${regions.phase}" aria-labelledby="battleConsoleTitle">
     <div data-sara-hud>${regions.hud}</div>
-    <div data-sara-budget>${regions.budget}</div>
+    <div data-sara-budget ${regions.activeWorkspace ? "hidden" : ""}>${regions.budget}</div>
+    <div data-sara-navigation ${regions.activeWorkspace ? "hidden" : ""}>${regions.navigation}</div>
     <div data-sara-task-region data-combat-task-region
       class="${regions.activeWorkspace ? "combat-active-task" : "combat-home-task"}">
       <div data-sara-idle-content ${regions.activeWorkspace ? "hidden" : ""}>
-        <nav data-sara-navigation aria-label="Действия боя">${regions.navigation}</nav>
+        <div data-sara-phase-content>${regions.phaseBody}</div>
       </div>
       ${regions.workspaceHostMarkup}
     </div>
-    <div data-sara-pending-work>${regions.pending}</div>
-    <div data-sara-turn-controls>${regions.turnControls}</div>
+    <div data-sara-pending-work ${regions.activeWorkspace ? "hidden" : ""}>${regions.pending}</div>
+    <div data-sara-turn-controls ${regions.activeWorkspace ? "hidden" : ""}>${regions.turnControls}</div>
   </section>`;
 }
 
@@ -350,18 +345,44 @@ export function updateBattleConsole(root, state) {
   }
 
   const regions = buildBattleConsole(state);
+  const previousPhase = shell.dataset.playerScenePhase;
   shell.dataset.playerScenePhase = regions.phase;
   const updateRegion = (selector, markup) => {
     const region = shell.querySelector(selector);
-    if (!region || region.innerHTML === markup ||
-        region.contains(document.activeElement)) return;
+    if (!region) return;
+    if (region.innerHTML === markup) {
+      deferredBattleRegionMarkup.delete(region);
+      return;
+    }
+    if (region.contains(document.activeElement)) {
+      deferredBattleRegionMarkup.set(region, markup);
+      return;
+    }
     region.innerHTML = markup;
+    deferredBattleRegionMarkup.delete(region);
   };
   updateRegion("[data-sara-hud]", regions.hud);
   updateRegion("[data-sara-budget]", regions.budget);
-  updateRegion("[data-sara-navigation]", regions.navigation);
+  const navigation = shell.querySelector("[data-sara-navigation]");
+  if (previousPhase === "own-turn" && regions.phase === "own-turn" && navigation) {
+    for (const button of navigation.querySelectorAll("[data-battle-menu]")) {
+      button.setAttribute("aria-pressed", String(button.dataset.battleMenu === (selectedMenu ?? "action")));
+    }
+  } else {
+    updateRegion("[data-sara-navigation]", regions.navigation);
+  }
   updateRegion("[data-sara-pending-work]", regions.pending);
   updateRegion("[data-sara-turn-controls]", regions.turnControls);
+  updateRegion("[data-sara-phase-content]", regions.phaseBody);
+  for (const selector of [
+    "[data-sara-budget]",
+    "[data-sara-navigation]",
+    "[data-sara-pending-work]",
+    "[data-sara-turn-controls]",
+  ]) {
+    const region = shell.querySelector(selector);
+    if (region) region.hidden = regions.activeWorkspace;
+  }
   const idle = shell.querySelector("[data-sara-idle-content]");
   const taskRegion = shell.querySelector("[data-sara-task-region]");
   const workspace = shell.querySelector("[data-combat-workspace-root]");
@@ -369,6 +390,20 @@ export function updateBattleConsole(root, state) {
   if (taskRegion) taskRegion.className = regions.activeWorkspace
     ? "combat-active-task" : "combat-home-task";
   if (workspace) workspace.hidden = !regions.activeWorkspace;
+}
+
+const deferredBattleRegionMarkup = new Map();
+
+function flushDeferredBattleRegions(root) {
+  for (const [region, markup] of deferredBattleRegionMarkup) {
+    if (!root.contains(region)) {
+      deferredBattleRegionMarkup.delete(region);
+      continue;
+    }
+    if (region.contains(document.activeElement)) continue;
+    region.innerHTML = markup;
+    deferredBattleRegionMarkup.delete(region);
+  }
 }
 
 function renderIncomingEvents(commands) {
@@ -454,6 +489,16 @@ export function bindBattleConsole(root = document) {
       rerender();
       return;
     }
+    const discardButton = event.target.closest("[data-workspace-discard]");
+    if (discardButton && root.contains(discardButton)) {
+      const result = discardWorkspaceDraft(discardButton.dataset.workspaceDiscard);
+      if (!result.ok) {
+        reportFailure(result.reason);
+      } else {
+        rerender();
+      }
+      return;
+    }
     if (event.target.closest("[data-battle-incoming-events]")) {
       incomingEventsOpen = true;
       rerender();
@@ -533,6 +578,16 @@ export function bindBattleConsole(root = document) {
       runBattleCommand(button.dataset.battleCommand);
     }
   });
+  root.addEventListener("focusout", () => queueMicrotask(() => flushDeferredBattleRegions(root)));
+  root.addEventListener("input", (event) => {
+    const input = event.target.closest("[data-initiative-entry]");
+    if (!input || !root.contains(input)) return;
+    const die = Number(input.value);
+    const modifier = Number(input.dataset.modifier);
+    const total = root.querySelector("[data-initiative-total]");
+    if (total) total.textContent = Number.isInteger(die) && die >= 1 && die <= 20 &&
+      Number.isFinite(modifier) ? String(die + modifier) : "—";
+  });
   root.addEventListener("submit", (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement) ||
@@ -543,15 +598,6 @@ export function bindBattleConsole(root = document) {
       : "correct-initiative";
     const result = executeBattleCommand(command, {
       rawD20: form.elements.rawD20.value,
-    });
-    root.addEventListener("input", (event) => {
-      const input = event.target.closest("[data-initiative-entry]");
-      if (!input || !root.contains(input)) return;
-      const die = Number(input.value);
-      const modifier = Number(input.dataset.modifier);
-      const total = root.querySelector("[data-initiative-total]");
-      if (total) total.textContent = Number.isInteger(die) && die >= 1 && die <= 20 &&
-        Number.isFinite(modifier) ? String(die + modifier) : "—";
     });
     const status = root.querySelector("[data-battle-status]");
     if (status && result.status !== "applied") {

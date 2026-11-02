@@ -232,7 +232,7 @@ test("the phase hub keeps turn actions hidden while waiting and exposes turn res
   let markup = renderBattleConsole(character);
   assert.match(markup, /data-player-scene-phase="waiting"/);
   assert.match(markup, /Ожидание своего хода/);
-  assert.match(markup, /Незавершённое и история · 2/);
+  assert.match(markup, /Требует внимания · 2/);
   assert.match(markup, /data-battle-command="begin-own-turn"/);
   assert.doesNotMatch(markup, /data-battle-command-open="(?:flurry|normal-attack)"/);
 
