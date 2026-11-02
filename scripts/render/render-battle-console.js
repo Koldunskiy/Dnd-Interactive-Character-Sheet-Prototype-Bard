@@ -18,6 +18,7 @@ import {
   getEndTurnAdvice,
   getPlayerHubViewModel,
 } from "../battle/player-hub.js";
+import { getSaraInitiativeSnapshot } from "../battle/providers/sara.js";
 
 let selectedMenu = null;
 let incomingEventsOpen = false;
@@ -101,6 +102,10 @@ export function renderBattleConsole(state) {
   const view = getPlayerHubViewModel(state, workspaceSessions);
   const derived = getDerivedStats(state);
   const commands = getSaraBattleCommandRegistry(state);
+  const initiativeSnapshot = getSaraInitiativeSnapshot(state);
+  const initiativeModifier = initiativeSnapshot.ok
+    ? initiativeSnapshot.sources.reduce((total, source) => total + source.value, 0)
+    : null;
   const minimized = getMinimizedWorkspaceSessions();
   const phaseLabels = {
     outside: "Вне боя",
@@ -112,10 +117,21 @@ export function renderBattleConsole(state) {
     selectedMenu = null;
     turnReviewOpen = false;
   }
+  const currentHp = Math.max(0, Number(state.combat?.hp?.current ?? 0));
+  const maxHp = Math.max(0, Number(derived.maxHitPoints ?? 0));
+  const currentKi = Math.max(0, Number(state.combat?.ki?.current ?? 0));
+  const maxKi = Math.max(0, Number(derived.monk.kiMaximum ?? 0));
   const resources = `<section class="battle-console-hud" aria-label="Ресурсы персонажа">
-    <span>HP <strong>${state.combat?.hp?.current ?? "—"}/${derived.maxHitPoints}</strong> · временные ${state.combat?.hp?.temp ?? 0}</span>
-    <span>Ци <strong>${state.combat?.ki?.current ?? "—"}/${derived.monk.kiMaximum}</strong></span>
-    <span>Practiced <strong>${state.combat?.practiced?.current ?? 0}/${derived.monk.practicedMaximum}</strong></span>
+    <div class="battle-console-resource" aria-label="HP ${currentHp} из ${maxHp}; временные ${state.combat?.hp?.temp ?? 0}">
+      <div class="battle-console-resource__label"><strong>HP</strong><span>${currentHp}/${maxHp}</span></div>
+      <div class="battle-console-resource__track" aria-hidden="true"><span style="width:${maxHp ? Math.min(100, currentHp / maxHp * 100) : 0}%"></span></div>
+      <small>Временные HP: ${state.combat?.hp?.temp ?? 0}</small>
+    </div>
+    <div class="battle-console-resource" aria-label="Ци ${currentKi} из ${maxKi}">
+      <div class="battle-console-resource__label"><strong>Ци</strong><span>${currentKi}/${maxKi}</span></div>
+      <div class="battle-console-resource__track battle-console-resource__track--ki" aria-hidden="true"><span style="width:${maxKi ? Math.min(100, currentKi / maxKi * 100) : 0}%"></span></div>
+    </div>
+    <span class="battle-console-practiced">Practiced <strong>${state.combat?.practiced?.current ?? 0}/${derived.monk.practicedMaximum}</strong></span>
   </section>`;
   const budget = view.budget ? `<section class="combat-budget" aria-label="Бюджет хода">
     ${[
@@ -142,16 +158,22 @@ export function renderBattleConsole(state) {
     const outsideAbilities = commands.filter((entry) =>
       entry.id.startsWith("racial-spell:") || entry.id === "mystic-regeneration");
     phaseBody = `<section class="battle-player-home">
-      <details class="battle-start">
-        <summary>Начинается бой?</summary>
+      <section class="battle-start">
+        <h3>Инициатива</h3>
+        <p>${initiativeSnapshot.ok
+          ? initiativeSnapshot.sources.map((source) =>
+            `${escapeHtml(source.label)} ${source.value >= 0 ? "+" : ""}${source.value}`).join(" · ")
+          : escapeHtml(initiativeSnapshot.reason)}</p>
         <form class="battle-console-init-form" data-battle-form="start">
           <label>Физический к20 инициативы
-            <input name="rawD20" type="number" min="1" max="20" required inputmode="numeric">
+            <input name="rawD20" type="number" min="1" max="20" required inputmode="numeric"
+              data-initiative-entry data-modifier="${initiativeModifier ?? ""}">
           </label>
+          <output class="battle-console-init-total" data-initiative-total aria-live="polite">—</output>
           <button type="submit" class="btn btn--primary">Начать бой</button>
         </form>
         <p class="hint">Порядок ходов определяет ведущий. Ваш ход начнётся только после подтверждения.</p>
-      </details>
+      </section>
       <h3>Проверки</h3>
       <div class="battle-quick-rolls">
         ${[
@@ -459,6 +481,15 @@ export function bindBattleConsole(root = document) {
       : "correct-initiative";
     const result = executeBattleCommand(command, {
       rawD20: form.elements.rawD20.value,
+    });
+    root.addEventListener("input", (event) => {
+      const input = event.target.closest("[data-initiative-entry]");
+      if (!input || !root.contains(input)) return;
+      const die = Number(input.value);
+      const modifier = Number(input.dataset.modifier);
+      const total = root.querySelector("[data-initiative-total]");
+      if (total) total.textContent = Number.isInteger(die) && die >= 1 && die <= 20 &&
+        Number.isFinite(modifier) ? String(die + modifier) : "—";
     });
     const status = root.querySelector("[data-battle-status]");
     if (status && result.status !== "applied") {

@@ -60,6 +60,64 @@
   box-shadow: none;
 }
 
+.combat-turn-card__header .battle-console-hud {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.battle-console-resource {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.battle-console-resource__label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-console-resource__track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--surface-1);
+}
+
+.battle-console-resource__track > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.battle-console-resource__track--ki > span {
+  background: var(--accent-secondary, var(--accent));
+}
+
+.battle-console-practiced {
+  grid-column: 1 / -1;
+}
+
+.battle-console-init-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.battle-console-init-total {
+  min-width: 2ch;
+  padding: 4px;
+  color: var(--text-strong);
+  font-size: 1.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 .combat-budget {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));

@@ -28,6 +28,7 @@ import { getSaraRollBreakdown } from "../../scripts/rolls/providers/sara.js";
 import { renderBattleConsole } from "../../scripts/render/render-battle-console.js";
 import { renderCommandWorkspace } from "../../scripts/render/render-command-workspace.js";
 import { renderAttackWorkspace } from "../../scripts/render/render-attack-workspace.js";
+import { getSaraInitiativeSnapshot } from "../../scripts/battle/providers/sara.js";
 
 test("battle cards separate full-width titles from wrapping costs and keep full spell details accessible", () => {
   const markup = renderBattleConsole(structuredClone(sara));
@@ -50,6 +51,21 @@ test("battle cards separate full-width titles from wrapping costs and keep full 
   assert.match(ownTurnMarkup, /aria-label="Бюджет хода"/);
   assert.match(ownTurnMarkup, /Доступно|Потрачено/);
   assert.doesNotMatch(ownTurnMarkup, /<strong>1<\/strong>|<strong>0<\/strong>/);
+});
+
+test("Sara combat home exposes derived resource bars and pre-combat initiative sources", () => {
+  const character = structuredClone(sara);
+  const markup = renderBattleConsole(character);
+  assert.match(markup, /battle-console-resource__track/);
+  assert.match(markup, /Временные HP:/);
+  assert.match(markup, /data-initiative-entry/);
+  assert.match(markup, /data-initiative-total/);
+  assert.match(markup, /Начать бой/);
+  assert.doesNotMatch(markup, /Начинается бой\?/);
+  const initiative = getSaraInitiativeSnapshot(character);
+  assert.equal(initiative.ok, true);
+  const modifier = initiative.sources.reduce((total, source) => total + source.value, 0);
+  assert.ok(markup.includes(`data-modifier="${modifier}"`));
 });
 
 test("battle cards and global surfaces have wrapping and theme-token safeguards", async () => {
