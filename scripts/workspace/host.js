@@ -247,7 +247,6 @@ export function renderWorkspaceHost({ header, body, footer, status = "", error =
   if (footerNode && footerNode.innerHTML !== footer) footerNode.innerHTML = footer;
   if (errorNode) {
     errorNode.textContent = keepFocusedForm ? error : "";
-  releaseEntryPresentation();
     errorNode.hidden = !keepFocusedForm || !error;
   }
   if (statusNode) statusNode.textContent = status;

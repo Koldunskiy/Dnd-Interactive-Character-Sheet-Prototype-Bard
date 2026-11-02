@@ -2119,6 +2119,9 @@ export function getWorkspaceSessions() {
     appliedUnsaved: entry.appliedUnsaved === true,
     minimized: entry.minimized === true,
     suspended: entry.suspended === true,
+    sequenceId: entry.sequenceId ?? null,
+    attackId: entry.currentStep === "damage-input" ? entry.attackId ?? null : null,
+    stage: entry.currentStep ?? null,
   }));
 }
 

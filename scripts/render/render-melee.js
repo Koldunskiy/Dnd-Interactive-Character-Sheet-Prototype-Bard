@@ -482,17 +482,22 @@ export function renderMeleePanel(state, derived) {
   }
 
   if (state.profile?.id === "sara-velaris") {
+    const markup = renderBattleConsole(state);
     const mountedWorkspace = meleePanel.querySelector("[data-combat-workspace-root]");
-    mountedWorkspace?.remove();
-    meleePanel.innerHTML = renderBattleConsole(state);
-    const generatedWorkspace = meleePanel.querySelector("[data-combat-workspace-root]");
-    const taskRegion = meleePanel.querySelector("[data-combat-task-region]");
-    if (mountedWorkspace && taskRegion) {
-      generatedWorkspace?.remove();
+    const mountedConsole = meleePanel.querySelector(".battle-console");
+    if (mountedConsole && mountedWorkspace?.parentElement === meleePanel) {
+      const staging = document.createElement("div");
+      staging.innerHTML = markup;
+      const updatedConsole = staging.querySelector(".battle-console");
+      if (updatedConsole) mountedConsole.replaceWith(updatedConsole);
+    } else {
+      meleePanel.innerHTML = markup;
+    }
+    const workspace = meleePanel.querySelector("[data-combat-workspace-root]");
+    if (workspace) {
       const activeWorkspace = getWorkspaceSessions().some((entry) =>
         !entry.minimized && !entry.suspended);
-      mountedWorkspace.hidden = !activeWorkspace;
-      taskRegion.append(mountedWorkspace);
+      workspace.hidden = !activeWorkspace;
     }
     return;
   }

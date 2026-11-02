@@ -368,8 +368,10 @@ export function recordAttackDamage(context, actionId, attackId, rolls, operation
         throw new Error("Урон можно записать только для подтверждённого попадания.");
       }
       if (attack.damageStatus !== "awaiting-damage") throw new Error("Урон этого удара уже записан или закрыт.");
-      const profile = attack.profileSnapshot ??
-        getDerivedStats(draft).saraAttackProfiles[attack.profileId];
+      const profile = attack.profileSnapshot;
+      if (!profile || typeof profile !== "object") {
+        throw new Error("Для исторического расчёта урона отсутствует снимок профиля атаки.");
+      }
       const damage = calculateAttackDamage(profile, rolls, attack.critical);
       if (!damage.ok) throw new Error(damage.reason);
       attack.damageRolls = damage.damageRolls;

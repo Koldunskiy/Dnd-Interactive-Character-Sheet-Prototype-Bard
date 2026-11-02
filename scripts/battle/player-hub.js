@@ -48,9 +48,14 @@ export function getOwnTurnContinuationTasks(character) {
 export function getUnfinishedPlayerWork(character, workspaceSessions = []) {
   const assistant = character.monk?.combatAssistant ?? {};
   const work = [];
+  const liveDamageTasks = new Set(workspaceSessions
+    .filter((workspace) => workspace.stage === "damage-input" &&
+      workspace.sequenceId && workspace.attackId)
+    .map((workspace) => `${workspace.sequenceId}:${workspace.attackId}`));
   for (const sequence of assistant.activeSequences ?? []) {
     for (const attack of sequence.resolvedAttacks ?? []) {
-      if (attack.damageStatus === "awaiting-damage") {
+      if (attack.damageStatus === "awaiting-damage" &&
+          !liveDamageTasks.has(`${sequence.id}:${attack.id}`)) {
         work.push({
           id: `damage:${sequence.id}:${attack.id}`,
           kind: "historical-damage",

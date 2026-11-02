@@ -289,8 +289,8 @@ export function renderBattleConsole(state) {
       <p data-workspace-status role="status" aria-live="polite"></p></footer>
   </div>`;
   const taskRegion = activeWorkspace
-    ? `<div class="combat-active-task" aria-label="Текущее действие" data-combat-task-region>${workspaceHostMarkup}</div>`
-    : `<div class="combat-home-task" data-combat-task-region>${phaseBody}${workspaceHostMarkup}</div>`;
+    ? `<div class="combat-active-task" aria-label="Текущее действие" data-combat-task-region></div>`
+    : `<div class="combat-home-task" data-combat-task-region>${phaseBody}</div>`;
   const mainAction = activeWorkspace ? "" : primaryFooter;
   return `<section class="battle-console battle-player-console combat-turn-card panel-section"
     data-player-scene-phase="${view.phase}" aria-labelledby="battleConsoleTitle">
@@ -306,7 +306,7 @@ export function renderBattleConsole(state) {
     ${workPanel}
     ${mainAction ? `<footer class="battle-primary-footer">${mainAction}</footer>` : ""}
     <p class="battle-console-status" data-battle-status role="status"></p>
-  </section>`;
+  </section>${workspaceHostMarkup}`;
 }
 
 function renderIncomingEvents(commands) {
