@@ -2,8 +2,7 @@ import {
   escapeHtml,
 } from "./shared/spell-card.js";
 import { getBladeFlourishReference } from "../rule-reference.js";
-import { renderBattleConsole } from "./render-battle-console.js";
-import { getWorkspaceSessions } from "../workspace/controller.js";
+import { updateBattleConsole } from "./render-battle-console.js";
 
 const EMPTY_COMBAT_CARDS = Object.freeze({
   weapons: [],
@@ -482,23 +481,7 @@ export function renderMeleePanel(state, derived) {
   }
 
   if (state.profile?.id === "sara-velaris") {
-    const markup = renderBattleConsole(state);
-    const mountedWorkspace = meleePanel.querySelector("[data-combat-workspace-root]");
-    const mountedConsole = meleePanel.querySelector(".battle-console");
-    if (mountedConsole && mountedWorkspace?.parentElement === meleePanel) {
-      const staging = document.createElement("div");
-      staging.innerHTML = markup;
-      const updatedConsole = staging.querySelector(".battle-console");
-      if (updatedConsole) mountedConsole.replaceWith(updatedConsole);
-    } else {
-      meleePanel.innerHTML = markup;
-    }
-    const workspace = meleePanel.querySelector("[data-combat-workspace-root]");
-    if (workspace) {
-      const activeWorkspace = getWorkspaceSessions().some((entry) =>
-        !entry.minimized && !entry.suspended);
-      workspace.hidden = !activeWorkspace;
-    }
+    updateBattleConsole(meleePanel, state);
     return;
   }
 

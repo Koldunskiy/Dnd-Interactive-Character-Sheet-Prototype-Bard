@@ -56,10 +56,11 @@ export function getUnfinishedPlayerWork(character, workspaceSessions = []) {
     for (const attack of sequence.resolvedAttacks ?? []) {
       if (attack.damageStatus === "awaiting-damage" &&
           !liveDamageTasks.has(`${sequence.id}:${attack.id}`)) {
+        const attackNumber = sequence.resolvedAttacks.indexOf(attack) + 1;
         work.push({
           id: `damage:${sequence.id}:${attack.id}`,
           kind: "historical-damage",
-          label: "Записать урон по сохранённому попаданию",
+          label: `Урон · удар ${attackNumber}/${sequence.maximumAttacks}`,
           sequenceId: sequence.id,
           attackId: attack.id,
         });
@@ -71,7 +72,7 @@ export function getUnfinishedPlayerWork(character, workspaceSessions = []) {
       work.push({
         id: `save:${application.id}`,
         kind: "pending-save",
-        label: `Записать полученный исход спасброска · СЛ ${application.dc ?? "—"}`,
+        label: `Исход цели · СЛ ${application.dc ?? "—"}`,
         commandId: `pending-save:${application.id}`,
       });
     }

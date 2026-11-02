@@ -95,7 +95,7 @@ function renderPlayerWork(work) {
   return "";
 }
 
-export function renderBattleConsole(state) {
+function buildBattleConsole(state) {
   const workspaceSessions = getWorkspaceSessions();
   const activeWorkspace = workspaceSessions.find((entry) =>
     !entry.minimized && !entry.suspended);
@@ -229,7 +229,7 @@ export function renderBattleConsole(state) {
         (selectedGroup === "movement" || entry.activationBudget !== "none"))
       : [];
     phaseBody = `<section class="battle-player-home">
-      ${sequenceCards.length ? `<section class="battle-continuations"><h4>Продолжить начатое</h4>${sequenceCards}</section>` : ""}
+      ${sequenceCards.length ? `<section class="battle-continuations"><h4>Доступные продолжения</h4>${sequenceCards}</section>` : ""}
       <div class="battle-quick-rolls">
         <button type="button" class="btn btn--primary" data-battle-command-open="normal-attack"
           ${commands.find((entry) => entry.id === "normal-attack")?.availability.enabled ? "" : "disabled"}>
@@ -272,41 +272,103 @@ export function renderBattleConsole(state) {
     ? [] : [...unfinished, ...minimized].filter((entry) => entry.appliedUnsaved);
   const minimizedWithoutRecovery = minimized.filter((entry) => !entry.appliedUnsaved);
   const visibleUnfinished = unfinished.filter((entry) => !entry.appliedUnsaved);
-  const workPanel = unfinished.length + minimized.length ? `<details class="battle-unfinished-work"
+  const requiredWork = visibleUnfinished.filter((entry) =>
+    entry.kind === "historical-damage" ||
+    entry.kind === "pending-roll" && !entry.label.startsWith("Указать исход"));
+  const externalAnswers = visibleUnfinished.filter((entry) =>
+    entry.kind === "pending-save" ||
+    entry.kind === "pending-roll" && entry.label.startsWith("Указать исход"));
+  const drafts = [
+    ...visibleUnfinished.filter((entry) => entry.kind === "workspace"),
+    ...minimizedWithoutRecovery,
+  ];
+  const renderWorkGroup = (title, entries) => entries.length
+    ? `<section class="battle-work-group"><h3>${title}</h3>
+        <div class="battle-unfinished-list">${entries.map(renderPlayerWork).join("")}</div></section>`
+    : "";
+  const visibleWorkCount = visibleUnfinished.length + minimizedWithoutRecovery.length;
+  const workPanel = visibleWorkCount ? `<details class="battle-unfinished-work"
       ${!activeWorkspace ? "open" : ""}>
-    <summary>Незавершённое и история · ${unfinished.length + minimized.length}</summary>
-    <div class="battle-unfinished-list">${visibleUnfinished.map(renderPlayerWork).join("") ||
-      "<p>Нет ожидающих результатов или черновиков.</p>"}</div>
-    ${minimizedWithoutRecovery.length ? `<div class="battle-unfinished-list" aria-label="Рабочие панели">
-      ${minimizedWithoutRecovery.map(renderPlayerWork).join("")}</div>` : ""}
+    <summary>Незавершённое и история · ${visibleWorkCount}</summary>
+    ${renderWorkGroup("Требуют завершения", requiredWork)}
+    ${renderWorkGroup("Ожидают ответа ведущего", externalAnswers)}
+    ${renderWorkGroup("Черновики и отложенные панели", drafts)}
+    ${requiredWork.length + externalAnswers.length + drafts.length === 0
+      ? "<p>Нет ожидающих результатов или черновиков.</p>" : ""}
   </details>` : "";
   const workspaceHostMarkup = `<div class="combat-workspace-host" data-combat-workspace-root
-      role="region" aria-label="Активная рабочая панель" hidden>
+      role="region" aria-label="Активная рабочая панель" ${activeWorkspace ? "" : "hidden"}>
     <header class="action-workspace__header"><div data-workspace-header></div></header>
     <p class="workspace-live-error" data-workspace-error role="alert" hidden></p>
     <section class="action-workspace__body" data-workspace-body aria-label="Текущий этап"></section>
     <footer class="action-workspace__footer"><div data-workspace-footer></div>
       <p data-workspace-status role="status" aria-live="polite"></p></footer>
   </div>`;
-  const taskRegion = activeWorkspace
-    ? `<div class="combat-active-task" aria-label="Текущее действие" data-combat-task-region></div>`
-    : `<div class="combat-home-task" data-combat-task-region>${phaseBody}</div>`;
   const mainAction = activeWorkspace ? "" : primaryFooter;
-  return `<section class="battle-console battle-player-console combat-turn-card panel-section"
-    data-player-scene-phase="${view.phase}" aria-labelledby="battleConsoleTitle">
-    <header class="combat-turn-card__header">
+  return {
+    phase: view.phase,
+    activeWorkspace: Boolean(activeWorkspace),
+    hud: `<header class="combat-turn-card__header">
       <h2 id="battleConsoleTitle" tabindex="-1">${escapeHtml(state.profile?.name ?? "Сара")}</h2>
       <span class="battle-console-phase">${escapeHtml(phaseLabels[view.phase])}</span>
       ${resources}
-    </header>
-    ${budget}
-    ${taskRegion}
-    ${saveRecovery.length ? `<section class="combat-save-recovery" aria-label="Требуется повторное сохранение">
+    </header>`,
+    budget,
+    navigation: phaseBody,
+    pending: `${saveRecovery.length ? `<section class="combat-save-recovery" aria-label="Требуется повторное сохранение">
       ${saveRecovery.map(renderPlayerWork).join("")}</section>` : ""}
-    ${workPanel}
-    ${mainAction ? `<footer class="battle-primary-footer">${mainAction}</footer>` : ""}
-    <p class="battle-console-status" data-battle-status role="status"></p>
-  </section>${workspaceHostMarkup}`;
+      ${workPanel}`,
+    turnControls: `${mainAction ? `<footer class="battle-primary-footer">${mainAction}</footer>` : ""}
+      <p class="battle-console-status" data-battle-status role="status"></p>`,
+    workspaceHostMarkup,
+  };
+}
+
+export function renderBattleConsole(state) {
+  const regions = buildBattleConsole(state);
+  return `<section class="battle-console sara-combat-shell battle-player-console combat-turn-card panel-section"
+      data-player-scene-phase="${regions.phase}" aria-labelledby="battleConsoleTitle">
+    <div data-sara-hud>${regions.hud}</div>
+    <div data-sara-budget>${regions.budget}</div>
+    <div data-sara-task-region data-combat-task-region
+      class="${regions.activeWorkspace ? "combat-active-task" : "combat-home-task"}">
+      <div data-sara-idle-content ${regions.activeWorkspace ? "hidden" : ""}>
+        <nav data-sara-navigation aria-label="Действия боя">${regions.navigation}</nav>
+      </div>
+      ${regions.workspaceHostMarkup}
+    </div>
+    <div data-sara-pending-work>${regions.pending}</div>
+    <div data-sara-turn-controls>${regions.turnControls}</div>
+  </section>`;
+}
+
+export function updateBattleConsole(root, state) {
+  const shell = root.querySelector(".sara-combat-shell");
+  if (!shell) {
+    root.innerHTML = renderBattleConsole(state);
+    return;
+  }
+
+  const regions = buildBattleConsole(state);
+  shell.dataset.playerScenePhase = regions.phase;
+  const updateRegion = (selector, markup) => {
+    const region = shell.querySelector(selector);
+    if (!region || region.innerHTML === markup ||
+        region.contains(document.activeElement)) return;
+    region.innerHTML = markup;
+  };
+  updateRegion("[data-sara-hud]", regions.hud);
+  updateRegion("[data-sara-budget]", regions.budget);
+  updateRegion("[data-sara-navigation]", regions.navigation);
+  updateRegion("[data-sara-pending-work]", regions.pending);
+  updateRegion("[data-sara-turn-controls]", regions.turnControls);
+  const idle = shell.querySelector("[data-sara-idle-content]");
+  const taskRegion = shell.querySelector("[data-sara-task-region]");
+  const workspace = shell.querySelector("[data-combat-workspace-root]");
+  if (idle) idle.hidden = regions.activeWorkspace;
+  if (taskRegion) taskRegion.className = regions.activeWorkspace
+    ? "combat-active-task" : "combat-home-task";
+  if (workspace) workspace.hidden = !regions.activeWorkspace;
 }
 
 function renderIncomingEvents(commands) {
@@ -361,7 +423,7 @@ function renderTurnReview(advice) {
 export function bindBattleConsole(root = document) {
   if (root.dataset.battleConsoleBound === "true") return;
   const rerender = () => {
-    root.innerHTML = renderBattleConsole(getState());
+    updateBattleConsole(root, getState());
   };
   const reportFailure = (message) => {
     const status = root.querySelector("[data-battle-status]");

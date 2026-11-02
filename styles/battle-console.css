@@ -5,6 +5,23 @@
     var(--surface-2);
 }
 
+.sara-combat-shell.combat-turn-card {
+  --combat-heading-size: 1.0625rem;
+  --combat-task-title-size: 1rem;
+  --combat-body-size: 0.9375rem;
+  --combat-secondary-size: 0.8125rem;
+  --combat-result-size: clamp(2rem, 9vw, 2.5rem);
+  --combat-gap: 0.5rem;
+  --combat-padding: 0.625rem;
+  --combat-control-min-height: 2.75rem;
+  gap: var(--combat-gap);
+  padding: var(--combat-padding);
+  border-color: var(--line);
+  border-radius: 12px;
+  box-shadow: none;
+  background: var(--surface-2);
+}
+
 .combat-turn-card {
   --combat-heading-size: 1.0625rem;
   --combat-task-title-size: 1rem;
@@ -161,13 +178,34 @@ button.combat-budget__item {
 }
 
 .combat-active-task,
-.combat-home-task {
+.combat-home-task,
+[data-sara-task-region] {
   min-width: 0;
 }
 
-.combat-active-task {
+[data-sara-task-region] {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+}
+
+.sara-combat-shell > [data-sara-hud],
+.sara-combat-shell > [data-sara-budget],
+.sara-combat-shell > [data-sara-pending-work],
+.sara-combat-shell > [data-sara-turn-controls] {
+  min-width: 0;
+}
+
+.sara-combat-shell > [data-sara-pending-work]:empty,
+.sara-combat-shell > [data-sara-turn-controls]:empty {
+  display: none;
+}
+
+.sara-combat-shell [data-sara-navigation] > * {
+  margin-block: 0;
+}
+
+[data-sara-idle-content][hidden] {
+  display: none !important;
 }
 
 .combat-workspace-host[hidden] {
@@ -199,6 +237,12 @@ button.combat-budget__item {
 }
 
 .combat-workspace-host[data-entry-active="true"] > .action-workspace__header {
+  display: block;
+}
+
+.combat-workspace-host[data-entry-active="true"] .workspace-nav,
+.combat-workspace-host[data-entry-active="true"] .workspace-resources,
+.combat-workspace-host[data-entry-active="true"] .action-workspace__header > div > p {
   display: none;
 }
 
@@ -206,11 +250,10 @@ html[data-combat-entry-active="true"] nav.tabs {
   display: none;
 }
 
-html[data-combat-entry-active="true"] .combat-turn-card__header,
-html[data-combat-entry-active="true"] .combat-budget,
-html[data-combat-entry-active="true"] .battle-unfinished-work,
-html[data-combat-entry-active="true"] .battle-primary-footer,
-html[data-combat-entry-active="true"] .battle-console-status {
+html[data-combat-entry-active="true"] .sara-combat-shell > [data-sara-hud],
+html[data-combat-entry-active="true"] .sara-combat-shell > [data-sara-budget],
+html[data-combat-entry-active="true"] .sara-combat-shell > [data-sara-pending-work],
+html[data-combat-entry-active="true"] .sara-combat-shell > [data-sara-turn-controls] {
   display: none;
 }
 
@@ -326,6 +369,35 @@ html[data-combat-entry-active="true"] .battle-console-status {
   display: grid;
   gap: 5px;
   min-width: 0;
+}
+
+.workspace-save-recovery {
+  padding: 8px;
+  border: 1px solid var(--status-error-border);
+  border-radius: 8px;
+  color: var(--error);
+  background: var(--error-surface);
+  overflow-wrap: anywhere;
+}
+
+.workspace-save-recovery p {
+  margin: 4px 0 0;
+}
+
+.battle-work-group {
+  display: grid;
+  gap: 4px;
+  margin-block: 8px;
+}
+
+.battle-work-group h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--combat-secondary-size);
+}
+
+.battle-work-group .battle-unfinished-list {
+  margin: 0;
 }
 
 .combat-save-recovery__item {

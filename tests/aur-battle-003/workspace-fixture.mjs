@@ -1,24 +1,29 @@
 import {
+  disposeWorkspaceOwner,
   getWorkspaceSessionForTests,
   initActionWorkspace,
   reconcileWorkspaceAfterStateChange,
 } from "../../scripts/workspace/controller.js";
 import { openCharacterSession, subscribe } from "../../scripts/state.js";
 
-class FixtureNode {
+export class FixtureNode {
   constructor() {
     this.dataset = {};
     this.listeners = new Map();
-    this.innerHTML = "";
+    this.parentElement = null;
+    this.childNodes = [];
+    this._innerHTML = "";
     this.textContent = "";
     this.scrollTop = 0;
+    this._rootConnected = true;
     this.style = {
       values: new Map(),
       setProperty(name, value) { this.values.set(name, value); },
       getPropertyValue(name) { return this.values.get(name) ?? ""; },
     };
-    this.isConnected = true;
   }
+
+  get isConnected() { return this._rootConnected; }
 
   addEventListener(type, listener) {
     const listeners = this.listeners.get(type) ?? [];
@@ -26,11 +31,41 @@ class FixtureNode {
     this.listeners.set(type, listeners);
   }
 
+  get innerHTML() {
+    return this._innerHTML;
+  }
+
+  set innerHTML(markup) {
+    if (this._innerHTML !== markup) {
+      for (const child of this.childNodes) child.parentElement = null;
+      this.childNodes = [];
+    }
+    this._innerHTML = markup;
+  }
+
   fire(type, event) {
     for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 
-  contains() { return true; }
+  appendChild(node) {
+    node.parentElement?.removeChild?.(node);
+    node.parentElement = this;
+    this.childNodes.push(node);
+    return node;
+  }
+
+  removeChild(node) {
+    this.childNodes = this.childNodes.filter((child) => child !== node);
+    node.parentElement = null;
+  }
+
+  contains(node) {
+    if (!node) return false;
+    for (let current = node; current; current = current.parentElement) {
+      if (current === this) return true;
+    }
+    return false;
+  }
   closest(selector) {
     if (selector === "[data-workspace-form]" && this.dataset.workspaceForm) return this;
     return null;
@@ -75,6 +110,11 @@ class FixtureDialog extends FixtureNode {
     this.attackValidation = new FixtureNode();
     this.damageTotal = new FixtureNode();
     this.damageFormula = new FixtureNode();
+    this.appendChild(this.header);
+    this.appendChild(this.body);
+    this.appendChild(this.footer);
+    this.appendChild(this.status);
+    this.appendChild(this.error);
     this.secondD20 = new FixtureNode();
     this.secondD20.hidden = true;
     this.secondD20Input = { required: false };
@@ -116,12 +156,39 @@ class FixtureDialog extends FixtureNode {
     return nodes[selector] ?? null;
   }
 
+  fire(type, event) {
+    if (type === "submit" && Object.values(this.forms).includes(event.target)) {
+      event.target.parentElement = this.body;
+    }
+    super.fire(type, event);
+  }
+
   showModal() { this.open = true; }
   close() { this.open = false; this.closeCount += 1; }
   matches(selector) {
     return selector === "[data-combat-workspace-root]" && this.embeddedHost;
   }
   toggleAttribute() {}
+}
+
+export class FixtureInput extends FixtureNode {
+  constructor(name, value = "") {
+    super();
+    this.name = name;
+    this.value = value;
+    this.type = "number";
+  }
+
+  get isConnected() {
+    for (let current = this.parentElement; current; current = current.parentElement) {
+      if (current.documentRoot === true) return true;
+    }
+    return false;
+  }
+
+  focus() {
+    globalThis.document.activeElement = this;
+  }
 }
 
 let reusableDialog = null;
@@ -131,6 +198,7 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
   const dialog = reusableDialog ??= new FixtureDialog();
   const fallbackDialog = embeddedHost ? new FixtureDialog() : dialog;
   dialog.embeddedHost = embeddedHost;
+  dialog.contains = FixtureNode.prototype.contains;
   dialog.showModalCount = 0;
   dialog.closeCount = 0;
   fallbackDialog.open = false;
@@ -141,6 +209,15 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
   const invoker = reusableInvoker ??= new FixtureNode();
   dialog.open = false;
   dialog.forms = {};
+  dialog.childNodes = [];
+  dialog.header.parentElement = null;
+  dialog.body.parentElement = null;
+  dialog.footer.parentElement = null;
+  dialog.status.parentElement = null;
+  dialog.error.parentElement = null;
+  for (const node of [dialog.header, dialog.body, dialog.footer, dialog.status, dialog.error]) {
+    dialog.appendChild(node);
+  }
   for (const node of [dialog.header, dialog.body, dialog.footer, dialog.status]) {
     node.innerHTML = "";
     node.textContent = "";
@@ -166,6 +243,7 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
     },
   };
   globalThis.document = {
+    activeElement: null,
     body: { style: {} },
     getElementById(id) {
       if (id === "actionWorkspaceRoot") return fallbackDialog;
@@ -194,6 +272,8 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
     querySelectorAll() { return [invoker]; },
     dispatchEvent() {},
   };
+  const previousSession = getWorkspaceSessionForTests();
+  if (previousSession) disposeWorkspaceOwner(previousSession.owner, "session-changed");
   openCharacterSession("sara-velaris", () => ({ status: "missing" }));
   const unsubscribe = subscribe((state, metadata) =>
     reconcileWorkspaceAfterStateChange(state, metadata));
@@ -217,6 +297,7 @@ export function fireWorkspaceAction(dialog, action, data = {}) {
     },
     closest(selector) { return selector === "[data-workspace-action]" ? this : null; },
   };
+  button.parentElement = dialog;
   dialog.fire("click", { target: button });
 }
 
@@ -235,5 +316,6 @@ export function fireWorkspaceInput(dialog, name, value, type = "number") {
     checked: type === "checkbox" && value === true,
     closest(selector) { return selector === "[data-workspace-field]" ? this : null; },
   };
+  field.parentElement = dialog.body;
   dialog.fire("input", { target: field });
 }

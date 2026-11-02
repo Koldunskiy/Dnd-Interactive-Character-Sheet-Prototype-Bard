@@ -406,6 +406,71 @@
 .action-workspace__footer [role="status"] {
   color: var(--accent-strong);
 }
+
+.sara-combat-shell .combat-workspace-host .action-workspace__header {
+  min-width: 0;
+  padding: 6px 8px;
+}
+
+.sara-combat-shell .combat-workspace-host .workspace-task-heading h2 {
+  margin: 0;
+  font-size: var(--combat-task-title-size);
+  overflow-wrap: anywhere;
+}
+
+.sara-combat-shell .combat-workspace-host .action-workspace__body {
+  padding: 8px;
+}
+
+.sara-combat-shell .combat-workspace-host .workspace-entry-heading {
+  min-height: 36px;
+  justify-content: flex-end;
+  font-size: var(--combat-secondary-size);
+}
+
+.sara-combat-shell .combat-workspace-host .workspace-entry-heading .btn {
+  min-height: 40px;
+}
+
+.sara-combat-shell .combat-workspace-host .workspace-entry-result {
+  margin-block: 4px;
+  padding: 3px 4px;
+}
+
+.sara-combat-shell .combat-workspace-host .workspace-entry-result .workspace-attack-result__total,
+.sara-combat-shell .combat-workspace-host .workspace-entry-result .workspace-damage-result__total {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: var(--combat-result-size);
+  line-height: 1;
+}
+
+.sara-combat-shell .combat-workspace-host .workspace-entry-result .workspace-attack-result__formula {
+  font-size: var(--combat-secondary-size);
+}
+
+.sara-combat-shell .combat-workspace-host .workspace-damage-origin,
+.sara-combat-shell .combat-workspace-host .workspace-entry-options {
+  margin-block: 4px;
+  font-size: var(--combat-secondary-size);
+}
+
+.sara-combat-shell .combat-workspace-host .workspace-outside-damage {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.sara-combat-shell .combat-workspace-host .action-workspace__footer {
+  padding: 6px 8px max(6px, env(safe-area-inset-bottom, 0px));
+}
+
+html[data-combat-entry-active="true"] .sara-combat-shell > [data-sara-task-region] {
+  min-height: 0;
+}
+
+html[data-combat-entry-active="true"] .sara-combat-shell .combat-workspace-host .action-workspace__body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .workspace-record {
   margin: 12px auto;
 }

@@ -95,13 +95,13 @@ function renderAttackForm(session, state) {
       ? "По обычному правилу это натуральная 20 и попадание. Подтвердите, что мастер назначил исключение."
       : "";
   return `<form data-workspace-form="attack" novalidate>
-    <div class="workspace-entry-heading"><strong>Атака · удар ${attackNumber} из ${maximumAttacks}</strong>
-      <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button></div>
+    <div class="workspace-entry-heading" aria-label="Действия с вводом">
+      <button type="button" class="btn btn--utility" data-workspace-action="minimize">Отложить</button></div>
     <fieldset class="workspace-roll-mode">
       <legend>Режим броска</legend>
       <div role="group" aria-label="Режим броска">
         ${[
-          ["normal", "Обычный"],
+          ["normal", "Обычно"],
           ["advantage", "Преимущество"],
           ["disadvantage", "Помеха"],
         ].map(([mode, label]) => `<button type="button" class="workspace-roll-mode__option"
@@ -110,7 +110,7 @@ function renderAttackForm(session, state) {
     </fieldset>
     <div class="workspace-entry-core">
       <div class="workspace-entry-fields ${values.rollMode === "advantage" || values.rollMode === "disadvantage" ? "workspace-entry-fields--pair" : ""}">
-      ${field("firstD20", "Физический результат к20", values.firstD20 ?? "", {
+      ${field("firstD20", "К20", values.firstD20 ?? "", {
         type: "number", min: 1, max: 20, required: true,
       })}
       <div data-workspace-second-d20 ${values.rollMode === "advantage" || values.rollMode === "disadvantage" ? "" : "hidden"}>
@@ -121,7 +121,7 @@ function renderAttackForm(session, state) {
       </div>
       </div>
       <section class="workspace-entry-result workspace-attack-result" aria-label="Итог атаки">
-      <span class="workspace-attack-result__label">Итог атаки</span>
+      <span class="workspace-attack-result__label">Итог</span>
       <output class="workspace-attack-result__total" data-attack-total aria-live="polite">—</output>
       <span class="workspace-attack-result__formula" data-attack-formula></span>
       <p class="workspace-attack-result__status" data-attack-status role="status"></p>
@@ -138,7 +138,7 @@ function renderAttackForm(session, state) {
     ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}
     ${session.readOnly && !session.error ? `<p class="workspace-warning">Эта запись доступна только для просмотра или восстановления уже ожидающего урона.</p>` : ""}
     </div>
-    <details class="workspace-entry-details"><summary>Профиль атаки</summary>
+    <details class="workspace-entry-details"><summary>Расчёт и параметры</summary>
       <p>Безоружная атака ${formatSigned(profile.attackBonus)} · урон ${escapeHtml(profile.damageDice)} ${formatSigned(profile.damageModifier)}.</p>
     </details>
   </form>`;
@@ -160,8 +160,9 @@ function renderDamageForm(session, state) {
   }
   const diceCount = attack.critical && attack.hitResult === "hit" ? 2 : 1;
   return `<form data-workspace-form="damage" novalidate>
-    <div class="workspace-entry-heading"><strong>Урон · удар ${attackNumber(state, session)}</strong>
-      <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button></div>
+    <div class="workspace-entry-heading" aria-label="Действия с вводом">
+      <button type="button" class="btn btn--utility" data-workspace-action="minimize">Отложить</button></div>
+    <p class="workspace-damage-origin">Попадание: ${recordedAttackFormula(attack)}</p>
     <section class="workspace-entry-options" aria-label="Кости урона">
       <span>${escapeHtml(snapshot.damageDice)} ${formatSigned(snapshot.damageModifier)}${attack.critical ? " · критическое попадание: две отдельные кости" : ""}</span>
     </section>
@@ -175,7 +176,7 @@ function renderDamageForm(session, state) {
     )).join("")}
       </div>
       <section class="workspace-entry-result workspace-damage-result" aria-label="Итог физического урона">
-      <span class="workspace-attack-result__label">Итог урона</span>
+      <span class="workspace-attack-result__label">Урон · итог</span>
       <output class="workspace-damage-result__total" data-damage-total aria-live="polite">—</output>
       <span class="workspace-attack-result__formula" data-damage-formula></span>
       <p class="workspace-attack-result__status" data-workspace-damage-preview role="status"></p>
@@ -189,8 +190,9 @@ function renderDamageForm(session, state) {
       ${attack.techniqueApplicationId ? "<p>К этому удару уже применена техника; повторная оплата не выполняется.</p>" : ""}
       <p>Профиль удара: ${escapeHtml(snapshot.damageDice)} ${formatSigned(snapshot.damageModifier)}. ${attack.critical ? "Критическое попадание: постоянный модификатор учитывается один раз." : ""}</p>
       <p>Урон до сопротивлений и других поправок цели.</p>
-      <button type="button" class="btn btn--utility" data-workspace-action="outside-damage">Урон учтён вне приложения</button>
     </details>
+    <button type="button" class="btn btn--utility workspace-outside-damage"
+      data-workspace-action="outside-damage">Учтено вне приложения</button>
   </form>`;
 }
 
@@ -198,6 +200,15 @@ function attackNumber(state, session) {
   const sequence = (state.monk?.combatAssistant?.activeSequences ?? [])
     .find((entry) => entry.id === session.sequenceId);
   return (sequence?.resolvedAttacks?.findIndex((entry) => entry.id === session.attackId) ?? -1) + 1;
+}
+
+function recordedAttackFormula(attack) {
+  const rolls = Array.isArray(attack.rawD20Rolls) ? attack.rawD20Rolls : [];
+  if (!rolls.length || !Number.isFinite(Number(attack.attackTotal)) ||
+      !Number.isFinite(Number(attack.attackBonusSnapshot))) {
+    return "Записанный итог атаки недоступен.";
+  }
+  return `к20 ${escapeHtml(rolls.join(" / "))} ${formatSigned(attack.attackBonusSnapshot)} = ${escapeHtml(String(attack.attackTotal))}`;
 }
 
 function renderStrikeForm(session, state) {
@@ -272,17 +283,17 @@ function canApplyStrike(session, state) {
   return values.paymentMode !== "practiced" || values.practicedConditions === true;
 }
 
-function renderAttackRecord(attack, state) {
+function renderAttackRecord(attack, state, attackIndex, maximumAttacks) {
   const application = (state.monk?.combatAssistant?.pendingApplications ?? [])
     .find((entry) => entry.id === attack.techniqueApplicationId);
   return `<article class="workspace-record">
-    <h3>${attack.hitResult === "hit" ? "Попадание" : "Промах"}${attack.critical && attack.hitResult === "hit" ? " · критическое попадание" : ""}</h3>
+    <h3>Удар ${attackIndex + 1}/${maximumAttacks} · ${attack.hitResult === "hit" ? "попадание" : "промах"}${attack.critical && attack.hitResult === "hit" ? " · критическое" : ""}</h3>
     ${attack.optionalTargetLabel ? `<p>${escapeHtml(attack.optionalTargetLabel)}</p>` : ""}
-    <p>к20 ${escapeHtml(attack.rawD20Rolls.join(" / "))} ${formatSigned(attack.attackBonusSnapshot)} = ${escapeHtml(String(attack.attackTotal))}</p>
+    <p>${recordedAttackFormula(attack)}</p>
     ${attack.damageStatus === "awaiting-damage" ? "<p>Ожидает записи урона.</p>" : ""}
     ${attack.damageStatus === "recorded-outside-app" ? "<p>Урон учтён вне приложения.</p>" : ""}
     ${attack.damageTotalBeforeTargetModifiers != null
-      ? `<p>Урон: ${escapeHtml(String(attack.damageTotalBeforeTargetModifiers))} до поправок цели.</p>` : ""}
+      ? `<p>Урон записан: ${escapeHtml(String(attack.damageTotalBeforeTargetModifiers))} до поправок цели.</p>` : ""}
     ${application ? `<p>Техника применена · ${application.paymentAmount} ${application.paymentKind === "practiced" ? "заряд Practiced" : "ци потрачено"} · ${application.targetOutcome === "unknown" ? "результат мастера ожидается" : "результат записан"}.</p>` : ""}
   </article>`;
 }
@@ -294,12 +305,23 @@ export function renderAttackWorkspace(session, state) {
       entry.id === session.sequenceId)
     : null;
   const commandTitle = session.command?.titleRu ?? "Действие «Атака»";
-  const heading = session.currentStep === "attack-input" ? commandTitle
+  const attackCount = sequence?.maximumAttacks ?? getSaraAttackCount(state);
+  const currentAttackNumber = session.currentStep === "attack-input"
+    ? (sequence?.resolvedAttacks?.length ?? 0) + 1
+    : attackNumber(state, session);
+  const heading = session.workspaceType === "attack" && session.currentStep === "attack-input"
+    ? `Удар ${currentAttackNumber}/${attackCount} · безоружный`
+    : session.workspaceType === "attack" && session.currentStep === "damage-input"
+      ? `Урон · удар ${currentAttackNumber}/${attackCount}`
+    : session.currentStep === "attack-input" ? commandTitle
     : session.currentStep === "damage-input" ? "Записать урон"
       : session.currentStep === "strike-input" ? "Необязательная техника"
       : session.currentStep === "confirm-close" ? "Закрыть рабочую панель"
         : session.currentStep === "summary" ? `Итог: ${commandTitle}` : "Продолжение атаки";
-  const header = `<div class="workspace-nav">
+  const header = session.workspaceType === "attack"
+    ? `<div class="workspace-task-heading"><h2 id="workspaceDialogTitle" tabindex="-1"
+        data-workspace-title>${heading}</h2></div>`
+    : `<div class="workspace-nav">
       <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
       <button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>
       <button type="button" class="btn btn--utility" data-workspace-action="close">Закрыть</button>
@@ -348,7 +370,8 @@ export function renderAttackWorkspace(session, state) {
         state, session.strikeParent?.sequenceId, session.strikeParent?.attackId,
       )
       : null;
-    body = `${attacks.map((attack) => renderAttackRecord(attack, state)).join("")}
+    body = `${attacks.map((attack, index) =>
+      renderAttackRecord(attack, state, index, sequence?.maximumAttacks ?? attacks.length)).join("")}
       ${session.currentStep === "checkpoint" && strikeParent
         ? `<section class="workspace-post-hit"><h3>Урон записан</h3><p>Техника необязательна. Можно продолжить без оплаты.</p></section>`
         : session.currentStep === "checkpoint" && session.capabilities.canContinueSequence
@@ -377,8 +400,8 @@ export function renderAttackWorkspace(session, state) {
     }
   }
   const appliedUnsaved = session.appliedUnsaved
-    ? `<section class="workspace-error" role="alert"><strong>Результат применён, но не сохранён</strong>
-      <p>Повторное применение отключено. Повторите сохранение.</p></section>
+    ? `<section class="workspace-save-recovery" role="alert"><strong>Изменение применено, но не сохранено</strong>
+      <p>Результат показан выше. Не применяйте действие повторно.</p></section>
       <button type="button" class="btn btn--utility" data-workspace-action="retry-save">Повторить сохранение</button>` : "";
   return {
     header,
