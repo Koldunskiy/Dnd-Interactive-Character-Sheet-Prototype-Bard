@@ -128,17 +128,6 @@ function buildBattleConsole(state) {
     selectedMenu = null;
     turnReviewOpen = false;
   }
-  const currentHp = Math.max(0, Number(state.combat?.hp?.current ?? 0));
-  const maxHp = Math.max(0, Number(derived.maxHitPoints ?? 0));
-  const currentKi = Math.max(0, Number(state.combat?.ki?.current ?? 0));
-  const maxKi = Math.max(0, Number(derived.monk.kiMaximum ?? 0));
-  const resources = `<div class="sara-resources" aria-label="Ресурсы персонажа">
-    <span aria-label="HP ${currentHp} из ${maxHp}; временные ${state.combat?.hp?.temp ?? 0}">HP <b>${currentHp}/${maxHp}</b></span>
-    <span>Ци <b>${currentKi}/${maxKi}</b></span>
-    <span>Practiced <b>${state.combat?.practiced?.current ?? 0}/${derived.monk.practicedMaximum}</b></span>
-    ${Number(state.combat?.hp?.temp ?? 0) > 0
-      ? `<span>Временные HP <b>${state.combat.hp.temp}</b></span>` : ""}
-  </div>`;
   const budget = view.budget ? `<section class="combat-budget" aria-label="Бюджет хода">
     ${[
       ["action", "Действие", view.budget.actionAvailable],
@@ -303,8 +292,7 @@ function buildBattleConsole(state) {
     activeWorkspace: Boolean(activeWorkspace),
     hud: `<header class="sara-app-head">
       <div class="sara-app-head__title"><h2 id="battleConsoleTitle" tabindex="-1">
-        ${escapeHtml(state.profile?.name ?? "Сара")} · ${escapeHtml(phaseLabels[view.phase])}</h2></div>
-      ${resources}
+        ${escapeHtml(phaseLabels[view.phase])}</h2></div>
     </header>`,
     budget,
     navigation,
@@ -320,6 +308,8 @@ function buildBattleConsole(state) {
 
 export function renderBattleConsole(state) {
   const regions = buildBattleConsole(state);
+  const hasPermanentSaraDock = typeof document !== "undefined" &&
+    document.querySelector?.("[data-sara-task-dock]");
   return `<section class="sara-combat-shell combat-turn-card panel-section"
       data-player-scene-phase="${regions.phase}" aria-labelledby="battleConsoleTitle">
     <div data-sara-hud>${regions.hud}</div>
@@ -330,7 +320,7 @@ export function renderBattleConsole(state) {
       <div data-sara-idle-content ${regions.activeWorkspace ? "hidden" : ""}>
         <div data-sara-phase-content>${regions.phaseBody}</div>
       </div>
-      ${regions.workspaceHostMarkup}
+      ${hasPermanentSaraDock ? "" : regions.workspaceHostMarkup}
     </div>
     <div data-sara-pending-work ${regions.activeWorkspace ? "hidden" : ""}>${regions.pending}</div>
     <div data-sara-turn-controls ${regions.activeWorkspace ? "hidden" : ""}>${regions.turnControls}</div>

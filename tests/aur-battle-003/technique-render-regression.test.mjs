@@ -8,6 +8,7 @@ test("technique catalogue no longer renders replaced battle forms or missile ret
     innerHTML: "",
     dataset: {},
     addEventListener() {},
+    querySelector() { return null; },
     querySelectorAll() { return []; },
     replaceChildren() {},
   };
@@ -18,7 +19,8 @@ test("technique catalogue no longer renders replaced battle forms or missile ret
 
   try {
     renderTechniquesPanel(structuredClone(sara));
-    assert.match(panel.innerHTML, /Техники монаха/);
+    assert.match(panel.innerHTML, /<h2>Техники<\/h2>/);
+    assert.match(panel.innerHTML, /data-technique-tab="mine"/);
     assert.doesNotMatch(panel.innerHTML, /data-technique-form="ll-monk:(?:step-of-the-wind|patient-defense|mystic-regeneration|deflect-strike|deflect-missile|empowered-strike|stunning-strike|crippling-strike|slowing-strike)"/);
     assert.doesNotMatch(panel.innerHTML, /data-(?:missile-return|sara-attack-submit|sara-damage-submit|racial-spell-form|battle-technique-form)=/);
   } finally {

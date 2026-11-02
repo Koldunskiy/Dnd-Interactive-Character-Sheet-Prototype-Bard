@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="./styles/battle-console.css">
   <link rel="stylesheet" href="./styles/action-workspace.css">
   <link rel="stylesheet" href="./styles/theme-surfaces.css">
+  <link rel="stylesheet" href="./styles/sara-ui.css">
 </head>
 <body>
   <div class="page">
@@ -51,24 +52,29 @@
           <div class="eyebrow">Интерактивный лист персонажа</div>
           <h1 id="heroName">Аурелия</h1>
           <div class="subtitle" id="heroSubtitle">Тифлинг · Бард · Коллегия Мечей</div>
+          <div class="sara-header-resources" id="saraHeaderResources" hidden></div>
         </div>
       </div>
 
-      <div class="topbar-actions">
-        <label class="theme-control" for="themePreference">Оформление
-          <select id="themePreference" data-theme-preference>
-            <option value="character">По персонажу</option>
-            <option value="teal-slate">Сине-зелёная</option>
-            <option value="wine-gold">Бордово-золотая</option>
-          </select>
-        </label>
-        <button class="btn" type="button" data-app-action="choose-characters">Персонажи</button>
-        <button class="btn" type="button" data-action="reset-runtime">Сбросить лист</button>
-        <button class="btn" type="button" data-action="short-rest">Короткий отдых</button>
-        <button class="btn" type="button" data-action="long-rest">Долгий отдых</button>
+      <details class="service-menu">
+        <summary class="btn service-menu__summary">Сервис</summary>
+        <div class="topbar-actions service-menu__content">
+          <label class="theme-control" for="themePreference">Оформление
+            <select id="themePreference" data-theme-preference>
+              <option value="character">По персонажу</option>
+              <option value="teal-slate">Сине-зелёная</option>
+              <option value="wine-gold">Бордово-золотая</option>
+            </select>
+          </label>
+          <button class="btn" type="button" data-app-action="choose-characters">Персонажи</button>
+          <button class="btn" type="button" data-action="short-rest">Короткий отдых</button>
+          <button class="btn" type="button" data-action="long-rest">Долгий отдых</button>
+          <button class="btn" type="button" data-action="reset-runtime">Сбросить лист</button>
+        </div>
       </div>
       <p class="theme-preference-status" id="themePreferenceStatus" role="status" aria-live="polite" hidden></p>
     </header>
+    <div class="sara-save-status" id="saraSaveStatus" aria-live="polite"></div>
 
     <main class="app-layout">
       <aside class="sidebar">
@@ -243,6 +249,7 @@
         <section class="tab-panels">
           <article class="tab-panel is-active card section" data-panel="profile">
             <div id="profilePanel"></div>
+            <div class="sara-profile-media-slot" id="saraProfileMediaSlot" hidden></div>
           </article>
 
           <article class="tab-panel card section" data-panel="melee">
@@ -271,6 +278,18 @@
         </section>
       </section>
     </main>
+  <div class="sara-task-dock combat-workspace-host" data-sara-task-dock
+    data-combat-workspace-root role="region" aria-label="Активная рабочая задача" hidden>
+    <header class="action-workspace__header">
+      <div data-workspace-header></div>
+    </header>
+    <p class="workspace-live-error" data-workspace-error role="alert" hidden></p>
+    <section class="action-workspace__body" data-workspace-body aria-label="Текущий этап"></section>
+    <footer class="action-workspace__footer">
+      <div data-workspace-footer></div>
+      <p data-workspace-status role="status" aria-live="polite"></p>
+    </footer>
+  </div>
   </div>
   <dialog id="actionWorkspaceRoot" class="action-workspace" aria-labelledby="workspaceDialogTitle">
     <header class="action-workspace__header">

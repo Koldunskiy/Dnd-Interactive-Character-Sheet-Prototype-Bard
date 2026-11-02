@@ -30,9 +30,11 @@ import { bindBattleConsole } from "./render/render-battle-console.js";
 import {
   disposeWorkspaceOwner,
   initActionWorkspace,
+  openSaraBattleCommand,
   prepareWorkspaceCharacterTransition,
   prepareWorkspaceTabTransition,
   reconcileWorkspaceAfterStateChange,
+  workspaceHostIsOpen,
 } from "./workspace/controller.js";
 import { renderSpells } from "./render/render-spells.js";
 import { renderLorePanel } from "./render/render-lore.js";
@@ -80,6 +82,7 @@ const failedLoreNoteIds = new Set();
 let activeTabsController = null;
 let switchingCharacter = false;
 let isSheetVisible = false;
+let saraFocusModeBound = false;
 
 function updateCurrentSession(updater, metadata = null) {
   const context = getSessionContext();
@@ -100,8 +103,12 @@ function showPersistenceWarning(message = "") {
     node.id = "saveWarning";
     node.setAttribute("role", "status");
     node.setAttribute("aria-live", "polite");
-    document.querySelector(".topbar")?.append(node);
   }
+  const page = document.querySelector(".page");
+  const region = page?.dataset.characterId === "sara-velaris"
+    ? document.getElementById("saraSaveStatus")
+    : document.querySelector(".topbar");
+  region?.append(node);
   node.textContent = message;
   node.hidden = !message;
   if (message && !node.querySelector("[data-app-action='retry-save']")) {
@@ -632,6 +639,58 @@ function bindUi(root = document) {
   bindMeleeControls(root);
   bindLoreNoteControls();
   bindSpellSlotSelectors();
+  bindSaraFilters();
+}
+
+function bindSaraFilters() {
+  const profile = document.getElementById("profilePanel");
+  if (profile && profile.dataset.saraSkillSearchBound !== "true") {
+    profile.addEventListener("input", (event) => {
+      const input = event.target.closest("[data-sara-skill-search]");
+      if (!input || input.closest("[hidden]")) return;
+      const query = input.value.trim().toLocaleLowerCase("ru");
+      profile.querySelectorAll("[data-sara-skill]").forEach((card) => {
+        card.hidden = query && !card.textContent.toLocaleLowerCase("ru").includes(query);
+      });
+      profile.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-open-character-roll]");
+        if (!button || !profile.contains(button) || !isActiveSheetTarget(button)) return;
+        const result = openSaraBattleCommand("character-roll", button, {
+          rollPreset: { kind: button.dataset.rollKind, id: button.dataset.rollId },
+        });
+        if (!result.ok) showPersistenceWarning(`Не удалось открыть бросок: ${result.reason}`);
+      });
+    });
+    profile.dataset.saraSkillSearchBound = "true";
+  }
+  if (profile) {
+    const query = profile.querySelector("[data-sara-skill-search]")?.value
+      .trim().toLocaleLowerCase("ru") ?? "";
+    profile.querySelectorAll("[data-sara-skill]").forEach((card) => {
+      card.hidden = Boolean(query) &&
+        !card.textContent.toLocaleLowerCase("ru").includes(query);
+    });
+  }
+  const inventory = document.getElementById("inventoryPanel");
+  if (inventory && inventory.dataset.saraInventorySearchBound !== "true") {
+    inventory.addEventListener("input", (event) => {
+      const input = event.target.closest("[data-sara-inventory-search]");
+      if (!input || input.closest("[hidden]")) return;
+      const query = input.value.trim().toLocaleLowerCase("ru");
+      inventory.querySelectorAll(".inventory-item-card").forEach((card) => {
+        card.hidden = query && !card.textContent.toLocaleLowerCase("ru").includes(query);
+      });
+    });
+    inventory.dataset.saraInventorySearchBound = "true";
+  }
+  if (inventory) {
+    const query = inventory.querySelector("[data-sara-inventory-search]")?.value
+      .trim().toLocaleLowerCase("ru") ?? "";
+    inventory.querySelectorAll(".inventory-item-card").forEach((card) => {
+      card.hidden = Boolean(query) &&
+        !card.textContent.toLocaleLowerCase("ru").includes(query);
+    });
+  }
 }
 
 function renderSpellLibraryIfNeeded(state, derived) {
@@ -649,12 +708,33 @@ function renderSpellLibraryIfNeeded(state, derived) {
 }
 
 function handleTabActivation(tabId) {
+  const state = getState();
+  if (state.profile?.id === "sara-velaris") {
+    renderSaraTab(tabId, state, getDerivedStats(state));
+    return;
+  }
   if (tabId !== "spell-library" || !spellLibraryDirty) {
     return;
   }
 
-  const state = getState();
   renderSpellLibraryIfNeeded(state, getDerivedStats(state));
+}
+
+function renderSaraTab(tabId, state, derived) {
+  if (tabId === "profile") {
+    renderProfile(document.getElementById("profilePanel"), state, derived);
+  } else if (tabId === "melee") {
+    const meleePanel = document.getElementById("meleePanel");
+    renderMeleePanel(state, derived);
+    bindBattleConsole(meleePanel ?? document);
+  } else if (tabId === "techniques") {
+    renderTechniquesPanel(state);
+  } else if (tabId === "inventory") {
+    renderInventoryPanel(state);
+  } else if (tabId === "lore") {
+    renderLorePanel(state);
+  }
+  bindUi(document);
 }
 
 function renderApp() {
@@ -665,12 +745,23 @@ function renderApp() {
 
   const profilePanel = document.getElementById("profilePanel");
   const spellsPanel = document.getElementById("spellsPanel");
+  const page = document.querySelector(".page");
+  if (page) page.toggleAttribute("data-task-open",
+    state.profile?.id === "sara-velaris" && workspaceHostIsOpen());
 
-  renderHeader(state);
+  renderHeader(state, derived);
   syncThemePreferenceControl(state.profile?.id);
   renderPortraitMedia(state);
   renderQuickStats(state, derived);
   renderSidebarSummary(state);
+
+  if (state.profile?.id === "sara-velaris") {
+    if (!page?.hasAttribute("data-task-open")) {
+      renderSaraTab(page?.dataset.activeTab ?? "profile", state, derived);
+    }
+    initPortraitControls();
+    return;
+  }
 
   renderProfile(profilePanel, state, derived);
   renderMeleePanel(state, derived);
@@ -689,10 +780,15 @@ function syncThemePreferenceControl(characterId) {
   const control = document.getElementById("themePreference");
   if (!characterId) return;
   const preferences = readAppPreferences();
-  if (control) control.value = getSelectedCharacterTheme(
+  const selectedTheme = getSelectedCharacterTheme(
     characterId,
     preferences.status === "loaded" ? preferences.preferences : null,
   );
+  if (control) control.value = selectedTheme;
+  const page = document.querySelector(".page");
+  if (characterId === "sara-velaris" && page) {
+    page.dataset.saraTheme = selectedTheme === "character" ? "reference" : selectedTheme;
+  }
   const status = document.getElementById("themePreferenceStatus");
   if (status && preferences.status !== "loaded" && preferences.status !== "missing") {
     status.textContent = preferences.status === "invalid"
@@ -722,6 +818,10 @@ function handleThemePreferenceChange(control) {
     characterId,
     preferences.status === "loaded" ? preferences.preferences : null,
   ));
+  if (characterId === "sara-velaris") {
+    const page = document.querySelector(".page");
+    if (page) page.dataset.saraTheme = themeId ?? "reference";
+  }
   if (preferences.status === "invalid" || preferences.status === "unavailable") {
     if (status) {
       status.textContent = preferences.status === "invalid"
@@ -885,6 +985,7 @@ function showPicker(message = "", isError = false) {
   const choices = document.getElementById("characterChoices");
   if (!page || !picker || !status || !choices) return;
   isSheetVisible = false;
+  configureSaraPresentation(null);
   page.dataset.screen = "characters";
   picker.hidden = false;
   status.textContent = message;
@@ -1004,12 +1105,93 @@ function showSaraSetup(context) {
   });
 }
 
+function configureSaraPresentation(characterId) {
+  const page = document.querySelector(".page");
+  const menu = document.querySelector(".service-menu");
+  const menuSummary = menu?.querySelector("summary");
+  const menuContent = menu?.querySelector(".service-menu__content");
+  const portrait = document.querySelector(".sidebar-section--portrait");
+  const summary = document.querySelector(".sidebar-section--summary");
+  const sidebar = document.querySelector(".sidebar");
+  const mediaSlot = document.getElementById("saraProfileMediaSlot");
+  const isSara = characterId === "sara-velaris";
+  if (page) {
+    if (characterId) page.dataset.characterId = characterId;
+    else delete page.dataset.characterId;
+    if (isSara) {
+      const preferences = readAppPreferences();
+      const selectedTheme = getSelectedCharacterTheme(
+        characterId,
+        preferences.status === "loaded" ? preferences.preferences : null,
+      );
+      page.dataset.saraTheme = selectedTheme === "character" ? "reference" : selectedTheme;
+    } else {
+      delete page.dataset.saraTheme;
+      page.removeAttribute("data-task-open");
+    }
+
+    if (isSara && !saraFocusModeBound) {
+      document.addEventListener("focusin", (event) => {
+        const target = event.target;
+        if (target?.matches?.("input, textarea, select")) {
+          target.dataset.saraEditStart = target.type === "checkbox"
+            ? String(target.checked) : target.value;
+          delete target.dataset.saraDirty;
+        }
+      });
+      document.addEventListener("input", (event) => {
+        const target = event.target;
+        if (target?.matches?.("input, textarea, select") &&
+            document.querySelector(".page")?.contains(target)) {
+          target.dataset.saraDirty = "true";
+        }
+      });
+      const update = () => {
+        const currentPage = document.querySelector(".page");
+        const active = document.activeElement;
+        const isTextEditor = currentPage?.dataset.characterId === "sara-velaris" &&
+          active?.matches?.("input:not([type=button]):not([type=submit]), textarea, select") &&
+          currentPage.contains(active) &&
+          !active.closest("[data-task-open]");
+        currentPage?.toggleAttribute("data-sara-text-entry", Boolean(isTextEditor));
+      };
+      document.addEventListener("focusin", update);
+      document.addEventListener("focusout", (event) => requestAnimationFrame(() => {
+        if (!document.activeElement?.matches?.("input, textarea, select")) {
+          delete event.target.dataset.saraDirty;
+          delete event.target.dataset.saraEditStart;
+        }
+        update();
+      }));
+      saraFocusModeBound = true;
+    }
+  }
+  if (menu) menu.open = !isSara;
+  if (menuSummary) menuSummary.hidden = !isSara;
+  if (menuContent) menuContent.hidden = false;
+  if (isSara && mediaSlot) {
+    if (portrait) mediaSlot.append(portrait);
+    if (summary) mediaSlot.append(summary);
+    mediaSlot.hidden = false;
+  } else {
+    if (summary && sidebar) sidebar.append(summary);
+    if (portrait && sidebar && summary) sidebar.insertBefore(portrait, summary);
+    if (mediaSlot) mediaSlot.hidden = true;
+  }
+  const warning = document.getElementById("saveWarning");
+  const warningRegion = isSara
+    ? document.getElementById("saraSaveStatus")
+    : document.querySelector(".topbar");
+  if (warning && warningRegion) warningRegion.append(warning);
+}
+
 function completeCharacterOpen(characterId, warning = "") {
   const page = document.querySelector(".page");
   const picker = document.getElementById("characterPicker");
   if (picker) picker.hidden = true;
   if (page) page.dataset.screen = "sheet";
   isSheetVisible = true;
+  configureSaraPresentation(characterId);
   const preferences = readAppPreferences();
   applyResolvedTheme(resolveCharacterTheme(
     characterId,
@@ -1195,6 +1377,7 @@ function initTelegramWebApp() {
 
 function initApp() {
   initTelegramWebApp();
+  bindSaraFocusMode();
   initActionWorkspace();
   bindAppControls();
   const preferences = readAppPreferences();

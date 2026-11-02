@@ -41,7 +41,8 @@ test("battle cards use compact reference composition and keep full spell details
   assert.match(markup, /Только видимая змея/);
   assert.equal(markup.split("Только видимая змея-зверь").length - 1, 1);
   assert.match(markup, /sara-app-head/);
-  assert.match(markup, /sara-resources/);
+  assert.match(markup, /data-sara-hud/);
+  assert.doesNotMatch(markup, /sara-resources/);
   assert.match(markup, /data-combat-workspace-root/);
   const ownTurn = structuredClone(sara);
   ownTurn.battleConsole = {
@@ -57,7 +58,8 @@ test("battle cards use compact reference composition and keep full spell details
 test("Sara combat home exposes compact resources and pre-combat initiative sources", () => {
   const character = structuredClone(sara);
   const markup = renderBattleConsole(character);
-  assert.match(markup, /sara-resources/);
+  assert.match(markup, /data-sara-hud/);
+  assert.doesNotMatch(markup, /sara-resources/);
   assert.doesNotMatch(markup, /battle-console-resource__track/);
   assert.match(markup, /data-initiative-entry/);
   assert.match(markup, /data-initiative-total/);

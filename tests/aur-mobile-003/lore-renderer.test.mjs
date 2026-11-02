@@ -15,6 +15,7 @@ class MiniNode {
     this.className = "";
     this.dataset = {};
     this.attributes = new Map();
+    this.listeners = new Map();
     this.hidden = false;
     this.disabled = false;
     this.open = false;
@@ -144,6 +145,24 @@ class MiniNode {
       this.dataset[key] = stringValue;
     } else if (name === "id") this.id = stringValue;
     else if (name === "class") this.className = stringValue;
+  }
+
+  removeAttribute(name) {
+    this.attributes.delete(name);
+    if (name.startsWith("data-")) {
+      const key = name.slice(5).replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
+      delete this.dataset[key];
+    }
+  }
+
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  dispatchEvent(event) {
+    for (const listener of this.listeners.get(event.type) ?? []) listener(event);
   }
 
   getAttribute(name) {
@@ -283,6 +302,20 @@ test("R1: lore notes precede history and keep editor nodes, empty state, and iss
   assert.equal(card.querySelector(".lore-note-editor").hidden, false);
   assert.equal(card.querySelector("[data-note-toggle]").getAttribute("aria-expanded"), "true");
   assert.equal(panel.innerHTMLWrites, 0);
+
+  const loreDisclosure = cardsRoot.querySelector("details[data-profile-disclosure]");
+  loreDisclosure.open = true;
+  loreDisclosure.dispatchEvent({ type: "toggle" });
+  titleInput.value = "Несохранённый ввод";
+  titleInput.dataset.saraDirty = "true";
+  document.activeElement = titleInput;
+  state.lore.noteEntries[0] = { ...state.lore.noteEntries[0], title: "Новое значение" };
+  renderLorePanel(state);
+  assert.equal(card.querySelector('[data-note-field="title"]'), titleInput);
+  assert.equal(titleInput.value, "Несохранённый ввод");
+  assert.equal(titleInput.getAttribute("aria-invalid"), "true");
+  assert.match(card.querySelector(".lore-note-status").textContent, /текущий ввод сохранён/);
+  assert.equal(loreDisclosure.open, true);
 
   const malformedEntries = "malformed";
   state.lore.noteEntries = malformedEntries;

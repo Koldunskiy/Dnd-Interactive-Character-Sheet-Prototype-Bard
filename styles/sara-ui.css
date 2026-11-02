@@ -1,0 +1,828 @@
+body:has(.page[data-character-id="sara-velaris"]) {
+  color-scheme: dark;
+  background: #0c141c;
+  color: #e5edf2;
+  font: 16px/1.45 system-ui, sans-serif;
+}
+
+body:has(.page[data-sara-theme="teal-slate"]),
+body:has(.page[data-sara-theme="wine-gold"]) {
+  background: var(--bg-deep);
+}
+
+.page[data-character-id="sara-velaris"] .sara-task-dock {
+  --sara-background: #111b24;
+  --sara-card: #1b2935;
+  --sara-control: #13212c;
+  --sara-border: #344754;
+  --sara-text: #e5edf2;
+  --sara-muted: #a5b6c2;
+  --sara-accent: #87c9b3;
+  --sara-selected: #294c48;
+  --sara-error: #efada5;
+  --sara-error-surface: #382b30;
+  font: 16px/1.45 system-ui, sans-serif;
+}
+
+body:has(.page[data-character-id="sara-velaris"][data-sara-theme="teal-slate"]) .sara-task-dock,
+body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .sara-task-dock {
+  --sara-background: var(--bg);
+  --sara-card: var(--surface);
+  --sara-control: var(--bg-deep);
+  --sara-border: var(--line);
+  --sara-text: var(--text);
+  --sara-muted: var(--muted);
+  --sara-accent: var(--accent);
+  --sara-selected: var(--selected-surface);
+  --sara-error: var(--error);
+  --sara-error-surface: var(--error-surface);
+}
+
+.page[data-character-id="sara-velaris"] {
+  --sara-surrounding: #0c141c;
+  --sara-background: #111b24;
+  --sara-card: #1b2935;
+  --sara-control: #13212c;
+  --sara-border: #344754;
+  --sara-text: #e5edf2;
+  --sara-muted: #a5b6c2;
+  --sara-accent: #87c9b3;
+  --sara-selected: #294c48;
+  --sara-error: #efada5;
+  --sara-error-surface: #382b30;
+  box-sizing: border-box;
+  width: min(100%, 464px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 10px 12px calc(88px + env(safe-area-inset-bottom));
+  color: var(--sara-text);
+  background: var(--sara-background);
+  font: 16px/1.45 system-ui, sans-serif;
+}
+
+.page[data-character-id="sara-velaris"][data-sara-theme="teal-slate"] {
+  --sara-surrounding: var(--bg-deep);
+  --sara-background: var(--bg);
+  --sara-card: var(--surface);
+  --sara-control: var(--bg-deep);
+  --sara-border: var(--line);
+  --sara-text: var(--text);
+  --sara-muted: var(--muted);
+  --sara-accent: var(--accent);
+  --sara-selected: var(--selected-surface);
+  --sara-error: var(--error);
+  --sara-error-surface: var(--error-surface);
+}
+
+.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"] {
+  --sara-surrounding: var(--bg-deep);
+  --sara-background: var(--bg);
+  --sara-card: var(--surface);
+  --sara-control: var(--bg-deep);
+  --sara-border: var(--line);
+  --sara-text: var(--text);
+  --sara-muted: var(--muted);
+  --sara-accent: var(--accent);
+  --sara-selected: var(--selected-surface);
+  --sara-error: var(--error);
+  --sara-error-surface: var(--error-surface);
+}
+
+.page[data-character-id="sara-velaris"] *,
+.page[data-character-id="sara-velaris"] .sara-task-dock * {
+  box-sizing: border-box;
+}
+
+.page[data-character-id="sara-velaris"] .topbar {
+  width: 100%;
+  max-width: 440px;
+  min-height: 0;
+  margin: 0 auto 8px;
+  padding: 8px 2px;
+  align-items: center;
+  border: 0;
+  border-bottom: 1px solid var(--sara-border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.page[data-character-id="sara-velaris"] .brand {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.page[data-character-id="sara-velaris"] .sigil,
+.page[data-character-id="sara-velaris"] .eyebrow,
+.page[data-character-id="sara-velaris"] .subtitle {
+  display: none;
+}
+
+.page[data-character-id="sara-velaris"] #heroName {
+  color: var(--sara-text);
+  font: 600 18px/1.2 system-ui, sans-serif;
+}
+
+.page[data-character-id="sara-velaris"] .sara-header-resources {
+  display: flex;
+  gap: 12px;
+  margin-top: 3px;
+  color: var(--sara-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id="sara-velaris"] .sara-header-resources[hidden] {
+  display: none;
+}
+
+.page[data-character-id="sara-velaris"] .sara-header-resources strong {
+  color: var(--sara-text);
+  font-weight: 600;
+}
+
+.page[data-character-id="sara-velaris"] .service-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.page[data-character-id="sara-velaris"] .service-menu__summary {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px;
+  list-style: none;
+  font-size: 13px;
+}
+
+.page[data-character-id="sara-velaris"] .service-menu__summary::-webkit-details-marker {
+  display: none;
+}
+
+.page[data-character-id="sara-velaris"] .service-menu[open] .service-menu__content {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  width: min(260px, calc(100vw - 24px));
+  padding: 10px;
+  border: 1px solid var(--sara-border);
+  border-radius: 12px;
+  background: var(--sara-card);
+  box-shadow: 0 12px 30px #0005;
+}
+
+.page[data-character-id="sara-velaris"] .service-menu__content[hidden] {
+  display: none;
+}
+
+.page[data-character-id="sara-velaris"] .theme-preference-status {
+  position: absolute;
+  z-index: 25;
+  top: 60px;
+  right: 12px;
+  max-width: 320px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-save-status:empty {
+  display: none;
+}
+
+.page[data-character-id="sara-velaris"] .sara-save-status #saveWarning:not([hidden]) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: min(440px, calc(100vw - 24px));
+  margin: 0 auto 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--sara-error);
+  border-radius: 10px;
+  color: var(--sara-error);
+  background: var(--sara-error-surface);
+  font-size: 13px;
+}
+
+.page[data-character-id="sara-velaris"] .app-layout {
+  display: block;
+}
+
+.page[data-character-id="sara-velaris"] .sidebar {
+  display: none;
+}
+
+.page[data-character-id="sara-velaris"] .content {
+  display: block;
+  width: min(100%, 440px);
+  margin: 0 auto;
+}
+
+.page[data-character-id="sara-velaris"] .tabs {
+  position: fixed;
+  z-index: 40;
+  left: 50%;
+  bottom: max(6px, env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  width: min(440px, calc(100vw - 20px));
+  max-height: none;
+  padding: 5px;
+  overflow: visible;
+  transform: translateX(-50%);
+  border: 1px solid var(--sara-border);
+  border-radius: 12px;
+  background: var(--sara-card);
+  box-shadow: 0 8px 24px #0005;
+}
+
+.page[data-character-id="sara-velaris"] .tab-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: auto;
+  min-width: 0;
+  min-height: 44px;
+  height: auto;
+  padding: 4px 2px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--sara-muted);
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.page[data-character-id="sara-velaris"] .tab-btn__icon {
+  display: none;
+}
+
+.page[data-character-id="sara-velaris"] .tab-btn__label {
+  font: 500 12px/1.2 system-ui, sans-serif;
+}
+
+.page[data-character-id="sara-velaris"] .tab-btn.is-active {
+  border-color: var(--sara-accent);
+  color: var(--sara-text);
+  background: var(--sara-selected);
+}
+
+.page[data-character-id="sara-velaris"] .tab-btn::before,
+.page[data-character-id="sara-velaris"] .tab-btn::after {
+  display: none;
+}
+
+.page[data-character-id="sara-velaris"] .tab-panels {
+  display: block;
+}
+
+.page[data-character-id="sara-velaris"] .tab-panel,
+.page[data-character-id="sara-velaris"] .tab-panel.is-active {
+  display: block;
+}
+
+.page[data-character-id="sara-velaris"] .tab-panel[hidden] {
+  display: none;
+}
+
+.page[data-character-id="sara-velaris"] .tab-panel.card.section {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.page[data-character-id="sara-velaris"] #profilePanel,
+.page[data-character-id="sara-velaris"] #techniquesPanel,
+.page[data-character-id="sara-velaris"] #inventoryPanel,
+.page[data-character-id="sara-velaris"] #lorePanel {
+  display: grid;
+  gap: 12px;
+}
+
+.page[data-character-id="sara-velaris"] h1,
+.page[data-character-id="sara-velaris"] h2,
+.page[data-character-id="sara-velaris"] h3,
+.page[data-character-id="sara-velaris"] h4 {
+  margin: 0;
+  color: var(--sara-text);
+  font-family: system-ui, sans-serif;
+  letter-spacing: normal;
+}
+
+.page[data-character-id="sara-velaris"] h1 {
+  font-size: 19px;
+}
+
+.page[data-character-id="sara-velaris"] h2 {
+  font-size: 18px;
+}
+
+.page[data-character-id="sara-velaris"] h3 {
+  font-size: 16px;
+}
+
+.page[data-character-id="sara-velaris"] h4 {
+  font-size: 14px;
+}
+
+.page[data-character-id="sara-velaris"] p,
+.page[data-character-id="sara-velaris"] .sara-task-dock p {
+  line-height: 1.45;
+}
+
+.page[data-character-id="sara-velaris"] .panel-section {
+  margin: 0;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.page[data-character-id="sara-velaris"] .battle-command-card,
+.page[data-character-id="sara-velaris"] .battle-category-panel,
+.page[data-character-id="sara-velaris"] .battle-console-hud > span,
+.page[data-character-id="sara-velaris"] .workspace-resource,
+.page[data-character-id="sara-velaris"] .workspace-record,
+.page[data-character-id="sara-velaris"] .battle-work-item {
+  border-color: var(--sara-border);
+  border-radius: 12px;
+  color: var(--sara-text);
+  background: var(--sara-card);
+  box-shadow: none;
+}
+
+.page[data-character-id="sara-velaris"] .battle-command-card__open,
+.page[data-character-id="sara-velaris"] .battle-category-tabs [role="tab"] {
+  border-radius: 9px;
+}
+
+.page[data-character-id="sara-velaris"] .battle-console-status,
+.page[data-character-id="sara-velaris"] .battle-work-item__status,
+.page[data-character-id="sara-velaris"] .workspace-resource__label {
+  color: var(--sara-muted);
+}
+
+.page[data-character-id="sara-velaris"] .profile-hero {
+  display: block;
+}
+
+.page[data-character-id="sara-velaris"] .profile-hero-main {
+  display: grid;
+  gap: 8px;
+}
+
+.page[data-character-id="sara-velaris"] .profile-name-row,
+.page[data-character-id="sara-velaris"] .profile-tag-row {
+  display: none;
+}
+
+.page[data-character-id="sara-velaris"] .profile-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-tab-heading,
+.page[data-character-id="sara-velaris"] .inventory-header-row,
+.page[data-character-id="sara-velaris"] .section-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+}
+
+.page[data-character-id="sara-velaris"] .sara-tab-heading {
+  min-height: 32px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-tab-heading button {
+  flex: 0 0 auto;
+}
+
+.page[data-character-id="sara-velaris"] .profile-ability-grid,
+.page[data-character-id="sara-velaris"] .profile-skill-grid,
+.page[data-character-id="sara-velaris"] .profile-passive-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.page[data-character-id="sara-velaris"] .profile-ability-card,
+.page[data-character-id="sara-velaris"] .profile-skill-card,
+.page[data-character-id="sara-velaris"] .hero-stat-card,
+.page[data-character-id="sara-velaris"] .inventory-item-card,
+.page[data-character-id="sara-velaris"] .technique-card,
+.page[data-character-id="sara-velaris"] .info-card,
+.page[data-character-id="sara-velaris"] .sara-biography details,
+.page[data-character-id="sara-velaris"] .sara-details,
+.page[data-character-id="sara-velaris"] .profile-passive-grid > div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--sara-border);
+  border-radius: 12px;
+  color: var(--sara-text);
+  background: var(--sara-card);
+  box-shadow: none;
+}
+
+.page[data-character-id="sara-velaris"] .profile-ability-card {
+  padding: 10px;
+}
+
+.page[data-character-id="sara-velaris"] .ability-card-top,
+.page[data-character-id="sara-velaris"] .profile-skill-card {
+  display: grid;
+  gap: 6px;
+}
+
+.page[data-character-id="sara-velaris"] .ability-card-title-block,
+.page[data-character-id="sara-velaris"] .ability-card-mod-block,
+.page[data-character-id="sara-velaris"] .ability-card-stat-inline,
+.page[data-character-id="sara-velaris"] .profile-skill-card-main,
+.page[data-character-id="sara-velaris"] .profile-skill-value {
+  color: var(--sara-muted);
+}
+
+.page[data-character-id="sara-velaris"] .ability-card-score,
+.page[data-character-id="sara-velaris"] .ability-card-mod,
+.page[data-character-id="sara-velaris"] .profile-skill-value,
+.page[data-character-id="sara-velaris"] .hero-stat-value {
+  color: var(--sara-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id="sara-velaris"] .profile-roll-button {
+  min-height: 34px;
+  padding: 4px 8px;
+}
+
+.page[data-character-id="sara-velaris"] .profile-skill-name,
+.page[data-character-id="sara-velaris"] .profile-roll-link {
+  color: var(--sara-text);
+}
+
+.page[data-character-id="sara-velaris"] .profile-skill-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.page[data-character-id="sara-velaris"] .profile-skill-group h3 {
+  margin: 6px 0;
+  color: var(--sara-muted);
+  font-size: 13px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-skill-search,
+.page[data-character-id="sara-velaris"] .sara-inventory-search,
+.page[data-character-id="sara-velaris"] .field-label,
+.page[data-character-id="sara-velaris"] .sara-task-dock label {
+  display: grid;
+  gap: 5px;
+  color: var(--sara-muted);
+  font-size: 14px;
+}
+
+.page[data-character-id="sara-velaris"] button,
+.page[data-character-id="sara-velaris"] .sara-task-dock button,
+.page[data-character-id="sara-velaris"] select,
+.page[data-character-id="sara-velaris"] .sara-task-dock select {
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--sara-border);
+  border-radius: 9px;
+  color: var(--sara-text);
+  background: var(--sara-control);
+  box-shadow: none;
+  font: 500 14px/1.3 system-ui, sans-serif;
+  text-shadow: none;
+  transform: none;
+}
+
+.page[data-character-id="sara-velaris"] button:hover:not(:disabled),
+.page[data-character-id="sara-velaris"] .sara-task-dock button:hover:not(:disabled) {
+  border-color: var(--sara-accent);
+  color: var(--sara-text);
+  background: var(--sara-control);
+}
+
+.page[data-character-id="sara-velaris"] button:disabled,
+.page[data-character-id="sara-velaris"] .sara-task-dock button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.page[data-character-id="sara-velaris"] button.btn--primary,
+.page[data-character-id="sara-velaris"] button.primary,
+.page[data-character-id="sara-velaris"] .battle-command-card__open,
+.page[data-character-id="sara-velaris"] .sara-task-dock button.btn--primary,
+.page[data-character-id="sara-velaris"] .sara-task-dock button.primary {
+  border-color: var(--sara-accent);
+  color: var(--sara-text);
+  background: var(--sara-selected);
+}
+
+.page[data-character-id="sara-velaris"] button.btn--danger {
+  border-color: var(--sara-error);
+  color: var(--sara-error);
+}
+
+.page[data-character-id="sara-velaris"] [data-action="reset-runtime"] {
+  border-color: var(--sara-error);
+  color: var(--sara-error);
+}
+
+.page[data-character-id="sara-velaris"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.page[data-character-id="sara-velaris"] textarea,
+.page[data-character-id="sara-velaris"] .sara-task-dock input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.page[data-character-id="sara-velaris"] .sara-task-dock textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--sara-border);
+  border-radius: 9px;
+  color: var(--sara-text);
+  background: var(--sara-control);
+  font: 20px/1.35 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id="sara-velaris"] textarea,
+.page[data-character-id="sara-velaris"] .sara-task-dock textarea {
+  font-size: 16px;
+}
+
+.page[data-character-id="sara-velaris"] input[type="checkbox"],
+.page[data-character-id="sara-velaris"] .sara-task-dock input[type="checkbox"] {
+  accent-color: var(--sara-accent);
+}
+
+.page[data-character-id="sara-velaris"] :focus-visible,
+.page[data-character-id="sara-velaris"] .sara-task-dock :focus-visible {
+  outline: 2px solid var(--sara-accent);
+  outline-offset: 2px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-details,
+.page[data-character-id="sara-velaris"] .sara-biography details,
+.page[data-character-id="sara-velaris"] .profile-text-disclosure,
+.page[data-character-id="sara-velaris"] .profile-responsive-disclosure,
+.page[data-character-id="sara-velaris"] .technique-card details {
+  display: block;
+  font-size: 14px;
+}
+
+.page[data-character-id="sara-velaris"] summary,
+.page[data-character-id="sara-velaris"] .sara-task-dock summary {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  color: var(--sara-muted);
+  cursor: pointer;
+}
+
+.page[data-character-id="sara-velaris"] .sara-profile-media-slot:not([hidden]) {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.page[data-character-id="sara-velaris"] .sidebar-section--portrait,
+.page[data-character-id="sara-velaris"] .sidebar-section--summary {
+  padding: 12px;
+  border: 1px solid var(--sara-border);
+  border-radius: 12px;
+  background: var(--sara-card);
+}
+
+.page[data-character-id="sara-velaris"] .portrait-stage {
+  min-height: 180px;
+  max-height: 280px;
+  overflow: hidden;
+  border-radius: 9px;
+}
+
+.page[data-character-id="sara-velaris"] .portrait-stage img,
+.page[data-character-id="sara-velaris"] .portrait-stage video {
+  max-width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+}
+
+.page[data-character-id="sara-velaris"] .sara-inventory-editors,
+.page[data-character-id="sara-velaris"] .sara-technique-catalog,
+.page[data-character-id="sara-velaris"] .sara-technique-preparation {
+  display: grid;
+  gap: 10px;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-list,
+.page[data-character-id="sara-velaris"] .technique-list {
+  display: grid;
+  gap: 9px;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-card,
+.page[data-character-id="sara-velaris"] .technique-card {
+  display: grid;
+  gap: 8px;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-main,
+.page[data-character-id="sara-velaris"] .inventory-item-main__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-summary,
+.page[data-character-id="sara-velaris"] .technique-card__meta,
+.page[data-character-id="sara-velaris"] .technique-card__status,
+.page[data-character-id="sara-velaris"] .panel-text,
+.page[data-character-id="sara-velaris"] .section-subtitle {
+  color: var(--sara-muted);
+  font-size: 13px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-subtabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-subtabs button[aria-selected="true"] {
+  border-color: var(--sara-accent);
+  background: var(--sara-selected);
+}
+
+.page[data-character-id="sara-velaris"] .technique-card[data-selected="true"] {
+  border-left: 3px solid var(--sara-accent);
+}
+
+.page[data-character-id="sara-velaris"] .sara-biography {
+  display: grid;
+  gap: 8px;
+}
+
+.page[data-character-id="sara-velaris"] .lore-notes {
+  display: grid;
+  gap: 8px;
+}
+
+.page[data-character-id="sara-velaris"] .lore-note-card {
+  border: 1px solid var(--sara-border);
+  border-radius: 12px;
+  background: var(--sara-card);
+}
+
+.page[data-character-id="sara-velaris"] .sara-status,
+.page[data-character-id="sara-velaris"] .sara-field-conflict,
+.page[data-character-id="sara-velaris"] .sara-task-dock .workspace-live-error {
+  padding: 10px 12px;
+  border: 1px solid var(--sara-error);
+  border-radius: 10px;
+  color: var(--sara-error);
+  background: var(--sara-error-surface);
+}
+
+.page[data-character-id="sara-velaris"] .sara-field-conflict {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-task-dock {
+  position: fixed;
+  z-index: 100;
+  top: var(--workspace-visible-top, 0px);
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  width: min(100vw, 440px);
+  height: var(--workspace-available-height, var(--workspace-visible-height, 100dvh));
+  margin: 0;
+  overflow: hidden;
+  transform: translateX(-50%);
+  border: 1px solid var(--sara-border);
+  border-radius: 0;
+  color: var(--sara-text);
+  background: var(--sara-background);
+  box-shadow: 0 12px 40px #0007;
+}
+
+.page[data-character-id="sara-velaris"] .sara-task-dock[hidden] {
+  display: none !important;
+}
+
+.page[data-character-id="sara-velaris"] .sara-task-dock[data-entry-active="true"] {
+  top: var(--workspace-entry-top, 0px);
+  height: var(--workspace-entry-height, 100dvh);
+}
+
+.page[data-character-id="sara-velaris"] .sara-task-dock .action-workspace__header {
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--sara-border);
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] .sara-task-dock .action-workspace__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 14px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.page[data-character-id="sara-velaris"] .sara-task-dock .action-workspace__footer {
+  flex: 0 0 auto;
+  padding: 10px 14px max(10px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--sara-border);
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] .sara-task-dock [data-workspace-footer] {
+  display: grid;
+  gap: 8px;
+}
+
+.page[data-character-id="sara-velaris"][data-task-open] .topbar,
+.page[data-character-id="sara-velaris"][data-task-open] .app-layout {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.page[data-character-id="sara-velaris"][data-task-open] {
+  padding: 0;
+}
+
+.page[data-character-id="sara-velaris"][data-task-open] .sara-save-status {
+  position: fixed;
+  z-index: 120;
+  top: max(4px, env(safe-area-inset-top));
+  left: 50%;
+  width: min(440px, 100vw);
+  transform: translateX(-50%);
+}
+
+.page[data-character-id="sara-velaris"][data-task-open] .tabs {
+  display: none;
+}
+
+.page[data-character-id="sara-velaris"][data-sara-text-entry] .tabs {
+  display: none;
+}
+
+.page[data-character-id="sara-velaris"][data-sara-text-entry] {
+  padding-bottom: 16px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-task-dock .workspace-attack-result__total,
+.page[data-character-id="sara-velaris"] .sara-task-dock [data-attack-total],
+.page[data-character-id="sara-velaris"] .sara-task-dock [data-damage-total] {
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id="sara-velaris"] [hidden] {
+  display: none !important;
+}
+
+@media (max-width: 360px) {
+  .page[data-character-id="sara-velaris"] {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .page[data-character-id="sara-velaris"] .tab-btn__label {
+    font-size: 11px;
+  }
+
+  .page[data-character-id="sara-velaris"] .sara-task-dock .action-workspace__body {
+    padding: 10px;
+  }
+}
+
+@media (min-width: 700px) {
+  .page[data-character-id="sara-velaris"] {
+    padding-top: 18px;
+  }
+
+  .page[data-character-id="sara-velaris"] .tabs {
+    position: static;
+    margin: 12px auto 0;
+    transform: none;
+  }
+}

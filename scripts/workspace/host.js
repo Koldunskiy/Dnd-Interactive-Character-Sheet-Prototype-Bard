@@ -1,6 +1,7 @@
 let hostState = null;
 let callbacks = null;
 let activeHost = null;
+let embeddedInvoker = null;
 let viewportListenersBound = false;
 let hostResizeObserver = null;
 const boundHosts = new WeakSet();
@@ -13,6 +14,10 @@ function getDialog() {
 }
 
 function getEmbeddedHost() {
+  const page = document.querySelector(".page");
+  if (page?.dataset.characterId === "sara-velaris") {
+    return document.querySelector("[data-sara-task-dock][data-combat-workspace-root]");
+  }
   const panel = document.querySelector('[data-panel="melee"].is-active');
   return panel?.querySelector("[data-combat-workspace-root]") ?? null;
 }
@@ -78,10 +83,13 @@ function updateVisibleViewport() {
   const visibleOffsetTop = viewport?.offsetTop ?? 0;
   const embedded = isEmbeddedHost(activeHost);
   if (embedded) {
-    // Both values are viewport coordinates; getBoundingClientRect().top uses the same space.
+    const saraDock = activeHost.matches?.("[data-sara-task-dock]");
     const visibleBottom = visibleOffsetTop + visibleHeight;
-    const taskTop = activeHost.getBoundingClientRect?.().top ?? visibleOffsetTop;
+    const taskTop = saraDock
+      ? visibleOffsetTop
+      : activeHost.getBoundingClientRect?.().top ?? visibleOffsetTop;
     const availableHeight = Math.max(0, visibleBottom - taskTop);
+    if (saraDock) activeHost.style.setProperty("--workspace-visible-top", `${visibleOffsetTop}px`);
     activeHost.style.setProperty("--workspace-available-height", `${availableHeight}px`);
     activeHost.dataset.visibleHeight = String(Math.round(visibleHeight));
     activeHost.dataset.visibleOffsetTop = String(Math.round(visibleOffsetTop));
@@ -207,6 +215,7 @@ export function openWorkspaceHost(invoker) {
   activeHost = getEmbeddedHost() ?? dialog;
   bindHost(activeHost);
   if (isEmbeddedHost(activeHost)) {
+    embeddedInvoker = invoker?.isConnected ? invoker : null;
     activeHost.hidden = false;
     observeActiveHost();
     updateVisibleViewport();
@@ -327,6 +336,10 @@ export function closeWorkspaceHost({ restoreFocus = true, discardEmbedded = fals
       }
       activeHost = getDialog();
     }
+    if (restoreFocus && embeddedInvoker?.isConnected) {
+      embeddedInvoker.focus?.({ preventScroll: true });
+    }
+    embeddedInvoker = null;
     return;
   }
   if (activeHost?.open) activeHost.close();
@@ -353,7 +366,7 @@ export function focusWorkspaceHeading() {
 }
 
 export function scrollWorkspaceBodyTop() {
-  const body = getDialog()?.querySelector("[data-workspace-body]");
+  const body = getWorkspaceHost()?.querySelector("[data-workspace-body]");
   if (body) body.scrollTop = 0;
 }
 

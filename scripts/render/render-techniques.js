@@ -26,6 +26,7 @@ import {
   techniqueTitle
 } from "../presentation/ru.js";
 import { isTechniqueEffectivelySelected } from "../selectors/techniques.js";
+import { setPanelMarkup } from "./sara-dom.js";
 
 const pendingDrafts = new Map();
 const techniqueViews = new Map();
@@ -54,7 +55,8 @@ function getTechniqueView(character, key) {
       source: character.ui?.techniques?.source ?? "all",
       type: character.ui?.techniques?.type ?? "all",
       filter: character.ui?.techniques?.filter ?? "all",
-      entitlementEventId: character.ui?.techniques?.entitlementEventId ?? ""
+      entitlementEventId: character.ui?.techniques?.entitlementEventId ?? "",
+      mode: "mine"
     });
   }
   return techniqueViews.get(key);
@@ -62,17 +64,22 @@ function getTechniqueView(character, key) {
 
 function filterTechniqueCards(panel, view) {
   const query = view.searchQuery.trim().toLocaleLowerCase("ru");
+  let visibleCount = 0;
   panel.querySelectorAll("[data-technique-card]").forEach((card) => {
     const matchesQuery = !query ||
       card.textContent.toLocaleLowerCase("ru").includes(query);
     const matchesSource = view.source === "all" || card.dataset.source === view.source;
     const matchesType = view.type === "all" || card.dataset.type === view.type;
-    const matchesSelection = view.filter !== "selected" || card.dataset.selected === "true";
+    const matchesSelection = (view.mode !== "mine" && view.filter !== "selected") ||
+      card.dataset.selected === "true";
     const matchesAvailability = view.filter !== "available" ||
       (card.dataset.available === "true" && card.dataset.selected !== "true");
     card.hidden = !(matchesQuery && matchesSource && matchesType &&
       matchesSelection && matchesAvailability);
+    if (!card.hidden) visibleCount += 1;
   });
+  const empty = panel.querySelector("[data-technique-empty]");
+  if (empty) empty.hidden = visibleCount > 0;
 }
 
 function selectedIds(character) {
@@ -126,7 +133,6 @@ function renderTechniqueCard(entry, character, draft) {
           </select>
         </label>
         <label class="sara-form-check"><input type="checkbox" name="practicedConditions"> Подтверждаю: сейчас мой ход и техника применяется после безоружного попадания</label>` : ""}
-        <label class="sara-form-check"><input type="checkbox" name="confirmed" required> Подтверждаю условия применения; броски и результат цели определяются физически и мастером</label>
         <p class="sara-form-error" data-form-error role="alert"></p>
         <div class="sara-form-actions"><button type="button" class="btn btn--utility" data-technique-form-cancel>Отмена</button>
           <button type="submit" class="btn">Применить</button></div>
@@ -280,12 +286,24 @@ export function renderTechniquesPanel(character) {
   const entitlementId = view.entitlementEventId;
   const entitlement = entitlements.find((event) => event.id === entitlementId) ?? entitlements[0] ?? null;
   const thirdEye = character.monk?.techniqueRuntime?.["ll-monk:awaken-the-third-eye"] ?? {};
-  panel.innerHTML = `
-    <h2>Техники монаха</h2>
-    <p>Каталог ${MONK_TECHNIQUES.length} техник: основной каталог ${MONK_TECHNIQUES.filter((entry) => entry.sourceId === "laserllama-core").length}, дополнение ${MONK_TECHNIQUES.filter((entry) => entry.sourceId === "laserllama-expanded").length}. Техники старших уровней доступны для чтения, но не применения.</p>
-    <details class="technique-card__status"><summary>Оригинал и источник</summary><p>Зафиксированная версия: ${escapeHtml(MONK_RULESET_PROVENANCE.rulesetId)}; авторская пометка последнего найденного анонса — ${escapeHtml(MONK_RULESET_PROVENANCE.latestAuthorAnnouncement)}, версия страницы отдельно не подтверждена.</p><p><a href="${MONK_RULESET_PROVENANCE.sources.core}" target="_blank" rel="noopener noreferrer">Основной каталог</a> · <a href="${MONK_RULESET_PROVENANCE.sources.expanded}" target="_blank" rel="noopener noreferrer">Дополнение</a>.</p></details>
-    <div class="technique-controls">
+  const ordinaryIds = character.monk?.ordinaryTechniqueIds ?? [];
+  const techniqueModes = [
+    ["mine", "Мои техники"],
+    ["catalog", "Каталог"],
+    ["prepare", "Подготовка"],
+  ];
+  const signatureCount = Object.values(character.monk?.signatureTechniqueSlots ?? {})
+    .filter(Boolean).length;
+  const markup = `
+    <header class="sara-tab-heading"><h2>Техники</h2></header>
+    <p class="sara-technique-summary">Обычные: ${ordinaryIds.length}/${derivedTechniqueLimit(character)} · Избранные: ${signatureCount} · Ци: ${character.combat?.ki?.current ?? "—"}/${derived.monk.kiMaximum ?? "—"}</p>
+    <nav class="sara-subtabs" aria-label="Разделы техник">
+      ${techniqueModes.map(([id, label]) => `<button type="button" class="btn"
+        data-technique-tab="${id}" aria-selected="${view.mode === id}">${label}</button>`).join("")}
+    </nav>
+    <section class="sara-technique-catalog" data-technique-catalog-controls ${view.mode === "catalog" ? "" : "hidden"}>
       <label class="field-label">Поиск<input class="input" type="search" data-technique-view="searchQuery" value="${escapeHtml(query)}"></label>
+      <div class="technique-controls">
       <label class="field-label">Выбор<select class="input" data-technique-view="filter">
         <option value="all" ${view.filter === "all" ? "selected" : ""}>Все</option>
         <option value="selected" ${view.filter === "selected" ? "selected" : ""}>Выбраны</option>
@@ -302,41 +320,54 @@ export function renderTechniquesPanel(character) {
         <option value="passive" ${typeFilter === "passive" ? "selected" : ""}>Пассивные способности</option>
         <option value="choice" ${typeFilter === "choice" ? "selected" : ""}>Выбор</option>
       </select></label>
-    </div>
+      </div>
+      <details class="technique-card__status"><summary>Источники и происхождение</summary>
+        <p>Зафиксированная версия: ${escapeHtml(MONK_RULESET_PROVENANCE.rulesetId)}; авторская пометка последнего найденного анонса — ${escapeHtml(MONK_RULESET_PROVENANCE.latestAuthorAnnouncement)}, версия страницы отдельно не подтверждена.</p>
+        <p><a href="${MONK_RULESET_PROVENANCE.sources.core}" target="_blank" rel="noopener noreferrer">Основной каталог</a> · <a href="${MONK_RULESET_PROVENANCE.sources.expanded}" target="_blank" rel="noopener noreferrer">Дополнение</a>.</p>
+      </details>
+      <p class="technique-card__status">Каталог ${MONK_TECHNIQUES.length} техник. Записи старших уровней доступны для чтения, но не применения.</p>
+    </section>
+    <section class="sara-technique-preparation" data-technique-preparation-controls ${view.mode === "prepare" ? "" : "hidden"}>
     <div class="section-heading-row">
-      <h3>Выбор техник · ${character.monk.ordinaryTechniqueIds.length}/${character.monk.ordinaryTechniqueIds.length + Math.max(0, derivedTechniqueLimit(character) - character.monk.ordinaryTechniqueIds.length)} обычных</h3>
+      <h3>Подготовка · ${ordinaryIds.length}/${derivedTechniqueLimit(character)} обычных</h3>
       ${entitlements.length && !draft ? `<label class="field-label">Основание<select class="input" data-technique-view="entitlementEventId">
         ${entitlements.map((event) => `<option value="${escapeHtml(event.id)}" ${event.id === entitlement?.id ? "selected" : ""}>${escapeHtml(event.type === "rest" ? "Долгий отдых" : `Уровень ${event.level}`)}</option>`).join("")}
       </select></label>` : ""}
-      ${draft ? `<button type="button" class="btn" data-technique-commit>Подтвердить замену</button>
+      ${draft ? `<button type="button" class="btn btn--primary" data-technique-commit>Подтвердить замену</button>
         <button type="button" class="btn btn--utility" data-technique-cancel>Отменить черновик</button>` :
-        `<button type="button" class="btn" data-technique-edit ${entitlement ? "" : "disabled"}>${entitlement ? "Редактировать черновик" : "Нет права на замену"}</button>`}
+        `<button type="button" class="btn" data-technique-edit ${entitlement ? "" : "disabled"}>${entitlement ? "Редактировать выбор" : "Нет права на замену"}</button>`}
     </div>
-    ${draft ? `<p class="technique-card__status">Черновик не применяется в бою до подтверждения. Основание: ${escapeHtml(entitlement?.type ?? "событие")}.</p>` : ""}
+    ${draft ? `<p class="technique-card__status">Предпросмотр не тратит право на замену. Изменения вступят в силу только после подтверждения.</p>` : ""}
     ${draftState && draftState.baseRevision !== context.stateRevision ? `<p class="technique-card__status" role="alert">Персонаж изменился. Черновик сохранён, но требует повторной проверки.
       <button type="button" class="btn btn--utility" data-technique-rebuild>Пересобрать черновик</button>
       <button type="button" class="btn btn--utility" data-technique-cancel>Отменить черновик</button></p>` : ""}
     ${draft ? `<div class="technique-controls technique-signatures">${renderSignatureSelects(character, draft)}</div>` : ""}
     ${draft ? `<div class="technique-controls">${renderTechniqueChoices(character, draft)}</div>` : ""}
-    ${thirdEye.awakenThirdEyePending ? `<section class="panel-section">
+    </section>
+    ${thirdEye.awakenThirdEyePending ? `<section class="sara-status" role="status">
       <p>Требуется вручную подтвердить завершение минутной медитации. 8 Ki уже потрачены; прерывание не возмещает их.</p>
       <label class="sara-form-check"><input type="checkbox" data-awaken-complete-confirm>
         Подтверждаю завершение медитации</label>
       <button type="button" class="btn" data-awaken-complete>Подтвердить завершение медитации</button>
     </section>` : ""}
-    ${thirdEye.awakenThirdEyeActive ? `<section class="panel-section">
+    ${thirdEye.awakenThirdEyeActive ? `<section class="sara-status" role="status">
       <p>Foresight действует до 8 часов. Текущий максимум ци уменьшен на 8; эффекты отмечаются вручную.</p>
       <label class="sara-form-check"><input type="checkbox" data-awaken-end-confirm>
         Подтверждаю завершение эффекта; потраченная ци не возвращается</label>
       <button type="button" class="btn btn--utility" data-awaken-end>Завершить эффект вручную</button>
     </section>` : ""}
-    <div class="technique-list">${entries.map((entry) => renderTechniqueCard(entry, character, draft)).join("")}</div>
+    <div class="technique-list" data-technique-list>${entries.map((entry) => renderTechniqueCard(entry, character, draft)).join("")}</div>
+    <p class="sara-empty-state" data-technique-empty hidden>Нет записей по текущему представлению. Проверьте подготовленные техники или фильтры.</p>
     <p class="technique-card__status" data-technique-editor-status role="status"></p>
-    <section class="panel-section"><h3>Воинский адепт — стили</h3>
-      <div class="technique-list">${WARRIOR_ADEPT_STYLES.map((style) => `<article class="technique-card"><h4>${escapeHtml(subchoiceLabel(style.id))}</h4><p>${escapeHtml(style.prerequisites.join("; ") || "без предварительных требований")}</p><p>${escapeHtml(style.text)}</p><details><summary>Оригинал и источник</summary><p>${escapeHtml(style.name)} · Alternate Monk</p></details></article>`).join("")}</div>
-    </section>
-    <p class="technique-card__status">Сияние божества: доступные заговоры — ${CLERIC_CANTRIPS.map((spell) => escapeHtml(spell.name)).join(", ")}.</p>
+    <details class="sara-details"><summary>Дополнительные стили и заговоры</summary>
+      <section class="panel-section"><h3>Воинский адепт — стили</h3>
+        <div class="technique-list">${WARRIOR_ADEPT_STYLES.map((style) => `<article class="technique-card"><h4>${escapeHtml(subchoiceLabel(style.id))}</h4><p>${escapeHtml(style.prerequisites.join("; ") || "без предварительных требований")}</p><p>${escapeHtml(style.text)}</p><details><summary>Оригинал и источник</summary><p>${escapeHtml(style.name)} · Alternate Monk</p></details></article>`).join("")}</div>
+      </section>
+      <p class="technique-card__status">Сияние божества: доступные заговоры — ${CLERIC_CANTRIPS.map((spell) => escapeHtml(spell.name)).join(", ")}.</p>
+    </details>
   `;
+  setPanelMarkup(panel, markup, "sara-velaris");
+  panel.dataset.techniqueMode = view.mode;
   filterTechniqueCards(panel, view);
   if (draftIsStale) {
     panel.querySelectorAll("[data-technique-draft], [data-signature-slot], [data-technique-choice], [data-technique-commit]")
@@ -378,6 +409,11 @@ export function renderTechniquesPanel(character) {
       const currentState = getState();
       const key = getSessionKey(currentContext);
       const status = panel.querySelector("[data-technique-editor-status]");
+      if (target.matches("[data-technique-tab]")) {
+        getTechniqueView(currentState, key).mode = target.dataset.techniqueTab;
+        renderTechniquesPanel(currentState);
+        return;
+      }
       if (target.matches("[data-technique-edit]")) {
         const available = (currentState.monk?.replacementEntitlements ?? []).filter((item) => !item.consumed);
         const currentView = getTechniqueView(currentState, key);
@@ -415,12 +451,14 @@ export function renderTechniquesPanel(character) {
       if (target.matches("[data-technique-form-cancel]")) {
         const form = target.closest("[data-technique-form]");
         if (form) form.hidden = true;
-        panel.querySelector(`[data-technique-use="${CSS.escape(form?.dataset.techniqueForm ?? "")}"]`)?.focus();
+        [...panel.querySelectorAll("[data-technique-use]")]
+          .find((button) => button.dataset.techniqueUse === form?.dataset.techniqueForm)?.focus();
         return;
       }
       if (target.matches("[data-technique-use]")) {
         const techniqueId = target.dataset.techniqueUse;
-        const form = panel.querySelector(`[data-technique-form="${CSS.escape(techniqueId)}"]`);
+        const form = [...panel.querySelectorAll("[data-technique-form]")]
+          .find((entry) => entry.dataset.techniqueForm === techniqueId);
         if (form) {
           form.hidden = false;
           form.querySelector("input, select, button")?.focus();
@@ -488,7 +526,7 @@ export function renderTechniquesPanel(character) {
       const input = {
         operationId: globalThis.crypto?.randomUUID?.() ??
           `technique-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        confirmed: values.has("confirmed"),
+        confirmed: true,
         mode: values.get("mode") || undefined,
         incomingDamage: values.get("incomingDamage"),
         deflectRoll: values.get("deflectRoll"),

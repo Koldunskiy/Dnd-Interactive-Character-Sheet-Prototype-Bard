@@ -1,10 +1,12 @@
 import { getState } from "../state.js";
 import { validateNoteEntries } from "../lore-notes.js";
+import { setPanelMarkup } from "./sara-dom.js";
 
 const expandedNoteIdsByCharacter = new Map();
 const noteStatusByCharacter = new Map();
 let activeLoreCharacterId = null;
 const loreDisclosureStates = new Map();
+const boundLoreDisclosures = new WeakSet();
 
 function getCharacterTransientState(characterId) {
   if (!expandedNoteIdsByCharacter.has(characterId)) expandedNoteIdsByCharacter.set(characterId, new Set());
@@ -116,7 +118,18 @@ function updateNoteCard(card, note, transient) {
     }
   }
   const status = card.querySelector(".lore-note-status");
-  status.textContent = transient.status.get(note.id) ?? "Изменения сохраняются автоматически.";
+  const hasConflict = [...card.querySelectorAll("[data-note-field]")].some((input) =>
+    input.dataset.saraDirty === "true" && document.activeElement === input && input.value !== note[input.dataset.noteField]);
+  status.textContent = hasConflict
+    ? "Заметка изменилась в другом обновлении; текущий ввод сохранён."
+    : transient.status.get(note.id) ?? "Изменения сохраняются автоматически.";
+  for (const input of card.querySelectorAll("[data-note-field]")) {
+    if (hasConflict && input.dataset.saraDirty === "true" && document.activeElement === input) {
+      input.setAttribute("aria-invalid", "true");
+    } else {
+      input.removeAttribute("aria-invalid");
+    }
+  }
 }
 
 function renderNoteCards(root, lore, characterId) {
@@ -175,8 +188,20 @@ export function updateLoreNoteEditView(metadata) {
     preview.length > 180 ? `${preview.slice(0, 180)}…` : preview || "Нет текста.";
   const saved = metadata.persistenceResult?.ok;
   const transient = getCharacterTransientState(state.profile?.id ?? "aurelia");
+  const conflict = [...card.querySelectorAll("[data-note-field]")].some((input) =>
+    input.dataset.saraDirty === "true" && document.activeElement === input &&
+    input.value !== note[input.dataset.noteField]);
   transient.status.set(metadata.noteId, saved ? "Сохранено" : "Не удалось сохранить на устройстве");
-  card.querySelector(".lore-note-status").textContent = transient.status.get(metadata.noteId);
+  card.querySelector(".lore-note-status").textContent = conflict
+    ? "Заметка изменилась в другом обновлении; текущий ввод сохранён."
+    : transient.status.get(metadata.noteId);
+  for (const input of card.querySelectorAll("[data-note-field]")) {
+    if (conflict && input.dataset.saraDirty === "true" && document.activeElement === input) {
+      input.setAttribute("aria-invalid", "true");
+    } else {
+      input.removeAttribute("aria-invalid");
+    }
+  }
 }
 
 function renderLoreNotes(lore, characterId, root = null) {
@@ -198,12 +223,12 @@ function renderLoreNotes(lore, characterId, root = null) {
   return root;
 }
 
-function renderSaraBiography(biography) {
+function renderSaraBiography(biography, isSara) {
   if (!biography || !Array.isArray(biography.sections)) return "";
   return `
     <section class="sara-biography">
-      <h2>${escapeHtml(biography.title)}</h2>
-      <h3>${escapeHtml(biography.subtitle)}</h3>
+      <h2>${isSara ? "История и характер" : escapeHtml(biography.title)}</h2>
+      ${isSara ? `<h3>${escapeHtml(biography.title)}</h3><p class="sara-biography__subtitle">${escapeHtml(biography.subtitle)}</p>` : `<h3>${escapeHtml(biography.subtitle)}</h3>`}
       <p class="panel-text">${escapeHtml(biography.disclaimer)}</p>
       ${biography.sections.map((section) => `
         <details class="info-card profile-responsive-disclosure" data-profile-disclosure="sara-lore-${escapeHtml(section.title)}">
@@ -227,6 +252,7 @@ export function renderLorePanel(state) {
   }
   const disclosureState = loreDisclosureStates.get(characterId) ?? new Map();
   const compact = window.matchMedia("(max-width: 899px)").matches;
+  const defaultOpen = characterId === "sara-velaris" ? false : !compact;
   let cardsRoot = lorePanel.querySelector("#loreCardsRoot");
   let notesRoot = lorePanel.querySelector("#loreNotesRoot");
   let mount = lorePanel.querySelector("#loreNotesMount");
@@ -255,7 +281,7 @@ export function renderLorePanel(state) {
   if (mount.parentElement !== lorePanel) lorePanel.append(mount);
   lorePanel.insertBefore(mount, cardsRoot);
 
-  cardsRoot.innerHTML = lore.biography ? renderSaraBiography(lore.biography) : [
+  const biographyMarkup = lore.biography ? renderSaraBiography(lore.biography, characterId === "sara-velaris") : [
     renderInfoCard("appearance", "Внешний вид", lore.appearance),
     renderInfoCard("order", "Орден", lore.order),
     renderInfoCard("motivation", "Цель", lore.motivation),
@@ -265,14 +291,26 @@ export function renderLorePanel(state) {
     lore.trauma ? renderInfoCard("trauma", "Травма", lore.trauma) : "",
     lore.gmTriggers ? renderInfoCard("gm-triggers", "Триггеры для мастера", lore.gmTriggers) : "",
   ].join("");
+  setPanelMarkup(cardsRoot, biographyMarkup, characterId);
   cardsRoot.querySelectorAll("details[data-profile-disclosure]").forEach((details) => {
     const key = details.dataset.profileDisclosure;
-    details.open = disclosureState.has(key) ? disclosureState.get(key) : !compact;
+    details.open = disclosureState.has(key) ? disclosureState.get(key) : defaultOpen;
   });
   loreDisclosureStates.set(characterId, new Map(
     [...cardsRoot.querySelectorAll("details[data-profile-disclosure]")]
       .map((details) => [details.dataset.profileDisclosure, details.open]),
   ));
+  for (const details of cardsRoot.querySelectorAll("details[data-profile-disclosure]")) {
+    if (boundLoreDisclosures.has(details)) continue;
+    details.addEventListener("toggle", () => {
+      const currentCharacterId = document.querySelector(".page")?.dataset.characterId ?? characterId;
+      loreDisclosureStates.set(currentCharacterId, new Map(
+        [...cardsRoot.querySelectorAll("details[data-profile-disclosure]")]
+          .map((entry) => [entry.dataset.profileDisclosure, entry.open]),
+      ));
+    });
+    boundLoreDisclosures.add(details);
+  }
 
   notesRoot = renderLoreNotes(lore, characterId, notesRoot);
   if (notesRoot.parentElement !== mount) mount.append(notesRoot);

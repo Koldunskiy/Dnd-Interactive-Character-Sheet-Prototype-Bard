@@ -108,7 +108,6 @@ function restoreParentSession() {
       session = null;
       return false;
     }
-    document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
     const body = getWorkspaceHost()?.querySelector("[data-workspace-body]");
     if (body) body.scrollTop = parent.internalScrollByStep[parent.currentStepKey] ?? 0;
     focusWorkspaceHeading();
@@ -120,8 +119,8 @@ function restoreParentSession() {
 function finishCurrentSession() {
   session = null;
   if (restoreParentSession()) return;
-  document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
   closeWorkspaceHost();
+  document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
 }
 
 function getStepDraft() {
@@ -694,8 +693,8 @@ export function minimizeWorkspace() {
   const body = getWorkspaceHost()?.querySelector("[data-workspace-body]");
   if (body) session.internalScrollByStep[session.currentStepKey] = body.scrollTop;
   session.minimized = true;
-  document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
   minimizeWorkspaceHost();
+  document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
   return true;
 }
 
@@ -2129,8 +2128,8 @@ export function discardWorkspaceDraft(workspaceSessionId) {
   if (entry === session) {
     session = null;
     if (!restoreParentSession()) {
-      document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
       closeWorkspaceHost({ restoreFocus: false });
+      document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
     }
   } else {
     const index = suspendedSessions.indexOf(entry);

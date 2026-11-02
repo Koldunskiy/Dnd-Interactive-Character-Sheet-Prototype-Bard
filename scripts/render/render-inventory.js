@@ -1,4 +1,5 @@
 import { getItemRuleReference } from "../rule-reference.js";
+import { setPanelMarkup } from "./sara-dom.js";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -150,11 +151,65 @@ function renderItemSummary(item) {
   return summaryParts.map(escapeHtml).join(" · ");
 }
 
-function renderInventoryItemCard(item, expandedItemIds = []) {
+function renderInventoryItemCard(item, expandedItemIds = [], isSara = false) {
   const itemId = String(item.id ?? "");
   const isExpanded = expandedItemIds.includes(itemId);
   const contentId = `inventory-item-content-${escapeHtml(itemId)}`;
   const toggleLabel = isExpanded ? "Свернуть" : "Подробнее";
+  if (!isSara) {
+    return `
+      <article class="inventory-item-card ${isExpanded ? "inventory-item-card--expanded" : "inventory-item-card--collapsed"}" data-item-id="${escapeHtml(itemId)}">
+        <div class="inventory-item-main">
+          <div class="inventory-item-main__title-wrap">
+            <div class="inventory-item-title">${escapeHtml(item.name)}</div>
+            <div class="inventory-item-summary">${renderItemSummary(item)}</div>
+          </div>
+          <div class="inventory-item-main__controls">
+            <label class="inventory-equip-toggle"><input type="checkbox" data-action="inventory-toggle-equipped"
+              data-item-id="${escapeHtml(itemId)}" ${item.equipped ? "checked" : ""}>
+              <span>Надето / используется</span></label>
+            <button type="button" class="btn btn--utility inventory-toggle-btn" data-action="inventory-toggle-expand"
+              data-item-id="${escapeHtml(itemId)}" aria-expanded="${isExpanded}" aria-controls="${contentId}">${toggleLabel}</button>
+          </div>
+        </div>
+        <div id="${contentId}" class="inventory-item-expandable" ${isExpanded ? "" : "hidden"}>
+          <section class="inventory-item-details" aria-label="Подробности предмета">
+            ${renderItemMetaRow("Тип", item.type ?? "misc")}
+            ${renderItemMetaRow("Стакуемый", item.stackable ? "Да" : "Нет")}
+            ${renderItemMetaRow("Теги", Array.isArray(item.tags) && item.tags.length ? item.tags.join(", ") : "—")}
+            ${renderItemResource("Использования", item.uses)}
+            ${renderItemResource("Заряды", item.charges)}
+            ${renderItemDetails(item)}
+          </section>
+          <section class="inventory-item-edit" aria-label="Редактирование предмета">
+            <h4 class="inventory-item-edit__title">Редактирование</h4>
+            <p class="inventory-item-edit__note">Изменения сохраняются сразу.</p>
+            <div class="inventory-item-edit__fields">
+              <label class="inventory-edit-field inventory-edit-field--name"><span>Название</span>
+                <input class="inventory-input inventory-input--name" type="text" value="${escapeHtml(item.name)}"
+                  data-bind-item-field="name" data-item-id="${escapeHtml(itemId)}" placeholder="Название предмета"></label>
+              <label class="inventory-edit-field inventory-edit-field--quantity"><span>Количество</span>
+                <input class="inventory-input inventory-input--qty" type="number" min="0" step="1"
+                  value="${escapeHtml(item.quantity ?? 1)}" data-bind-item-field="quantity"
+                  data-item-id="${escapeHtml(itemId)}" placeholder="Кол-во"></label>
+              ${item.id === "amulet-of-health" ? `<label class="inventory-edit-field">
+                <input type="checkbox" data-bind-item-field="attuned" data-item-id="${escapeHtml(itemId)}" ${item.attuned ? "checked" : ""}>
+                <span>Настроен</span></label>` : ""}
+              <label class="inventory-edit-field inventory-edit-field--notes"><span>Заметки</span>
+                <textarea class="inventory-textarea" rows="${getItemNoteRows(item.notes)}"
+                  data-bind-item-field="notes" data-item-id="${escapeHtml(itemId)}"
+                  placeholder="Заметка по предмету">${escapeHtml(item.notes || "")}</textarea></label>
+            </div>
+          </section>
+          <div class="resource-controls inventory-item-actions">
+            <button type="button" class="btn btn--utility" data-action="inventory-remove-item"
+              data-item-id="${escapeHtml(itemId)}">Удалить</button>
+          </div>
+        </div>
+      </article>`;
+  }
+  const equippable = item.equipped === true || Boolean(item.weapon || item.armor || item.focus) ||
+    ["weapon", "armor", "focus"].includes(item.type);
 
   return `
     <article class="inventory-item-card ${isExpanded ? "inventory-item-card--expanded" : "inventory-item-card--collapsed"}" data-item-id="${escapeHtml(itemId)}">
@@ -165,7 +220,7 @@ function renderInventoryItemCard(item, expandedItemIds = []) {
         </div>
 
         <div class="inventory-item-main__controls">
-          <label class="inventory-equip-toggle">
+          ${equippable ? `<label class="inventory-equip-toggle">
             <input
               type="checkbox"
               data-action="inventory-toggle-equipped"
@@ -173,7 +228,7 @@ function renderInventoryItemCard(item, expandedItemIds = []) {
               ${item.equipped ? "checked" : ""}
             />
             <span>Надето / используется</span>
-          </label>
+          </label>` : ""}
 
           <button
             type="button"
@@ -193,20 +248,24 @@ function renderInventoryItemCard(item, expandedItemIds = []) {
         class="inventory-item-expandable"
         ${isExpanded ? "" : "hidden"}
       >
-        <section class="inventory-item-details" aria-label="Подробности предмета">
-          ${renderItemMetaRow("Тип", item.type ?? "misc")}
-          ${renderItemMetaRow("Стакуемый", item.stackable ? "Да" : "Нет")}
-          ${renderItemMetaRow(
-            "Теги",
-            Array.isArray(item.tags) && item.tags.length ? item.tags.join(", ") : "—",
-          )}
-          ${renderItemResource("Использования", item.uses)}
-          ${renderItemResource("Заряды", item.charges)}
+        <details class="sara-details inventory-item-details">
+          <summary>Свойства и правила</summary>
+          <section aria-label="Подробности предмета">
+            ${renderItemMetaRow("Тип", item.type ?? "misc")}
+            ${renderItemMetaRow("Стакуемый", item.stackable ? "Да" : "Нет")}
+            ${renderItemMetaRow(
+              "Теги",
+              Array.isArray(item.tags) && item.tags.length ? item.tags.join(", ") : "—",
+            )}
+            ${renderItemResource("Использования", item.uses)}
+            ${renderItemResource("Заряды", item.charges)}
+            ${renderItemDetails(item)}
+          </section>
+        </details>
 
-          ${renderItemDetails(item)}
-        </section>
-
-        <section class="inventory-item-edit" aria-label="Редактирование предмета">
+        <details class="sara-details inventory-item-edit">
+          <summary>Редактировать</summary>
+          <section aria-label="Редактирование предмета">
           <h4 class="inventory-item-edit__title">Редактирование</h4>
           <p class="inventory-item-edit__note">Изменения сохраняются сразу.</p>
 
@@ -253,7 +312,7 @@ function renderInventoryItemCard(item, expandedItemIds = []) {
               >${escapeHtml(item.notes || "")}</textarea>
             </label>
           </div>
-        </section>
+          </section>
 
         <div class="resource-controls inventory-item-actions">
           <button
@@ -265,6 +324,7 @@ function renderInventoryItemCard(item, expandedItemIds = []) {
             Удалить
           </button>
         </div>
+        </details>
       </div>
     </article>
   `;
@@ -278,6 +338,7 @@ export function renderInventoryPanel(state) {
 
   const inventory = state.inventory ?? {};
   const itemsList = Array.isArray(inventory.items) ? inventory.items : [];
+  const isSara = state.profile?.id === "sara-velaris";
   const attunedCount = itemsList.filter((item) => item?.attuned === true).length;
   const currency = inventory.currency ?? { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
   const currencyMarkup = inventory.currencyStatus === "Не заполнено"
@@ -295,41 +356,37 @@ export function renderInventoryPanel(state) {
     : [];
 
   const items = itemsList
-    .map((item) => renderInventoryItemCard(item, expandedItemIds))
+    .map((item) => renderInventoryItemCard(item, expandedItemIds, isSara))
     .join("");
 
-  inventoryPanel.innerHTML = `
-    <h2>Инвентарь</h2>
-    ${state.profile?.id === "sara-velaris" ? `<p class="panel-text">Настроенные предметы: ${attunedCount}/3 ячеек.</p>` : ""}
-    <p class="panel-text">
+  const markup = `
+    ${isSara ? `<header class="sara-tab-heading"><h2>Вещи</h2>
+      <button type="button" class="btn" data-action="inventory-add-item">Добавить</button></header>` : "<h2>Инвентарь</h2>"}
+    ${isSara ? `<p class="panel-text sara-inventory-summary">Настроенные предметы: ${attunedCount}/3 ячеек · ${currency.gp ?? 0} зм · ${currency.sp ?? 0} см</p>` : `<p class="panel-text">`}
+    ${isSara ? "" : `
       Инвентарь хранит снаряжение, валюту и служит источником правды для оружия, брони, фокусов и расходников.
-    </p>
+    </p>`}
 
-    <div class="inventory-section-gap" aria-hidden="true"></div>
+    ${isSara ? `<label class="sara-inventory-search">Поиск предмета<input type="search" data-sara-inventory-search placeholder="Название или свойство"></label>` : ""}
 
-    <div class="cards-grid">
-      <div class="info-card">
-        <div class="info-card-title">Деньги</div>
-        ${currencyMarkup}
+    ${isSara ? `<details class="sara-details sara-inventory-editors">
+      <summary>Деньги и заметки о снаряжении</summary>
+      <section class="info-card"><h3>Деньги</h3>${currencyMarkup}</section>
+      <section class="info-card"><h3>Заметки</h3>
+        <textarea class="inventory-textarea inventory-textarea--large" rows="4"
+          data-bind="inventory.notes" placeholder="Записи о снаряжении, добыче, долгах, квестовых предметах...">${escapeHtml(inventory.notes || "")}</textarea>
+      </section>
+    </details>` : `<div class="inventory-section-gap" aria-hidden="true"></div>
+      <div class="cards-grid">
+        <div class="info-card"><div class="info-card-title">Деньги</div>${currencyMarkup}</div>
+        <div class="info-card"><div class="info-card-title">Заметки</div>
+          <textarea class="inventory-textarea inventory-textarea--large" rows="8" data-bind="inventory.notes"
+            placeholder="Записи о снаряжении, добыче, долгах, квестовых предметах...">${escapeHtml(inventory.notes || "")}</textarea></div>
       </div>
+      <div class="inventory-section-gap" aria-hidden="true"></div>`}
 
-      <div class="info-card">
-        <div class="info-card-title">Заметки</div>
-        <textarea
-          class="inventory-textarea inventory-textarea--large"
-          rows="8"
-          data-bind="inventory.notes"
-          placeholder="Записи о снаряжении, добыче, долгах, квестовых предметах..."
-        >${escapeHtml(inventory.notes || "")}</textarea>
-      </div>
-    </div>
-
-    <div class="inventory-section-gap" aria-hidden="true"></div>
-
-    <div class="inventory-header-row">
-      <h3>Снаряжение · ${escapeHtml(inventory.otherItemsStatus === "Не заполнено" ? "остальные предметы не заполнены" : "")}</h3>
-      <button type="button" class="btn" data-action="inventory-add-item">Добавить предмет</button>
-    </div>
+    ${isSara ? "" : `<div class="inventory-header-row"><h3>Снаряжение · ${escapeHtml(inventory.otherItemsStatus === "Не заполнено" ? "остальные предметы не заполнены" : "")}</h3>
+      <button type="button" class="btn" data-action="inventory-add-item">Добавить предмет</button></div>`}
 
     <div class="inventory-list">
       ${
@@ -338,4 +395,5 @@ export function renderInventoryPanel(state) {
       }
     </div>
   `;
+  setPanelMarkup(inventoryPanel, markup, state.profile?.id);
 }

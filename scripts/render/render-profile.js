@@ -1,4 +1,5 @@
 import { getFeatureReference, getRaceTraitReference } from "../rule-reference.js";
+import { setPanelMarkup } from "./sara-dom.js";
 
 const ABILITY_META = {
   strength: { key: "str", short: "STR", label: "Сила" },
@@ -33,10 +34,24 @@ const SKILL_LABELS = {
 let profileDisclosureMediaQuery = null;
 let currentDisclosureCharacterId = null;
 const profileDisclosureStates = new Map();
+const boundProfileDisclosures = new WeakSet();
 
-function getProfileDisclosureState() {
+function getProfileDisclosureNodes(characterId) {
+  if (characterId === "sara-velaris") {
+    return [
+      ...document.querySelectorAll("#profilePanel details[data-profile-disclosure]"),
+      ...document.querySelectorAll("#saraProfileMediaSlot details[data-profile-disclosure]"),
+    ];
+  }
+  return [
+    ...document.querySelectorAll("#profilePanel details[data-profile-disclosure]"),
+    ...document.querySelectorAll(".sidebar details[data-profile-disclosure]"),
+  ];
+}
+
+function getProfileDisclosureState(characterId = currentDisclosureCharacterId) {
   return new Map(
-    [...document.querySelectorAll("details[data-profile-disclosure]")].map(
+    getProfileDisclosureNodes(characterId).map(
       (details) => [details.dataset.profileDisclosure, details.open],
     ),
   );
@@ -46,11 +61,8 @@ function applyProfileDisclosureState(previousState, characterId) {
   if (!profileDisclosureMediaQuery) {
     profileDisclosureMediaQuery = window.matchMedia("(max-width: 899px)");
     const updateForViewport = (event) => {
-      document
-        .querySelectorAll("details[data-profile-disclosure]")
-        .forEach((details) => {
-          details.open = !event.matches;
-        });
+      if (document.querySelector(".page")?.dataset.characterId === "sara-velaris") return;
+      getProfileDisclosureNodes("aurelia").forEach((details) => { details.open = !event.matches; });
     };
 
     if (typeof profileDisclosureMediaQuery.addEventListener === "function") {
@@ -61,20 +73,27 @@ function applyProfileDisclosureState(previousState, characterId) {
   }
 
   const useDefaults = !profileDisclosureStates.has(characterId);
-  document
-    .querySelectorAll("details[data-profile-disclosure]")
-    .forEach((details) => {
+  const defaultOpen = characterId === "sara-velaris" ? false : !profileDisclosureMediaQuery.matches;
+  getProfileDisclosureNodes(characterId).forEach((details) => {
       const key = details.dataset.profileDisclosure;
       details.open =
         !useDefaults && previousState.has(key)
           ? previousState.get(key)
-          : !profileDisclosureMediaQuery.matches;
+          : defaultOpen;
     });
   profileDisclosureStates.set(characterId, new Map(
-    [...document.querySelectorAll("details[data-profile-disclosure]")].map((details) =>
+    getProfileDisclosureNodes(characterId).map((details) =>
       [details.dataset.profileDisclosure, details.open]),
   ));
   currentDisclosureCharacterId = characterId;
+  for (const details of getProfileDisclosureNodes(characterId)) {
+    if (boundProfileDisclosures.has(details)) continue;
+    details.addEventListener("toggle", () => {
+      const currentCharacterId = document.querySelector(".page")?.dataset.characterId ?? characterId;
+      profileDisclosureStates.set(currentCharacterId, getProfileDisclosureState(currentCharacterId));
+    });
+    boundProfileDisclosures.add(details);
+  }
 }
 
 function escapeHtml(value) {
@@ -232,7 +251,7 @@ function renderAbilitiesSection(character, derived) {
   const cards = getAbilityCardsData(character, derived);
 
   return `
-    <section class="panel-section">
+    <section class="panel-section" data-sara-key="profile-abilities">
       <div class="section-heading-row">
         <h2 class="section-title">Характеристики</h2>
       </div>
@@ -259,7 +278,7 @@ function renderSkillCard(skillId, character, derived) {
   const editable = Boolean(character.ui?.abilitiesEditable);
   const status = skill.expertise ? "Экспертность" : skill.proficient ? "Владение" : "";
   return `
-    <article class="profile-skill-card">
+    <article class="profile-skill-card" data-sara-skill="${escapeHtml(skillId)}">
       <div class="profile-skill-card-main">
         <button type="button" class="profile-skill-name profile-roll-link" data-open-character-roll data-roll-kind="ability-check" data-roll-id="${escapeHtml(skillId)}">${escapeHtml(SKILL_LABELS[skillId])}</button>
         ${status ? `<span class="profile-skill-status">${escapeHtml(status)}</span>` : ""}
@@ -279,11 +298,13 @@ function renderSkillsSection(character, derived) {
   const skillValues = getDerivedSkillMap(derived);
   const passiveValue = (id) => 10 + Number(skillValues[id] ?? 0);
   const editable = Boolean(character.ui?.abilitiesEditable);
+  const isSara = character.profile?.id === "sara-velaris";
   return `
-    <section class="panel-section profile-skills-panel">
+    <section class="panel-section profile-skills-panel" data-sara-key="profile-skills">
       <div class="section-heading-row">
-        <div><h2 class="section-title">Навыки</h2><p class="section-subtitle">Все навыки персонажа</p></div>
-        <button type="button" class="btn btn--utility profile-edit-toggle" data-action="toggle-abilities-edit">${editable ? "Готово" : "Изменить"}</button>
+        <div><h2 class="section-title">${isSara ? "Проверки" : "Навыки"}</h2><p class="section-subtitle">${isSara ? "Навыки персонажа" : "Все навыки персонажа"}</p></div>
+        ${isSara ? `<label class="sara-skill-search">Поиск навыка<input type="search" data-sara-skill-search placeholder="Название навыка"></label>` : ""}
+        ${isSara ? "" : `<button type="button" class="btn btn--utility profile-edit-toggle" data-action="toggle-abilities-edit">${editable ? "Готово" : "Изменить"}</button>`}
       </div>
       <div class="profile-skill-groups">
         ${SKILL_GROUPS.map(([id, label, skillIds]) => `
@@ -311,7 +332,7 @@ function renderRaceDetails(raceDetails) {
   const traits = Array.isArray(raceDetails.traits) ? raceDetails.traits : [];
 
   return `
-    <section class="panel-section">
+    <section class="panel-section" data-sara-key="profile-race">
       <div class="section-heading-row">
         <h2 class="section-title">Наследие</h2>
       </div>
@@ -385,7 +406,7 @@ function renderBackgroundDetails(backgroundDetails) {
   if (!backgroundDetails) return "";
 
   return `
-    <section class="panel-section">
+    <section class="panel-section" data-sara-key="profile-background">
       <div class="section-heading-row">
         <h2 class="section-title">Предыстория</h2>
       </div>
@@ -530,7 +551,7 @@ function renderClassFeatures(features, character, derived) {
   if (!projectedFeatures.length) return "";
 
   return `
-    <section class="panel-section">
+    <section class="panel-section" data-sara-key="profile-class-features">
       <div class="section-heading-row">
         <h2 class="section-title">Черты и умения</h2>
       </div>
@@ -569,7 +590,7 @@ function renderClassFeatures(features, character, derived) {
   `;
 }
 
-function renderLevelControl(level) {
+function renderLevelControl(level, editable = true) {
   const safeLevel = Math.max(1, Number(level ?? 1));
 
   return `
@@ -581,7 +602,7 @@ function renderLevelControl(level) {
           ${escapeHtml(safeLevel)}
         </div>
 
-        <div class="level-stat-row__controls">
+        <div class="level-stat-row__controls" ${editable ? "" : "hidden"}>
           <button
             type="button"
             class="level-inline-btn"
@@ -628,7 +649,16 @@ export function renderProfile(root, character, derived) {
   const disclosureState = profileDisclosureStates.get(characterId) ?? new Map();
   const profile = character.profile ?? {};
 
-  const heroStats = [
+  const isSara = characterId === "sara-velaris";
+  const editable = Boolean(character.ui?.abilitiesEditable);
+  const heroStats = isSara ? [
+    renderLevelControl(profile.level, editable),
+    renderHeroStat("Класс брони", derived?.armorClass ?? "—"),
+    renderHeroStat("Скорость", `${character.combat?.speedFeet ?? character.raceDetails?.speedFeet ?? "—"} фт`),
+    renderHeroStat("Бонус мастерства", formatSigned(derived?.proficiencyBonus)),
+    renderHeroStat("Инициатива", derived?.formattedInitiative ?? "—"),
+    renderHeroStat("Пассивное восприятие", derived?.passivePerception ?? "—"),
+  ] : [
     renderLevelControl(profile.level),
     renderHeroStat("КД", derived?.armorClass ?? "—"),
     renderHeroStat("Хиты", derived?.maxHitPoints ?? "—"),
@@ -642,8 +672,12 @@ export function renderProfile(root, character, derived) {
     ),
   ];
 
-  root.innerHTML = `
-    <section class="panel-section panel-section--hero">
+  const markup = `
+    ${isSara ? `<header class="sara-tab-heading" data-sara-key="profile-heading">
+      <h2>Профиль</h2>
+      <button type="button" class="btn" data-action="toggle-abilities-edit">${editable ? "Готово" : "Редактировать"}</button>
+    </header>` : ""}
+    <section class="panel-section panel-section--hero" data-sara-key="profile-summary">
       <div class="profile-hero">
         <div class="profile-hero-main">
           <div class="profile-name-row">
@@ -679,5 +713,6 @@ export function renderProfile(root, character, derived) {
     ${renderClassFeatures(character.classFeatures, character, derived)}
   `;
 
+  setPanelMarkup(root, markup, characterId);
   applyProfileDisclosureState(disclosureState, characterId);
 }
