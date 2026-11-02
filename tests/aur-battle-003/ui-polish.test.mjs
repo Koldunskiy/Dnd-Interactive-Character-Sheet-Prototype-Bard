@@ -64,9 +64,47 @@ test("battle cards and global surfaces have wrapping and theme-token safeguards"
   assert.match(workspaceCss, /\.action-workspace__body\s*\{[\s\S]*?overflow-y:\s*auto/);
   assert.match(workspaceCss, /\.workspace-nav\s*\{[\s\S]*?flex-wrap:\s*wrap/);
   assert.match(tokens, /:root\[data-theme="teal-slate"\][\s\S]*?--panel-glow:\s*none/);
+  assert.match(tokens, /--bg:\s*#101722/);
+  assert.match(tokens, /--on-accent-muted:\s*#263b30/);
+  assert.match(themeCss, /:root\[data-theme="teal-slate"\] \.btn--primary:hover:not\(:disabled\)/);
+  assert.match(themeCss, /:root\[data-theme\] \.btn--primary small[\s\S]*?color:\s*var\(--on-accent-muted/);
   assert.match(themeCss, /:root\[data-theme\] \.btn:disabled:hover[\s\S]*?opacity:\s*0\.62/);
   assert.match(themeCss, /:root\[data-theme\] \.action-workspace__footer \[data-workspace-action="attack-hit"\]:not\(:disabled\)/);
   assert.match(themeCss, /:root\[data-theme\] \.workspace-roll-mode__option\[aria-pressed="true"\]/);
+});
+
+test("damage-basis renderer only exposes the profile when full-effect is selected", () => {
+  const record = {
+    kind: "saving-throw",
+    ability: "dexterity",
+    manualOutcome: "failure",
+    total: 14,
+    rawD20Rolls: [10],
+    chosenD20: 10,
+    totalModifier: 4,
+    rollMode: "normal",
+    consequence: { status: "awaiting-damage-input" },
+  };
+  const renderBasis = (damageBasis) => renderCommandWorkspace({
+    scenarioId: "character-roll",
+    currentStep: "roll-result",
+    currentStepKey: "roll-result:character-roll",
+    rollRecord: record,
+    rawInputsByStep: {
+      "roll-result:character-roll": {
+        damageBasis,
+        damage: "19",
+        effectProfile: "save-half",
+      },
+    },
+  }, structuredClone(sara)).body;
+  const finalDamage = renderBasis("dm-final");
+  assert.doesNotMatch(finalDamage, /name="effectProfile"/);
+  assert.match(finalDamage, /value="19"/);
+  assert.match(finalDamage, /без дополнительного уменьшения/);
+  const fullEffect = renderBasis("full-effect");
+  assert.match(fullEffect, /name="effectProfile"/);
+  assert.match(fullEffect, /value="19"/);
 });
 
 test("applied-unsaved workspace puts retry first and avoids replay controls", () => {
@@ -192,6 +230,11 @@ test("theme resolution keeps per-character overrides independent and supports au
   }), true);
   assert.equal(root.dataset.theme, "wine-gold");
   assert.equal(meta.content, "#090607");
+  assert.equal(applyResolvedTheme("teal-slate", {
+    documentElement: root,
+    querySelector: () => meta,
+  }), true);
+  assert.equal(meta.content, "#101722");
 
   setRuntimeCharacterThemeOverride("sara-velaris", "wine-gold");
   assert.equal(resolveCharacterTheme("sara-velaris", preferences), "wine-gold");

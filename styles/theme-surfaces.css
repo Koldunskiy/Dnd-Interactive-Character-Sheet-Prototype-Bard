@@ -69,6 +69,32 @@
     linear-gradient(180deg, var(--selected-surface), var(--surface-2));
 }
 
+:root[data-theme] .btn--primary {
+  color: var(--on-accent, var(--text-strong));
+}
+
+:root[data-theme="teal-slate"] .btn--primary {
+  border-color: var(--accent-strong);
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+:root[data-theme="teal-slate"] .btn--primary:hover:not(:disabled) {
+  color: var(--on-accent);
+  background: var(--accent-strong);
+}
+
+:root[data-theme] .btn--primary .battle-command-card__subtitle,
+:root[data-theme] .btn--primary .btn__subtitle,
+:root[data-theme] .btn--primary small {
+  color: var(--on-accent-muted, var(--text-strong));
+  opacity: 1;
+}
+
+:root[data-theme="teal-slate"] .battle-console {
+  background: var(--surface-2);
+}
+
 :root[data-theme] .btn--utility,
 :root[data-theme] .battle-command-card__chip,
 :root[data-theme] .battle-budget-item,

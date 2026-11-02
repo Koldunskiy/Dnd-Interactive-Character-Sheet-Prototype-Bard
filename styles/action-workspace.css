@@ -31,7 +31,7 @@
   background: var(--backdrop);
 }
 
-.action-workspace__header {
+:root[data-theme="teal-slate"] .action-workspace__header {
   padding: max(10px, env(safe-area-inset-top, 0px)) 14px 10px;
   border-bottom: 1px solid var(--line-gold);
   background: linear-gradient(140deg, var(--accent-wash-strong), var(--surface-2));
@@ -45,6 +45,11 @@
   gap: 8px;
   justify-content: space-between;
   margin-bottom: 8px;
+}
+
+.action-workspace__header {
+  background: var(--surface-2);
+  border-color: var(--line);
 }
 
 .workspace-nav .btn {
@@ -62,7 +67,12 @@
 
 .workspace-nav + div p {
   margin: 4px 0 0;
-  color: var(--muted);
+  color: var(--accent-strong);
+}
+
+:root[data-theme="teal-slate"] .workspace-attack-result__total,
+:root[data-theme="teal-slate"] .workspace-damage-result__total {
+  color: var(--text-strong);
 }
 
 .workspace-resources {
@@ -72,7 +82,7 @@
   flex-wrap: wrap;
   gap: 14px;
   margin-top: 8px;
-  color: var(--accent-strong);
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
@@ -188,7 +198,7 @@
 .workspace-damage-result__total {
   display: block;
   max-width: 100%;
-  color: var(--accent-strong);
+  color: var(--text-strong);
   font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(4rem, 18vw, 4.75rem);
   font-variant-numeric: tabular-nums lining-nums;

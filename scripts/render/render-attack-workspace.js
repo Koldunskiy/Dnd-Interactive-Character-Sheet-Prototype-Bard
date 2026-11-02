@@ -280,8 +280,8 @@ export function renderAttackWorkspace(session, state) {
       : session.currentStep === "confirm-close" ? "Закрыть рабочую панель"
         : session.currentStep === "summary" ? `Итог: ${commandTitle}` : "Продолжение атаки";
   const header = `<div class="workspace-nav">
-      <button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>
       <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
+      <button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>
       <button type="button" class="btn btn--utility" data-workspace-action="close">Закрыть</button>
     </div>
     <div><h2 id="workspaceDialogTitle" tabindex="-1" data-workspace-title>${heading}</h2><p>${escapeHtml(session.stepLabel)}</p></div>
@@ -306,8 +306,8 @@ export function renderAttackWorkspace(session, state) {
     const paymentLabel = paymentMode === "practiced"
       ? "1 Practiced"
       : technique?.payment.replaceAll("Ki", "ци") ?? "";
-    footer = `<button type="button" class="btn btn--utility" data-workspace-action="no-technique-continue" ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Без техники → ${session.capabilities.canContinueSequence ? "следующий удар" : "завершить"}</button>
-      <button type="button" class="btn btn--primary" data-workspace-action="apply-strike" ${session.submitting || session.appliedUnsaved || !canApplyStrike(session, state) ? "disabled" : ""}>${technique ? `Применить за ${escapeHtml(paymentLabel)}` : "Выберите технику"}</button>`;
+    footer = `<button type="button" class="btn btn--primary" data-workspace-action="no-technique-continue" ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Без техники → ${session.capabilities.canContinueSequence ? "следующий удар" : "завершить"}</button>
+      <button type="button" class="btn btn--utility" data-workspace-action="apply-strike" ${session.submitting || session.appliedUnsaved || !canApplyStrike(session, state) ? "disabled" : ""}>${technique ? `Применить за ${escapeHtml(paymentLabel)}` : "Выберите технику"}</button>`;
   } else if (session.currentStep === "confirm-close") {
     const hasRemainder = sequence?.status === "open" &&
       sequence.resolvedAttacks.length < sequence.maximumAttacks;
@@ -337,8 +337,8 @@ export function renderAttackWorkspace(session, state) {
       ${sequence?.status === "abandoned" ? "<p>Последовательность закрыта; новые удары не добавляются.</p>" : ""}
       ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}`;
     if (session.currentStep === "checkpoint" && strikeParent) {
-      footer = `<button type="button" class="btn btn--utility" data-workspace-action="no-technique-continue" ${session.appliedUnsaved ? "disabled" : ""}>${session.capabilities.canContinueSequence ? "Без техники → следующий удар" : "Завершить без техники"}</button>
-        ${strikeChoices(state).length ? `<button type="button" class="btn btn--primary" data-workspace-action="open-strike" ${session.appliedUnsaved ? "disabled" : ""}>Выбрать необязательную технику</button>` : ""}`;
+      footer = `<button type="button" class="btn btn--primary" data-workspace-action="no-technique-continue" ${session.appliedUnsaved ? "disabled" : ""}>${session.capabilities.canContinueSequence ? "Без техники → следующий удар" : "Завершить без техники"}</button>
+        ${strikeChoices(state).length ? `<button type="button" class="btn btn--utility" data-workspace-action="open-strike" ${session.appliedUnsaved ? "disabled" : ""}>Выбрать необязательную технику</button>` : ""}`;
     } else if (session.currentStep === "checkpoint" && session.appliedUnsaved) {
       footer = "<p>Продолжение доступно после сохранения результата.</p>";
     } else if (session.currentStep === "checkpoint" && session.capabilities.canContinueSequence) {
@@ -350,13 +350,15 @@ export function renderAttackWorkspace(session, state) {
         <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
         <button type="button" class="btn btn--utility" data-workspace-action="close-attack-remainder">Закрыть остаток</button>`;
     } else if (session.currentStep === "summary") {
-      footer = `<button type="button" class="btn btn--primary" data-workspace-action="finish-workspace">Готово · к моему ходу</button>`;
+      footer = `<button type="button" class="btn btn--primary" data-workspace-action="finish-workspace"
+        ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>${escapeHtml(session.completionLabel ?? "Готово")}</button>`;
     } else {
       footer = `<button type="button" class="btn btn--primary" data-workspace-action="summary">К итогам</button>`;
     }
   }
   const appliedUnsaved = session.appliedUnsaved
-    ? `<p class="workspace-error" role="alert">Изменение применено в памяти, но не сохранено.</p>
+    ? `<section class="workspace-error" role="alert"><strong>Результат применён, но не сохранён</strong>
+      <p>Повторное применение отключено. Повторите сохранение.</p></section>
       <button type="button" class="btn btn--utility" data-workspace-action="retry-save">Повторить сохранение</button>` : "";
   return {
     header,

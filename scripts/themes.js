@@ -45,6 +45,6 @@ export function applyResolvedTheme(themeId, documentRef = globalThis.document) {
   if (!isThemeId(themeId) || !documentRef?.documentElement) return false;
   documentRef.documentElement.dataset.theme = themeId;
   const themeColor = documentRef.querySelector?.('meta[name="theme-color"]');
-  if (themeColor) themeColor.content = themeId === "teal-slate" ? "#0b1418" : "#090607";
+  if (themeColor) themeColor.content = themeId === "teal-slate" ? "#101722" : "#090607";
   return true;
 }

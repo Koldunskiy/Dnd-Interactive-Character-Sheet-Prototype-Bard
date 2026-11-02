@@ -252,6 +252,11 @@ function setStep(step, attackId = session.attackId) {
 function render() {
   if (!session) return;
   const state = getState();
+  const parent = [...suspendedSessions].reverse().find((entry) =>
+    isWorkspaceOwnerCurrent(entry.owner) && entry.owner.appInstanceId === appInstanceId);
+  session.completionLabel = parent
+    ? `Вернуться к ${parent.command?.titleRu ?? "рабочей панели"}`
+    : "Готово";
   const view = session.workspaceType === "command"
     ? renderCommandWorkspace(session, state)
     : renderAttackWorkspace(session, state);
@@ -318,6 +323,11 @@ function updateInput(field) {
     const needsSecond = field.value === "advantage" || field.value === "disadvantage";
     if (secondRoll) secondRoll.hidden = !needsSecond;
     if (secondInput) secondInput.required = needsSecond;
+  }
+  if (session.workspaceType === "command" && session.currentStep === "roll-result" &&
+      field.name === "damageBasis") {
+    render();
+    return;
   }
   if (session.currentStep === "attack-input") {
     renderWorkspaceAttackPreview(session, getState());
@@ -1935,7 +1945,8 @@ function handleAction(action, button = null) {
   } else if (action === "summary") {
     setStep("summary", session.attackId);
   } else if (action === "finish-workspace") {
-    if (session.currentStep === "summary" && !session.appliedUnsaved) finishCurrentSession();
+    if (session.currentStep === "summary" && !session.submitting &&
+        !session.appliedUnsaved) finishCurrentSession();
   } else if (action === "retry-save") {
     retrySave();
   } else if (action === "back") {
@@ -2054,6 +2065,15 @@ export function isWorkspaceOpen() {
 }
 
 function getWorkspaceSessionLabel(entry) {
+  if (entry.appliedUnsaved) return "Сохранить применённый результат";
+  if (entry.readOnly) return "Устаревшая рабочая панель · только просмотр";
+  if (entry.currentStep === "attack-input" && entry.sequenceId) {
+    const sequence = getWorkspaceAttackSequence(getState(), entry.sequenceId);
+    if (sequence) {
+      const next = sequence.resolvedAttacks.length + 1;
+      return `Продолжить атаку · удар ${next} из ${sequence.maximumAttacks}`;
+    }
+  }
   return entry.workspaceType === "command" && entry.currentStep === "roll-result"
       ? entry.rollRecord?.consequence?.status === "awaiting-outcome"
         ? "Указать исход броска" : "Продолжить последствие броска"

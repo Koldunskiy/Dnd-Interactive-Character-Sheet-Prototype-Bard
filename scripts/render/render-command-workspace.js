@@ -345,7 +345,7 @@ function renderConsequenceInput(record, state, session) {
   const savingThrow = record.kind === "saving-throw";
   const input = {
     damage: draft.damage ?? "",
-    damageBasis: draft.damageBasis ?? (savingThrow ? "" : "dm-final"),
+    damageBasis: draft.damageBasis ?? (savingThrow ? "full-effect" : "dm-final"),
     effectProfile: draft.effectProfile ?? "",
   };
   const preview = calculateRollConsequencePreview(record, state, input);
@@ -355,13 +355,14 @@ function renderConsequenceInput(record, state, session) {
           ["dm-final", "Уже итоговый урон от мастера"],
           ["full-effect", "Полный урон эффекта"],
         ], input.damageBasis)}
-          ${selectField("effectProfile", "Профиль полного урона", [
+          ${input.damageBasis === "full-effect" ? selectField("effectProfile", "Профиль полного урона", [
             ["failure-full", "Урон только при провале"],
             ["save-half", "Спасбросок для половины урона"],
-          ], input.effectProfile)}`
+          ], input.effectProfile) : "<p>Будет применён указанный итоговый урон без дополнительного уменьшения.</p>"}`
         : `<p>Для проверки укажите только итоговый урон, сообщённый ведущим; защита спасброска не применяется.</p>
           <input type="hidden" data-workspace-field="damageBasis" name="damageBasis" value="dm-final">`}
-      ${numberField("damage", savingThrow ? "Урон по хитам" : "Итоговый урон по хитам", 0, null, input.damage)}
+      ${numberField("damage", savingThrow && input.damageBasis === "full-effect"
+        ? "Полный урон эффекта" : "Итоговый урон по хитам", 0, null, input.damage)}
       <section class="workspace-damage-result workspace-consequence-preview" aria-live="polite">
         <span class="workspace-attack-result__label">УРОН ПО ХИТАМ</span>
         <output class="workspace-damage-result__total" data-consequence-total>${preview.ok ? preview.finalDamage : "—"}</output>
@@ -378,8 +379,8 @@ export function renderCommandWorkspace(session, state) {
   const unavailableReason = session.command?.availability?.enabled
     ? "" : session.command?.availability?.reasonRu ?? "Команда больше недоступна.";
   const header = `<div class="workspace-nav">
-      <button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>
       <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
+      <button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>
       <button type="button" class="btn btn--utility" data-workspace-action="close">Закрыть</button>
     </div>
     <div><h2 id="workspaceDialogTitle" tabindex="-1" data-workspace-title>${escapeHtml(title)}</h2>
@@ -430,7 +431,8 @@ export function renderCommandWorkspace(session, state) {
             <button type="button" class="btn btn--utility" data-workspace-action="done">Завершить без ответа</button>`
     : `<button type="button" class="btn btn--primary" data-workspace-action="done">Готово</button>`;
   const retry = session.appliedUnsaved
-    ? `<p class="workspace-error" role="alert">Применено, но не сохранено.</p>
+    ? `<section class="workspace-error" role="alert"><strong>Результат применён, но не сохранён</strong>
+      <p>Повторное применение отключено. Повторите сохранение.</p></section>
       <button type="button" class="btn btn--utility" data-workspace-action="retry-save">Повторить сохранение</button>` : "";
   return { header, body, footer: session.appliedUnsaved ? retry : footer };
 }
@@ -489,7 +491,7 @@ function renderRollResult(session, state) {
       ${consequenceStatus === "resolved-none" ? `<p class="workspace-roll-consequence-result" role="status">Отмечено: урона по хитам нет. Решение сохранено.</p>` : ""}
       ${consequenceStatus === "tracked-elsewhere" ? `<p class="workspace-roll-consequence-result" role="status">Последствие учтено вне листа; на HP листа не повлияло.</p>` : ""}
       ${amendmentCorrectionWarning}
-      ${session.appliedUnsaved ? `<p class="workspace-error" role="alert">Применено, но не сохранено; повтор операции отключён.</p>` : ""}
+      ${session.appliedUnsaved ? `<section class="workspace-error" role="alert"><strong>Результат применён, но не сохранён</strong><p>Повторное применение отключено. Повторите сохранение.</p></section>` : ""}
       ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}
     </section>`;
 }
