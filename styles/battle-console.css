@@ -128,6 +128,33 @@ button.combat-budget__item {
   color: var(--text);
   background: var(--surface-2);
 }
+.combat-workspace-host[data-entry-active="true"] {
+  position: fixed;
+  z-index: 1000;
+  inset-inline: 8px;
+  top: var(--workspace-entry-top, 0px);
+  width: auto;
+  height: var(--workspace-entry-height, 100dvh);
+  max-height: none;
+  border-radius: 8px;
+  box-shadow: 0 0 0 100vmax var(--surface-2);
+}
+
+.combat-workspace-host[data-entry-active="true"] > .action-workspace__header {
+  display: none;
+}
+
+html[data-combat-entry-active="true"] nav.tabs {
+  display: none;
+}
+
+html[data-combat-entry-active="true"] .combat-turn-card__header,
+html[data-combat-entry-active="true"] .combat-budget,
+html[data-combat-entry-active="true"] .battle-unfinished-work,
+html[data-combat-entry-active="true"] .battle-primary-footer,
+html[data-combat-entry-active="true"] .battle-console-status {
+  display: none;
+}
 
 .combat-workspace-host .action-workspace__header,
 .combat-workspace-host .action-workspace__footer {
@@ -189,6 +216,18 @@ button.combat-budget__item {
   font-size: 1.125rem;
 }
 
+.combat-workspace-host .workspace-entry-fields .workspace-field {
+  min-width: 0;
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.combat-workspace-host .workspace-entry-fields input[type="number"] {
+  min-height: 46px;
+  padding-inline: 6px;
+  font-size: 1.25rem;
+}
+
 .combat-workspace-host .workspace-roll-mode {
   margin: 8px 0;
 }
@@ -212,6 +251,10 @@ button.combat-budget__item {
 .combat-workspace-host .action-workspace__footer .btn {
   flex-basis: 130px;
   font-size: var(--combat-body-size);
+}
+
+.combat-workspace-host .action-workspace__footer [role="status"]:empty {
+  display: none;
 }
 
 .combat-workspace-host .workspace-attack-progress,
@@ -267,24 +310,24 @@ button.combat-budget__item {
   font-size: var(--combat-body-size);
 }
 
-.combat-turn-card [data-compact-height][data-editing] .workspace-nav + div p {
+.combat-turn-card [data-compact-height][data-editing="true"] .workspace-nav + div p {
   display: none;
 }
 
-.combat-turn-card [data-compact-height][data-editing] .workspace-nav [data-workspace-action="back"] {
+.combat-turn-card [data-compact-height][data-editing="true"] .workspace-nav [data-workspace-action="back"] {
   display: none;
 }
 
-.combat-turn-card [data-compact-height][data-editing] .action-workspace__body {
+.combat-turn-card [data-compact-height][data-editing="true"] .action-workspace__body {
   padding: 5px;
 }
 
-.combat-turn-card [data-compact-height][data-editing] .workspace-field {
+.combat-turn-card [data-compact-height][data-editing="true"] .workspace-field {
   margin: 3px 0;
 }
 
-.combat-turn-card [data-compact-height][data-editing] .workspace-attack-result,
-.combat-turn-card [data-compact-height][data-editing] .workspace-damage-result {
+.combat-turn-card [data-compact-height][data-editing="true"] .workspace-attack-result,
+.combat-turn-card [data-compact-height][data-editing="true"] .workspace-damage-result {
   margin: 4px 0;
 }
 

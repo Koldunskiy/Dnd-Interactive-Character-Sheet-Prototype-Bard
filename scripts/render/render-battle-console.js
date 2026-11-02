@@ -250,14 +250,14 @@ export function renderBattleConsole(state) {
     ? [] : [...unfinished, ...minimized].filter((entry) => entry.appliedUnsaved);
   const minimizedWithoutRecovery = minimized.filter((entry) => !entry.appliedUnsaved);
   const visibleUnfinished = unfinished.filter((entry) => !entry.appliedUnsaved);
-  const workPanel = `<details class="battle-unfinished-work"
-      ${!activeWorkspace && unfinished.length + minimized.length ? "open" : ""}>
+  const workPanel = unfinished.length + minimized.length ? `<details class="battle-unfinished-work"
+      ${!activeWorkspace ? "open" : ""}>
     <summary>Незавершённое и история · ${unfinished.length + minimized.length}</summary>
     <div class="battle-unfinished-list">${visibleUnfinished.map(renderPlayerWork).join("") ||
       "<p>Нет ожидающих результатов или черновиков.</p>"}</div>
     ${minimizedWithoutRecovery.length ? `<div class="battle-unfinished-list" aria-label="Рабочие панели">
       ${minimizedWithoutRecovery.map(renderPlayerWork).join("")}</div>` : ""}
-  </details>`;
+  </details>` : "";
   const workspaceHostMarkup = `<div class="combat-workspace-host" data-combat-workspace-root
       role="region" aria-label="Активная рабочая панель" hidden>
     <header class="action-workspace__header"><div data-workspace-header></div></header>

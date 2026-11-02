@@ -110,6 +110,7 @@ test("damage-basis renderer only exposes the profile when full-effect is selecte
     },
   }, structuredClone(sara)).body;
   const finalDamage = renderBasis("dm-final");
+  assert.match(finalDamage, /workspace-entry-core[\s\S]*?name="damage"[\s\S]*?data-consequence-total/);
   assert.doesNotMatch(finalDamage, /name="effectProfile"/);
   assert.match(finalDamage, /value="19"/);
   assert.match(finalDamage, /без дополнительного уменьшения/);
@@ -138,6 +139,53 @@ test("applied-unsaved workspace puts retry first and avoids replay controls", ()
   assert.doesNotMatch(attack.footer, /finish-workspace|next-attack|confirm-close/);
 });
 
+test("combat entry templates keep physical inputs beside totals and preserve critical dice", () => {
+  const attackSession = {
+    currentStep: "attack-input",
+    currentStepKey: "attack-input:test",
+    rawInputsByStep: { "attack-input:test": { rollMode: "normal", firstD20: "10" } },
+    sequenceId: null,
+    attackId: "attack-test",
+    command: { titleRu: "Обычная атака" },
+  };
+  const normal = renderAttackWorkspace(attackSession, structuredClone(sara)).body;
+  assert.match(normal, /workspace-entry-core[\s\S]*?data-workspace-field="firstD20"[\s\S]*?data-attack-total/);
+  assert.match(normal, /data-attack-formula/);
+  assert.match(normal, /data-attack-status[\s\S]*?data-attack-validation/);
+  assert.match(normal, /data-workspace-action="minimize"/);
+  assert.match(normal, /data-attack-status role="status"><\/p>/);
+
+  attackSession.rawInputsByStep[attackSession.currentStepKey] = {
+    rollMode: "advantage", firstD20: "10", secondD20: "15",
+  };
+  const advantage = renderAttackWorkspace(attackSession, structuredClone(sara)).body;
+  assert.match(advantage, /data-workspace-field="firstD20"[\s\S]*?data-workspace-field="secondD20"[\s\S]*?data-attack-total/);
+  assert.match(advantage, /name="secondD20"[^>]*required/);
+
+  const damageSession = {
+    currentStep: "damage-input",
+    currentStepKey: "damage-input:attack-test",
+    attackId: "attack-test",
+    rawInputsByStep: { "damage-input:attack-test": { damage1: "4", damage2: "6" } },
+    selectedDamage: { attack: {
+      id: "attack-test", critical: true, hitResult: "hit",
+      profileSnapshot: { damageDice: "1d6", damageModifier: 3 },
+    } },
+    error: "Проверьте физические результаты костей.",
+  };
+  const damage = renderAttackWorkspace(damageSession, structuredClone(sara)).body;
+  assert.match(damage, /data-workspace-field="damage1"[\s\S]*?data-workspace-field="damage2"[\s\S]*?data-damage-total/);
+  assert.match(damage, /name="damage1"[^>]*min="1"[^>]*max="6"/);
+  assert.match(damage, /name="damage2"[^>]*min="1"[^>]*max="6"/);
+  assert.match(damage, /data-workspace-damage-preview/);
+  assert.match(damage, /Проверьте физические результаты костей/);
+});
+
+test("battle console omits the empty unfinished/history panel", () => {
+  const markup = renderBattleConsole(structuredClone(sara));
+  assert.doesNotMatch(markup, /Незавершённое и история · 0/);
+});
+
 test("new roll form omits DC and consequence inputs and renders a live total", () => {
   const session = {
     scenarioId: "character-roll",
@@ -161,6 +209,7 @@ test("new roll form omits DC and consequence inputs and renders a live total", (
   assert.doesNotMatch(markup, /name="(?:dc|incomingDamage|consequenceProfile)"/);
   assert.doesNotMatch(markup, /Подтвердить и записать/);
   assert.match(markup, /data-roll-total/);
+  assert.match(markup, /workspace-entry-core[\s\S]*?name="firstD20"[\s\S]*?data-roll-total/);
   assert.match(markup, /data-roll-outcome="success"/);
   assert.match(markup, /data-roll-outcome="failure"/);
 });

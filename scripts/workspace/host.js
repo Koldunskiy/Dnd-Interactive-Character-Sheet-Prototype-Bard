@@ -4,6 +4,8 @@ let activeHost = null;
 let viewportListenersBound = false;
 let hostResizeObserver = null;
 const boundHosts = new WeakSet();
+let viewportFrame = 0;
+let blurFrame = 0;
 
 function getDialog() {
   return document.getElementById("actionWorkspaceRoot");
@@ -75,9 +77,10 @@ function updateVisibleViewport() {
   const visibleOffsetTop = viewport?.offsetTop ?? 0;
   const embedded = isEmbeddedHost(activeHost);
   if (embedded) {
+    // Both values are viewport coordinates; getBoundingClientRect().top uses the same space.
     const visibleBottom = visibleOffsetTop + visibleHeight;
     const taskTop = activeHost.getBoundingClientRect?.().top ?? visibleOffsetTop;
-    const availableHeight = Math.max(240, visibleBottom - taskTop);
+    const availableHeight = Math.max(0, visibleBottom - taskTop);
     activeHost.style.setProperty("--workspace-available-height", `${availableHeight}px`);
     activeHost.dataset.visibleHeight = String(Math.round(visibleHeight));
     activeHost.dataset.visibleOffsetTop = String(Math.round(visibleOffsetTop));
@@ -85,32 +88,42 @@ function updateVisibleViewport() {
     activeHost.style.setProperty("--workspace-visible-height", `${visibleHeight}px`);
     activeHost.style.setProperty("--workspace-visible-top", `${visibleOffsetTop}px`);
   }
+  const numericEntry = activeHost.querySelector?.('[data-workspace-field][type="number"]:focus');
+  if (embedded && numericEntry) activateEntryPresentation(activeHost, visibleOffsetTop, visibleHeight);
   const availableHeight = embedded
     ? Number(activeHost.style.getPropertyValue("--workspace-available-height").replace("px", ""))
-    : activeHost.getBoundingClientRect?.().height ?? visibleHeight;
+    : visibleHeight;
   activeHost.toggleAttribute("data-compact-height", availableHeight < 460);
-  ensureFocusedFieldVisible();
 }
 
-function ensureFocusedFieldVisible() {
-  if (!isEmbeddedHost(activeHost)) return;
-  const field = activeHost.querySelector("[data-workspace-field]:focus");
-  const body = activeHost.querySelector("[data-workspace-body]");
-  if (!field || !body) return;
-  const fieldRect = field.getBoundingClientRect();
-  const bodyRect = body.getBoundingClientRect();
-  if (fieldRect.bottom > bodyRect.bottom) {
-    body.scrollTop += fieldRect.bottom - bodyRect.bottom;
-  } else if (fieldRect.top < bodyRect.top) {
-    body.scrollTop -= bodyRect.top - fieldRect.top;
-  }
+function activateEntryPresentation(host, top, height) {
+  document.documentElement?.setAttribute?.("data-combat-entry-active", "true");
+  host.dataset.entryActive = "true";
+  host.style.setProperty("--workspace-entry-top", `${top}px`);
+  host.style.setProperty("--workspace-entry-height", `${height}px`);
+}
+
+function releaseEntryPresentation(host = activeHost) {
+  document.documentElement?.removeAttribute?.("data-combat-entry-active");
+  if (!host) return;
+  delete host.dataset.entryActive;
+  host.style.removeProperty?.("--workspace-entry-top");
+  host.style.removeProperty?.("--workspace-entry-height");
+}
+
+function scheduleViewportUpdate() {
+  if (viewportFrame) return;
+  viewportFrame = requestAnimationFrame(() => {
+    viewportFrame = 0;
+    updateVisibleViewport();
+  });
 }
 
 function observeActiveHost() {
   hostResizeObserver?.disconnect();
   hostResizeObserver = null;
   if (typeof ResizeObserver !== "function" || !isEmbeddedHost(activeHost)) return;
-  hostResizeObserver = new ResizeObserver(updateVisibleViewport);
+  hostResizeObserver = new ResizeObserver(scheduleViewportUpdate);
   hostResizeObserver.observe(activeHost);
   if (activeHost.parentElement) hostResizeObserver.observe(activeHost.parentElement);
 }
@@ -119,7 +132,11 @@ function bindHost(host) {
   if (!host || boundHosts.has(host)) return;
   host.addEventListener("click", (event) => {
     const button = event.target.closest("[data-workspace-action]");
-    if (button && host.contains(button)) callbacks?.onAction?.(button.dataset.workspaceAction, button);
+    if (!button || !host.contains(button)) return;
+    callbacks?.onAction?.(button.dataset.workspaceAction, button);
+    if (!host.querySelector('[data-workspace-form="attack"] input[type="number"], [data-workspace-form="damage"] input[type="number"]')) {
+      releaseEntryPresentation(host);
+    }
   });
   const updateField = (event) => {
     const field = event.target.closest("[data-workspace-field]");
@@ -137,13 +154,22 @@ function bindHost(host) {
     const field = event.target.closest("[data-workspace-field]");
     host.dataset.editing = field ? "true" : "false";
     host.dataset.focusedFieldKey = field?.name ?? "";
-    updateVisibleViewport();
+    if (field?.matches('input[type="number"]') && isEmbeddedHost(host)) {
+      const viewport = window.visualViewport;
+      activateEntryPresentation(host, viewport?.offsetTop ?? 0, viewport?.height ?? window.innerHeight);
+    }
+    scheduleViewportUpdate();
   });
   host.addEventListener("focusout", () => {
-    queueMicrotask(() => {
+    if (blurFrame) cancelAnimationFrame(blurFrame);
+    blurFrame = requestAnimationFrame(() => {
+      blurFrame = 0;
       if (!host.contains(document.activeElement)) {
         host.dataset.editing = "false";
         host.dataset.focusedFieldKey = "";
+        if (!document.activeElement?.matches?.('[data-workspace-field][type="number"], [data-workspace-action]')) {
+          releaseEntryPresentation(host);
+        }
       }
     });
   });
@@ -165,9 +191,9 @@ export function initWorkspaceHost(eventCallbacks) {
   bindHost(embedded);
   activeHost = embedded ?? dialog;
   if (!viewportListenersBound) {
-    window.visualViewport?.addEventListener("resize", updateVisibleViewport);
-    window.visualViewport?.addEventListener("scroll", updateVisibleViewport);
-    window.addEventListener("resize", updateVisibleViewport);
+    window.visualViewport?.addEventListener("resize", scheduleViewportUpdate);
+    window.visualViewport?.addEventListener("scroll", scheduleViewportUpdate);
+    window.addEventListener("resize", scheduleViewportUpdate);
     viewportListenersBound = true;
   }
   return Boolean(activeHost);
@@ -221,6 +247,7 @@ export function renderWorkspaceHost({ header, body, footer, status = "", error =
   if (footerNode && footerNode.innerHTML !== footer) footerNode.innerHTML = footer;
   if (errorNode) {
     errorNode.textContent = keepFocusedForm ? error : "";
+  releaseEntryPresentation();
     errorNode.hidden = !keepFocusedForm || !error;
   }
   if (statusNode) statusNode.textContent = status;
@@ -243,6 +270,7 @@ export function closeWorkspaceHost({ restoreFocus = true, discardEmbedded = fals
     activeHost.hidden = true;
     activeHost.dataset.editing = "false";
     activeHost.dataset.focusedFieldKey = "";
+    releaseEntryPresentation(closedHost);
     hostResizeObserver?.disconnect();
     hostResizeObserver = null;
     if (discardEmbedded) {
@@ -261,6 +289,7 @@ export function closeWorkspaceHost({ restoreFocus = true, discardEmbedded = fals
     return;
   }
   if (activeHost?.open) activeHost.close();
+  releaseEntryPresentation();
   restoreBackground(restoreFocus);
 }
 

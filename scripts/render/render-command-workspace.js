@@ -71,11 +71,22 @@ function renderCommandForm(session, state) {
         </div>
         <input type="hidden" data-workspace-field="rollMode" name="rollMode" value="${rollMode}">
       </fieldset>
-      <div class="workspace-d20-inputs ${rollMode === "normal" ? "" : "workspace-d20-inputs--pair"}">
-        ${number("firstD20", "Физический к20", 1, 20)}
-        <div data-workspace-second-d20 ${rollMode === "normal" ? "hidden" : ""}>
-          ${number("secondD20", "Второй физический к20", 1, 20)}
+      <div class="workspace-entry-core">
+        <div class="workspace-entry-fields ${rollMode === "normal" ? "" : "workspace-entry-fields--pair"}">
+          ${number("firstD20", "Физический к20", 1, 20)}
+          <div data-workspace-second-d20 ${rollMode === "normal" ? "hidden" : ""}>
+            ${number("secondD20", "Второй к20", 1, 20)}
+          </div>
         </div>
+      <section class="workspace-entry-result workspace-attack-result workspace-roll-result" aria-live="polite">
+        <span class="workspace-attack-result__label" data-roll-label>${escapeHtml(selectedLabel)}</span>
+        <output class="workspace-attack-result__total" data-roll-total>—</output>
+        <span class="workspace-attack-result__formula" data-roll-formula></span>
+        <span class="workspace-roll-result__selected" data-roll-selected></span>
+        <span class="workspace-roll-result__modifiers" data-roll-modifiers></span>
+        <span class="workspace-roll-result__mode" data-roll-mode-status></span>
+        <span class="workspace-input-message" data-roll-validation role="status"></span>
+      </section>
       </div>
       ${kind === "saving-throw"
         ? check("spellSaveSource", "Спасбросок от заклинания · преимущество Юань-ти") : ""}
@@ -88,15 +99,6 @@ function renderCommandForm(session, state) {
           <input data-workspace-field="disadvantageReason" name="disadvantageReason" value="${escapeHtml(draft.disadvantageReason ?? "")}">
         </label>
       </details>
-      <section class="workspace-attack-result workspace-roll-result" aria-live="polite">
-        <span class="workspace-attack-result__label" data-roll-label>${escapeHtml(selectedLabel)}</span>
-        <output class="workspace-attack-result__total" data-roll-total>—</output>
-        <span class="workspace-attack-result__formula" data-roll-formula></span>
-        <span class="workspace-roll-result__selected" data-roll-selected></span>
-        <span class="workspace-roll-result__modifiers" data-roll-modifiers></span>
-        <span class="workspace-roll-result__mode" data-roll-mode-status></span>
-        <span class="workspace-input-message" data-roll-validation role="status"></span>
-      </section>
       ${kind === "ability-check" && draft.id === "persuasion" &&
         effective.has("ll-monk:mantle-of-courtesy")
         ? `<p>«Мантия учтивости» заменит выбранный к20 уровнем монаха и стоит 1 ци.</p>
@@ -362,15 +364,19 @@ function renderConsequenceInput(record, state, session) {
           ], input.effectProfile) : "<p>Будет применён указанный итоговый урон без дополнительного уменьшения.</p>"}`
         : `<p>Для проверки укажите только итоговый урон, сообщённый ведущим; защита спасброска не применяется.</p>
           <input type="hidden" data-workspace-field="damageBasis" name="damageBasis" value="dm-final">`}
-      ${numberField("damage", savingThrow && input.damageBasis === "full-effect"
-        ? "Полный урон эффекта" : "Итоговый урон по хитам", 0, null, input.damage)}
-      <section class="workspace-damage-result workspace-consequence-preview" aria-live="polite">
+      <div class="workspace-entry-core">
+        <div class="workspace-entry-fields">
+          ${numberField("damage", savingThrow && input.damageBasis === "full-effect"
+            ? "Полный урон эффекта" : "Итоговый урон по хитам", 0, null, input.damage)}
+        </div>
+        <section class="workspace-entry-result workspace-damage-result workspace-consequence-preview" aria-live="polite">
         <span class="workspace-attack-result__label">УРОН ПО ХИТАМ</span>
         <output class="workspace-damage-result__total" data-consequence-total>${preview.ok ? preview.finalDamage : "—"}</output>
         <span class="workspace-consequence-preview__rule" data-consequence-rule>${escapeHtml(preview.ok ? preview.ruleExplanation : preview.reason)}</span>
         <span data-consequence-hp>${preview.ok
           ? `HP ${preview.hpBefore} → ${preview.hpAfter} · временные HP ${preview.tempHpBefore} → ${preview.tempHpAfter}` : ""}</span>
-      </section>
+        </section>
+      </div>
     </form>`;
 }
 

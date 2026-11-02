@@ -170,6 +170,99 @@
   background: var(--selected-surface);
 }
 
+.workspace-entry-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.9375rem;
+}
+
+.workspace-entry-heading .btn {
+  min-height: 40px;
+  padding: 5px 9px;
+}
+
+.workspace-entry-options {
+  margin-block: 6px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.workspace-entry-core {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(5rem, 6rem);
+  align-items: center;
+  gap: 8px;
+  margin-block: 6px;
+}
+
+.workspace-entry-fields {
+  display: grid;
+  grid-template-columns: repeat(var(--entry-field-count, 1), minmax(0, 1fr));
+  gap: 7px;
+  min-width: 0;
+}
+
+.workspace-entry-fields--pair {
+  --entry-field-count: 2;
+}
+
+.workspace-entry-fields > [hidden] {
+  display: none;
+}
+
+.workspace-entry-result {
+  min-width: 0;
+  padding-inline-start: 8px;
+  border-inline-start: 1px solid var(--line);
+  text-align: center;
+}
+
+.workspace-entry-result .workspace-attack-result__status:empty {
+  display: none;
+}
+
+.workspace-entry-result .workspace-attack-result__status:not(:empty) {
+  margin: 3px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font-size: 0.75rem;
+}
+
+.workspace-entry-result .workspace-attack-result__total,
+.workspace-entry-result .workspace-damage-result__total {
+  font-size: clamp(2rem, 9vw, 2.5rem);
+  line-height: 1.05;
+}
+
+.workspace-entry-core .workspace-attack-result,
+.workspace-entry-core .workspace-damage-result {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.workspace-entry-validation:empty,
+.workspace-entry-validation > :empty {
+  display: none;
+}
+
+.workspace-entry-details {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.workspace-entry-details > summary {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
 .workspace-d20-inputs--pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -221,6 +314,12 @@
   border-radius: 999px;
   color: var(--text);
   overflow-wrap: anywhere;
+}
+
+.workspace-entry-result .workspace-attack-result__label {
+  display: block;
+  font-size: 0.75rem;
+  letter-spacing: 0;
 }
 
 .workspace-attack-result__status[data-state="critical"] {
@@ -375,8 +474,14 @@
 }
 
 @media (max-width: 360px) {
-  .workspace-d20-inputs--pair {
-    grid-template-columns: 1fr;
+  .workspace-entry-core:has(.workspace-entry-fields--pair) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-entry-core:has(.workspace-entry-fields--pair) .workspace-entry-result {
+    padding: 4px 0 0;
+    border-inline-start: 0;
+    border-top: 1px solid var(--line);
   }
 }
 

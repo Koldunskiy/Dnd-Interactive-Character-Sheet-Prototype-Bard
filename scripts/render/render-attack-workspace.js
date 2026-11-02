@@ -95,8 +95,8 @@ function renderAttackForm(session, state) {
       ? "По обычному правилу это натуральная 20 и попадание. Подтвердите, что мастер назначил исключение."
       : "";
   return `<form data-workspace-form="attack" novalidate>
-    <p class="workspace-attack-progress">Удар ${attackNumber} из ${maximumAttacks}</p>
-    <p class="workspace-attack-profile">Безоружная атака ${formatSigned(profile.attackBonus)} · урон ${escapeHtml(profile.damageDice)} ${formatSigned(profile.damageModifier)}.</p>
+    <div class="workspace-entry-heading"><strong>Атака · удар ${attackNumber} из ${maximumAttacks}</strong>
+      <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button></div>
     <fieldset class="workspace-roll-mode">
       <legend>Режим броска</legend>
       <div role="group" aria-label="Режим броска">
@@ -108,7 +108,8 @@ function renderAttackForm(session, state) {
           data-workspace-action="attack-mode-${mode}" aria-pressed="${(values.rollMode || "normal") === mode}">${label}</button>`).join("")}
       </div>
     </fieldset>
-    <div class="workspace-d20-inputs ${values.rollMode === "advantage" || values.rollMode === "disadvantage" ? "workspace-d20-inputs--pair" : ""}">
+    <div class="workspace-entry-core">
+      <div class="workspace-entry-fields ${values.rollMode === "advantage" || values.rollMode === "disadvantage" ? "workspace-entry-fields--pair" : ""}">
       ${field("firstD20", "Физический результат к20", values.firstD20 ?? "", {
         type: "number", min: 1, max: 20, required: true,
       })}
@@ -118,14 +119,15 @@ function renderAttackForm(session, state) {
           required: values.rollMode === "advantage" || values.rollMode === "disadvantage",
         })}
       </div>
-    </div>
-    <section class="workspace-attack-result" aria-label="Итог атаки">
-      <span class="workspace-attack-result__label">ИТОГ ПОПАДАНИЯ</span>
+      </div>
+      <section class="workspace-entry-result workspace-attack-result" aria-label="Итог атаки">
+      <span class="workspace-attack-result__label">Итог атаки</span>
       <output class="workspace-attack-result__total" data-attack-total aria-live="polite">—</output>
       <span class="workspace-attack-result__formula" data-attack-formula></span>
       <p class="workspace-attack-result__status" data-attack-status role="status"></p>
-    </section>
-    <p class="workspace-input-message" data-attack-validation role="status"></p>
+      </section>
+    </div>
+    <div class="workspace-entry-validation"><p class="workspace-input-message" data-attack-validation role="status"></p>
     ${actionUsed ? `<label class="workspace-check"><input data-workspace-field="confirmSeparateAction" name="confirmSeparateAction" type="checkbox" ${values.confirmSeparateAction ? "checked" : ""}> Подтверждаю отдельное дополнительное действие или ручную корректировку</label>` : ""}
     ${hasNaturalException ? `<div class="workspace-natural-exception" data-natural-exception>
       <p>${naturalExceptionText}</p>
@@ -135,6 +137,10 @@ function renderAttackForm(session, state) {
     ${session.confirmationRequired ? `<p class="workspace-warning" role="alert">Расчёт или доступность изменились. Проверьте обновлённый результат и явно подтвердите его.</p>` : ""}
     ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}
     ${session.readOnly && !session.error ? `<p class="workspace-warning">Эта запись доступна только для просмотра или восстановления уже ожидающего урона.</p>` : ""}
+    </div>
+    <details class="workspace-entry-details"><summary>Профиль атаки</summary>
+      <p>Безоружная атака ${formatSigned(profile.attackBonus)} · урон ${escapeHtml(profile.damageDice)} ${formatSigned(profile.damageModifier)}.</p>
+    </details>
   </form>`;
 }
 
@@ -154,24 +160,37 @@ function renderDamageForm(session, state) {
   }
   const diceCount = attack.critical && attack.hitResult === "hit" ? 2 : 1;
   return `<form data-workspace-form="damage" novalidate>
-    <p class="workspace-confirmed-hit">Попадание подтверждено · удар ${attackNumber(state, session)}</p>
-    ${attack.techniqueApplicationId ? "<p>К этому удару уже применена техника; повторная оплата не выполняется.</p>" : ""}
-    <p>Профиль удара: ${escapeHtml(snapshot.damageDice)} ${formatSigned(snapshot.damageModifier)}. ${attack.critical ? "Критическое попадание: две отдельные физические кости; постоянный модификатор учитывается один раз." : ""}</p>
+    <div class="workspace-entry-heading"><strong>Урон · удар ${attackNumber(state, session)}</strong>
+      <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button></div>
+    <section class="workspace-entry-options" aria-label="Кости урона">
+      <span>${escapeHtml(snapshot.damageDice)} ${formatSigned(snapshot.damageModifier)}${attack.critical ? " · критическое попадание: две отдельные кости" : ""}</span>
+    </section>
+    <div class="workspace-entry-core">
+      <div class="workspace-entry-fields ${diceCount > 1 ? "workspace-entry-fields--pair" : ""}">
     ${Array.from({ length: diceCount }, (_, index) => field(
       `damage${index + 1}`,
       `Физический результат к${dieSides} урона ${index + 1}`,
       values[`damage${index + 1}`] ?? "",
       { type: "number", min: 1, max: dieSides, required: true },
     )).join("")}
-    <section class="workspace-damage-result" aria-label="Итог физического урона">
-      <span class="workspace-attack-result__label">ИТОГ УРОНА</span>
+      </div>
+      <section class="workspace-entry-result workspace-damage-result" aria-label="Итог физического урона">
+      <span class="workspace-attack-result__label">Итог урона</span>
       <output class="workspace-damage-result__total" data-damage-total aria-live="polite">—</output>
       <span class="workspace-attack-result__formula" data-damage-formula></span>
       <p class="workspace-attack-result__status" data-workspace-damage-preview role="status"></p>
-    </section>
-    <p>Урон до сопротивлений и других поправок цели.</p>
-    <button type="button" class="btn btn--utility" data-workspace-action="outside-damage">Урон учтён вне приложения</button>
-    ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}
+      </section>
+    </div>
+    <div class="workspace-entry-validation">
+      ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}
+    </div>
+    <details class="workspace-entry-details"><summary>Профиль и поправки цели</summary>
+      <p class="workspace-confirmed-hit">Попадание подтверждено · удар ${attackNumber(state, session)}</p>
+      ${attack.techniqueApplicationId ? "<p>К этому удару уже применена техника; повторная оплата не выполняется.</p>" : ""}
+      <p>Профиль удара: ${escapeHtml(snapshot.damageDice)} ${formatSigned(snapshot.damageModifier)}. ${attack.critical ? "Критическое попадание: постоянный модификатор учитывается один раз." : ""}</p>
+      <p>Урон до сопротивлений и других поправок цели.</p>
+      <button type="button" class="btn btn--utility" data-workspace-action="outside-damage">Урон учтён вне приложения</button>
+    </details>
   </form>`;
 }
 
@@ -399,7 +418,7 @@ export function renderWorkspaceAttackPreview(session, state) {
     ? "Натуральная 1 — по обычному правилу промах."
     : preview.critical
       ? "Натуральная 20 — критическое попадание по обычному правилу."
-      : "Ожидайте решения ведущего: выберите «Попадание» или «Промах».";
+      : "Исход определяет ведущий.";
   totalNode.textContent = String(preview.attackTotal);
   formulaNode.textContent = formula;
   statusNode.textContent = `${rolls} ${natural}`;
