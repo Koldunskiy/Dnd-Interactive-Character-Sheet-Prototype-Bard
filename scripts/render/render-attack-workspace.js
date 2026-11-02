@@ -7,6 +7,7 @@ import {
 } from "../workspace/attack-adapter.js";
 import { MONK_TECHNIQUES, MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
 import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
+import { getWorkspaceHost } from "../workspace/host.js";
 
 const STRIKE_SAVE_ABILITIES = Object.freeze({
   "ll-monk:empowered-strike": "Сила",
@@ -368,10 +369,11 @@ export function renderAttackWorkspace(session, state) {
 }
 
 export function renderWorkspaceAttackPreview(session, state) {
-  const totalNode = document.querySelector("#actionWorkspaceRoot [data-attack-total]");
-  const formulaNode = document.querySelector("#actionWorkspaceRoot [data-attack-formula]");
-  const statusNode = document.querySelector("#actionWorkspaceRoot [data-attack-status]");
-  const validationNode = document.querySelector("#actionWorkspaceRoot [data-attack-validation]");
+  const root = getWorkspaceHost();
+  const totalNode = root?.querySelector("[data-attack-total]");
+  const formulaNode = root?.querySelector("[data-attack-formula]");
+  const statusNode = root?.querySelector("[data-attack-status]");
+  const validationNode = root?.querySelector("[data-attack-validation]");
   if (!totalNode || !formulaNode || !statusNode || !validationNode) return;
   const inputs = session.rawInputsByStep[session.currentStepKey] ?? {};
   const preview = calculateWorkspaceAttackPreview(state, {
@@ -412,9 +414,10 @@ export function renderWorkspaceAttackPreview(session, state) {
 }
 
 export function renderWorkspaceDamagePreview(session) {
-  const node = document.querySelector("#actionWorkspaceRoot [data-workspace-damage-preview]");
-  const totalNode = document.querySelector("#actionWorkspaceRoot [data-damage-total]");
-  const formulaNode = document.querySelector("#actionWorkspaceRoot [data-damage-formula]");
+  const root = getWorkspaceHost();
+  const node = root?.querySelector("[data-workspace-damage-preview]");
+  const totalNode = root?.querySelector("[data-damage-total]");
+  const formulaNode = root?.querySelector("[data-damage-formula]");
   const attack = session.selectedDamage?.attack;
   if (!node || !totalNode || !formulaNode || !attack?.profileSnapshot) return;
   const values = session.rawInputsByStep[session.currentStepKey] ?? {};
@@ -439,7 +442,7 @@ export function renderWorkspaceDamagePreview(session) {
 }
 
 function updateAttackControls(session, valid, complete) {
-  const root = document.querySelector("#actionWorkspaceRoot");
+  const root = getWorkspaceHost();
   if (!root) return;
   const disabled = !valid || !complete || session.submitting || session.appliedUnsaved ||
     session.readOnly;

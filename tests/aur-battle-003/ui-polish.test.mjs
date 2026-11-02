@@ -39,6 +39,17 @@ test("battle cards separate full-width titles from wrapping costs and keep full 
   assert.match(markup, /<details class="battle-command-card__details">/);
   assert.match(markup, /Только видимая змея/);
   assert.equal(markup.split("Только видимая змея-зверь").length - 1, 1);
+  assert.match(markup, /combat-turn-card__header/);
+  assert.match(markup, /data-combat-workspace-root/);
+  const ownTurn = structuredClone(sara);
+  ownTurn.battleConsole = {
+    current: { id: "test-battle", phase: "own-turn", ownTurnNumber: 1 },
+    history: [],
+  };
+  const ownTurnMarkup = renderBattleConsole(ownTurn);
+  assert.match(ownTurnMarkup, /aria-label="Бюджет хода"/);
+  assert.match(ownTurnMarkup, /Доступно|Потрачено/);
+  assert.doesNotMatch(ownTurnMarkup, /<strong>1<\/strong>|<strong>0<\/strong>/);
 });
 
 test("battle cards and global surfaces have wrapping and theme-token safeguards", async () => {

@@ -55,6 +55,7 @@ import {
   renderWorkspaceHost,
   updateWorkspaceResources,
   workspaceHostIsOpen,
+  workspaceHostIsEmbedded,
 } from "./host.js";
 import {
   renderCommandWorkspace,
@@ -260,10 +261,17 @@ function render() {
   const view = session.workspaceType === "command"
     ? renderCommandWorkspace(session, state)
     : renderAttackWorkspace(session, state);
-  renderWorkspaceHost({ ...view, status: session.status ?? "" });
+  renderWorkspaceHost({
+    ...view,
+    status: session.status ?? "",
+    error: session.error ?? "",
+    forceBody: session.forceWorkspaceBodyRender === true,
+  });
+  session.forceWorkspaceBodyRender = false;
   const derived = getDerivedStats(state);
-  const hp = document.querySelector("#actionWorkspaceRoot [data-workspace-hp]");
-  const ki = document.querySelector("#actionWorkspaceRoot [data-workspace-ki]");
+  const host = getWorkspaceHost();
+  const hp = host?.querySelector("[data-workspace-hp]");
+  const ki = host?.querySelector("[data-workspace-ki]");
   if (hp) hp.textContent = `${state.combat?.hp?.current ?? "—"}/${derived.maxHitPoints}`;
   if (ki) ki.textContent = String(state.combat?.ki?.current ?? "—");
   if (session.currentStep === "attack-input") renderWorkspaceAttackPreview(session, state);
@@ -317,6 +325,11 @@ function updateInput(field) {
   }
   session.dirty = true;
   session.error = "";
+  const liveError = getWorkspaceHost()?.querySelector("[data-workspace-error]");
+  if (liveError) {
+    liveError.textContent = "";
+    liveError.hidden = true;
+  }
   if (field.name === "rollMode") {
     const secondRoll = getWorkspaceHost()?.querySelector("[data-workspace-second-d20]");
     const secondInput = secondRoll?.querySelector('input[name="secondD20"]');
@@ -326,7 +339,10 @@ function updateInput(field) {
   }
   if (session.workspaceType === "command" && session.currentStep === "roll-result" &&
       field.name === "damageBasis") {
+    session.forceWorkspaceBodyRender = true;
     render();
+    getWorkspaceHost()?.querySelector('[data-workspace-field="damageBasis"]')
+      ?.focus({ preventScroll: true });
     return;
   }
   if (session.currentStep === "attack-input") {
@@ -681,6 +697,13 @@ export function minimizeWorkspace() {
   document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
   minimizeWorkspaceHost();
   return true;
+}
+
+export function prepareWorkspaceTabTransition(fromTab, toTab) {
+  if (fromTab === "melee" && toTab !== "melee" &&
+      workspaceHostIsEmbedded() && workspaceHostIsOpen()) {
+    minimizeWorkspace();
+  }
 }
 
 export function requestCloseWorkspace() {
@@ -1981,8 +2004,9 @@ export function reconcileWorkspaceAfterStateChange(state, metadata = null) {
     session.status = "Сохранение выполнено.";
   }
   if (workspaceHostIsOpen()) {
-    const hp = document.querySelector("#actionWorkspaceRoot [data-workspace-hp]");
-    const ki = document.querySelector("#actionWorkspaceRoot [data-workspace-ki]");
+    const host = getWorkspaceHost();
+    const hp = host?.querySelector("[data-workspace-hp]");
+    const ki = host?.querySelector("[data-workspace-ki]");
     const derived = getDerivedStats(state);
     if (hp) hp.textContent = `${state.combat?.hp?.current ?? "—"}/${derived.maxHitPoints}`;
     if (ki) ki.textContent = String(state.combat?.ki?.current ?? "—");
@@ -2000,7 +2024,7 @@ export function reconcileWorkspaceAfterStateChange(state, metadata = null) {
       session.confirmationRequired = true;
       session.relevantPreviewFingerprint = currentFingerprint;
       if (workspaceHostIsOpen()) {
-        const warning = document.querySelector("#actionWorkspaceRoot .workspace-warning");
+        const warning = getWorkspaceHost()?.querySelector(".workspace-warning");
         if (warning) warning.textContent =
           "Профиль или боевой контекст изменился. Проверьте обновлённый расчёт перед записью.";
         renderWorkspaceAttackPreview(session, state);
@@ -2055,6 +2079,7 @@ export function disposeWorkspaceOwner(owner, reason = "disposed") {
     session = null;
     closeWorkspaceHost({
       restoreFocus: !["session-changed", "character-transition", "character-picker", "character-reset"].includes(reason),
+      discardEmbedded: ["session-changed", "character-transition", "character-picker", "character-reset"].includes(reason),
     });
   }
   return before !== suspendedSessions.length + (session ? 1 : 0);

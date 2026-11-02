@@ -5,6 +5,303 @@
     var(--surface-2);
 }
 
+.combat-turn-card {
+  --combat-heading-size: 1.0625rem;
+  --combat-task-title-size: 1rem;
+  --combat-body-size: 0.875rem;
+  --combat-secondary-size: 0.8125rem;
+  --combat-result-size: clamp(2.375rem, 10vw, 2.75rem);
+  --combat-gap: 0.5rem;
+  --combat-padding: 0.625rem;
+  --combat-control-min-height: 2.75rem;
+  display: grid;
+  gap: var(--combat-gap);
+  min-width: 0;
+  padding: var(--combat-padding);
+  font-size: var(--combat-body-size);
+}
+
+.combat-turn-card__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.combat-turn-card__header h2 {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--combat-heading-size);
+  overflow-wrap: anywhere;
+}
+
+.combat-turn-card__header .battle-console-phase {
+  max-width: 100%;
+  font-size: var(--combat-secondary-size);
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+
+.combat-turn-card__header .battle-console-hud {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: var(--combat-secondary-size);
+}
+
+.combat-turn-card__header .battle-console-hud > span {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.combat-budget {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
+  gap: 5px;
+}
+
+.combat-budget__item {
+  display: grid;
+  min-width: 0;
+  min-height: var(--combat-control-min-height);
+  align-content: center;
+  gap: 1px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--muted);
+  background: var(--surface-2);
+  font: inherit;
+  font-size: var(--combat-secondary-size);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+button.combat-budget__item {
+  cursor: pointer;
+}
+
+.combat-budget__item.is-available span {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.combat-budget__item.is-spent span {
+  color: var(--muted);
+}
+
+.combat-budget__item[aria-pressed="true"] {
+  border-color: var(--accent-border);
+  background: var(--selected-surface);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.combat-active-task,
+.combat-home-task {
+  min-width: 0;
+}
+
+.combat-active-task {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.combat-workspace-host[hidden] {
+  display: none !important;
+}
+
+.combat-workspace-host:not([hidden]) {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: 100%;
+  max-height: var(--workspace-available-height, 72vh);
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.combat-workspace-host .action-workspace__header,
+.combat-workspace-host .action-workspace__footer {
+  padding: 6px 8px;
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+
+.combat-workspace-host .workspace-nav {
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+.combat-workspace-host .workspace-nav .btn,
+.combat-workspace-host .action-workspace__footer .btn {
+  min-height: 44px;
+}
+
+.combat-workspace-host .workspace-nav + div h2 {
+  font-size: var(--combat-task-title-size);
+}
+
+.combat-workspace-host .workspace-resources {
+  display: none;
+}
+
+.combat-workspace-host .action-workspace__body {
+  width: 100%;
+  max-width: none;
+  padding: 8px;
+  overscroll-behavior: contain;
+}
+
+.combat-workspace-host .workspace-live-error {
+  margin: 0;
+  padding: 5px 8px;
+  color: var(--error);
+  overflow-wrap: anywhere;
+}
+
+.combat-workspace-host .workspace-live-error[hidden] {
+  display: none;
+}
+
+.combat-workspace-host .action-workspace__body > * {
+  width: 100%;
+  max-width: none;
+}
+
+.combat-workspace-host .workspace-field {
+  gap: 4px;
+  margin: 6px 0;
+  font-size: var(--combat-body-size);
+}
+
+.combat-workspace-host .workspace-field input,
+.combat-workspace-host .workspace-field select {
+  min-height: 44px;
+  font-size: 1.125rem;
+}
+
+.combat-workspace-host .workspace-roll-mode {
+  margin: 8px 0;
+}
+
+.combat-workspace-host .workspace-attack-result,
+.combat-workspace-host .workspace-damage-result {
+  gap: 2px;
+  margin: 7px 0;
+  padding: 5px;
+}
+
+.combat-workspace-host .workspace-attack-result__total,
+.combat-workspace-host .workspace-damage-result__total {
+  font-size: var(--combat-result-size);
+}
+
+.combat-workspace-host .action-workspace__footer > div {
+  gap: 5px;
+}
+
+.combat-workspace-host .action-workspace__footer .btn {
+  flex-basis: 130px;
+  font-size: var(--combat-body-size);
+}
+
+.combat-workspace-host .workspace-attack-progress,
+.combat-workspace-host .workspace-attack-profile {
+  margin-block: 4px;
+  font-size: var(--combat-secondary-size);
+}
+
+.combat-save-recovery,
+.combat-save-recovery__item {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.combat-save-recovery__item {
+  padding: 9px;
+  border: 1px solid var(--status-error-border);
+  border-radius: 9px;
+  color: var(--error);
+  background: var(--error-surface);
+  overflow-wrap: anywhere;
+}
+
+.combat-save-recovery__item p {
+  margin: 0;
+}
+
+.combat-secondary-tools {
+  margin-top: 8px;
+}
+
+.combat-secondary-tools > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.combat-turn-card .battle-player-home > h3 {
+  margin: 4px 0;
+  font-size: var(--combat-task-title-size);
+}
+
+.combat-turn-card .battle-quick-rolls {
+  gap: 6px;
+}
+
+.combat-turn-card .battle-quick-rolls .btn {
+  min-height: var(--combat-control-min-height);
+  padding: 7px 9px;
+  font-size: var(--combat-body-size);
+}
+
+.combat-turn-card [data-compact-height][data-editing] .workspace-nav + div p {
+  display: none;
+}
+
+.combat-turn-card [data-compact-height][data-editing] .workspace-nav [data-workspace-action="back"] {
+  display: none;
+}
+
+.combat-turn-card [data-compact-height][data-editing] .action-workspace__body {
+  padding: 5px;
+}
+
+.combat-turn-card [data-compact-height][data-editing] .workspace-field {
+  margin: 3px 0;
+}
+
+.combat-turn-card [data-compact-height][data-editing] .workspace-attack-result,
+.combat-turn-card [data-compact-height][data-editing] .workspace-damage-result {
+  margin: 4px 0;
+}
+
+@media (max-width: 420px) {
+  .combat-turn-card {
+    padding: 8px;
+  }
+
+  .combat-turn-card__header .battle-console-hud {
+    gap: 2px 8px;
+  }
+
+  .combat-budget {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .battle-console-phase {
   color: var(--accent-strong);
   font-weight: 700;

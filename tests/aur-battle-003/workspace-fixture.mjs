@@ -12,7 +12,11 @@ class FixtureNode {
     this.innerHTML = "";
     this.textContent = "";
     this.scrollTop = 0;
-    this.style = { setProperty() {} };
+    this.style = {
+      values: new Map(),
+      setProperty(name, value) { this.values.set(name, value); },
+      getPropertyValue(name) { return this.values.get(name) ?? ""; },
+    };
     this.isConnected = true;
   }
 
@@ -59,6 +63,7 @@ class FixtureDialog extends FixtureNode {
     this.body = new FixtureNode();
     this.footer = new FixtureNode();
     this.status = new FixtureNode();
+    this.error = new FixtureNode();
     this.heading = new FixtureNode();
     this.hp = new FixtureNode();
     this.ki = new FixtureNode();
@@ -76,6 +81,9 @@ class FixtureDialog extends FixtureNode {
     this.secondD20.querySelector = (selector) =>
       selector === 'input[name="secondD20"]' ? this.secondD20Input : null;
     this.forms = {};
+    this.showModalCount = 0;
+    this.closeCount = 0;
+    this.embeddedHost = false;
   }
 
   querySelector(selector) {
@@ -84,6 +92,7 @@ class FixtureDialog extends FixtureNode {
       "[data-workspace-body]": this.body,
       "[data-workspace-footer]": this.footer,
       "[data-workspace-status]": this.status,
+      "[data-workspace-error]": this.error,
       "[data-workspace-title]": this.heading,
       '[data-workspace-form="attack"]': this.forms.attack,
       '[data-workspace-form="damage"]': this.forms.damage,
@@ -108,15 +117,27 @@ class FixtureDialog extends FixtureNode {
   }
 
   showModal() { this.open = true; }
-  close() { this.open = false; }
+  close() { this.open = false; this.closeCount += 1; }
+  matches(selector) {
+    return selector === "[data-combat-workspace-root]" && this.embeddedHost;
+  }
   toggleAttribute() {}
 }
 
 let reusableDialog = null;
 let reusableInvoker = null;
 
-export function installWorkspaceFixture() {
+export function installWorkspaceFixture({ embeddedHost = false } = {}) {
   const dialog = reusableDialog ??= new FixtureDialog();
+  const fallbackDialog = embeddedHost ? new FixtureDialog() : dialog;
+  dialog.embeddedHost = embeddedHost;
+  dialog.showModalCount = 0;
+  dialog.closeCount = 0;
+  fallbackDialog.open = false;
+  dialog.showModal = function showModal() {
+    this.showModalCount += 1;
+    this.open = true;
+  };
   const invoker = reusableInvoker ??= new FixtureNode();
   dialog.open = false;
   dialog.forms = {};
@@ -147,11 +168,17 @@ export function installWorkspaceFixture() {
   globalThis.document = {
     body: { style: {} },
     getElementById(id) {
-      if (id === "actionWorkspaceRoot") return dialog;
+      if (id === "actionWorkspaceRoot") return fallbackDialog;
       if (id === "characterRollsRoot") return rollRoot;
       return null;
     },
     querySelector(selector) {
+      if (selector === '[data-panel="melee"].is-active' && embeddedHost) {
+        return {
+          querySelector: (innerSelector) =>
+            innerSelector === "[data-combat-workspace-root]" ? dialog : null,
+        };
+      }
       if (selector === "#actionWorkspaceRoot [data-workspace-hp]") return dialog.hp;
       if (selector === "#actionWorkspaceRoot [data-workspace-ki]") return dialog.ki;
       if (selector === "#actionWorkspaceRoot [data-workspace-preview]") return dialog.preview;

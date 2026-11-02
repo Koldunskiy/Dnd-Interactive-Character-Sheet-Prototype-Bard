@@ -70,6 +70,14 @@ function renderBattleCommandCard(entry) {
 }
 
 function renderPlayerWork(work) {
+  if (work.appliedUnsaved) {
+    return `<section class="combat-save-recovery__item" role="alert">
+      <strong>Результат применён, но не сохранён</strong>
+      <p>Повторное применение отключено. Возобновите панель и повторите сохранение.</p>
+      <button type="button" class="btn btn--utility"
+        data-workspace-resume="${escapeHtml(work.workspaceSessionId)}">Открыть сохранение</button>
+    </section>`;
+  }
   if (work.kind === "historical-damage") {
     return `<button type="button" class="btn btn--utility"
       data-battle-open-historical-damage="${escapeHtml(work.sequenceId)}"
@@ -87,7 +95,10 @@ function renderPlayerWork(work) {
 }
 
 export function renderBattleConsole(state) {
-  const view = getPlayerHubViewModel(state, getWorkspaceSessions());
+  const workspaceSessions = getWorkspaceSessions();
+  const activeWorkspace = workspaceSessions.find((entry) =>
+    !entry.minimized && !entry.suspended);
+  const view = getPlayerHubViewModel(state, workspaceSessions);
   const derived = getDerivedStats(state);
   const commands = getSaraBattleCommandRegistry(state);
   const minimized = getMinimizedWorkspaceSessions();
@@ -105,8 +116,25 @@ export function renderBattleConsole(state) {
     <span>HP <strong>${state.combat?.hp?.current ?? "—"}/${derived.maxHitPoints}</strong> · временные ${state.combat?.hp?.temp ?? 0}</span>
     <span>Ци <strong>${state.combat?.ki?.current ?? "—"}/${derived.monk.kiMaximum}</strong></span>
     <span>Practiced <strong>${state.combat?.practiced?.current ?? 0}/${derived.monk.practicedMaximum}</strong></span>
-    <span>Скорость <strong>${derived.monk?.speedFeet ?? state.profile?.speedFeet ?? "—"} фт.</strong></span>
   </section>`;
+  const budget = view.budget ? `<section class="combat-budget" aria-label="Бюджет хода">
+    ${[
+      ["action", "Действие", view.budget.actionAvailable],
+      ["bonus", "Бонусное", view.budget.bonusActionAvailable],
+      ["reaction", "Реакция", view.budget.reactionAvailable],
+    ].map(([id, label, available]) => view.phase === "own-turn"
+      ? `<button type="button" class="combat-budget__item ${available ? "is-available" : "is-spent"}"
+          data-battle-menu="${id}" aria-pressed="${selectedMenu === id}">
+          <strong>${label}</strong><span>${available ? "Доступно" : "Потрачено"}</span>
+        </button>`
+      : `<span class="combat-budget__item ${available ? "is-available" : "is-spent"}">
+          <strong>${label}</strong><span>${available ? "Доступно" : "Потрачено"}</span>
+        </span>`).join("")}
+    ${view.phase === "own-turn" ? `<button type="button" class="combat-budget__item"
+      data-battle-menu="movement" aria-pressed="${selectedMenu === "movement"}">
+      <strong>Перемещение</strong><span>${derived.monk?.speedFeet ?? state.profile?.speedFeet ?? "—"} фт.</span>
+    </button>` : ""}
+  </section>` : "";
 
   let phaseBody = "";
   let primaryFooter = "";
@@ -114,7 +142,6 @@ export function renderBattleConsole(state) {
     const outsideAbilities = commands.filter((entry) =>
       entry.id.startsWith("racial-spell:") || entry.id === "mystic-regeneration");
     phaseBody = `<section class="battle-player-home">
-      <h3>Вне боя</h3>
       <details class="battle-start">
         <summary>Начинается бой?</summary>
         <form class="battle-console-init-form" data-battle-form="start">
@@ -125,7 +152,7 @@ export function renderBattleConsole(state) {
         </form>
         <p class="hint">Порядок ходов определяет ведущий. Ваш ход начнётся только после подтверждения.</p>
       </details>
-      <h3>Частые проверки</h3>
+      <h3>Проверки</h3>
       <div class="battle-quick-rolls">
         ${[
           ["persuasion", "Убеждение"],
@@ -135,7 +162,7 @@ export function renderBattleConsole(state) {
           data-battle-roll-shortcut="ability-check" data-roll-id="${id}">${label}</button>`).join("")}
         <button type="button" class="btn btn--utility" data-battle-roll-shortcut="all">Все броски</button>
       </div>
-      <details class="battle-outside-abilities" open>
+      <details class="battle-outside-abilities">
         <summary>Подготовленные способности и расовые заклинания</summary>
         <div class="battle-command-grid">${outsideAbilities.map(renderBattleCommandCard).join("")}</div>
       </details>
@@ -145,11 +172,8 @@ export function renderBattleConsole(state) {
   } else if (view.phase === "waiting") {
     const initiative = view.battle?.initiative;
     phaseBody = `<section class="battle-player-home">
-      <h3>Ожидание своего хода</h3>
       ${renderInitiative(view.battle)}
       <p class="battle-console-guidance">Следи за событиями. Решение о начале твоего хода принимает ведущий.</p>
-      <p class="battle-reaction-status">Реакция: <strong>${view.budget?.reactionAvailable === false || state.ui?.turn?.reactionUsed === true
-        ? "использована" : "доступна"}</strong></p>
       <div class="battle-quick-rolls">
         <button type="button" class="btn btn--utility" data-battle-incoming-events>По мне атаковали</button>
         <button type="button" class="btn btn--utility" data-battle-roll-shortcut="saving-throw"
@@ -157,22 +181,16 @@ export function renderBattleConsole(state) {
         <button type="button" class="btn btn--utility" data-battle-roll-shortcut="all">Проверка</button>
       </div>
       ${incomingEventsOpen ? renderIncomingEvents(commands) : ""}
-      <div class="battle-console-actions">
-        <button type="button" class="btn btn--utility" data-battle-command="pause-battle">Приостановить</button>
-        <button type="button" class="btn btn--utility" data-battle-command="end-battle">Завершить бой</button>
-      </div>
+      <details class="battle-secondary-tools"><summary>Управление сценой</summary>
+        <div class="battle-console-actions">
+          <button type="button" class="btn btn--utility" data-battle-command="pause-battle">Приостановить</button>
+          <button type="button" class="btn btn--utility" data-battle-command="end-battle">Завершить бой</button>
+        </div>
+      </details>
     </section>`;
     primaryFooter = `<button type="button" class="btn btn--primary"
       data-battle-command="begin-own-turn">Начался мой ход</button>`;
   } else if (view.phase === "own-turn") {
-    const tiles = [
-      ["action", "Действие", view.budget.actionAvailable],
-      ["bonus", "Бонусное", view.budget.bonusActionAvailable],
-      ["reaction", "Реакция", view.budget.reactionAvailable],
-    ].map(([id, label, available]) => `<button type="button"
-      class="battle-resource-tile ${selectedMenu === id ? "is-selected" : ""}"
-      data-battle-menu="${id}" aria-pressed="${selectedMenu === id}">
-      <span>${label}</span><strong>${available ? "1" : "0"}</strong></button>`).join("");
     const sequenceCards = view.continuations.map((task) => `<button type="button"
       class="btn btn--primary battle-continuation"
       data-battle-resume-sequence="${escapeHtml(task.sequenceId)}">
@@ -189,19 +207,18 @@ export function renderBattleConsole(state) {
         (selectedGroup === "movement" || entry.activationBudget !== "none"))
       : [];
     phaseBody = `<section class="battle-player-home">
-      <h3>Мой ход</h3>
-      <div class="battle-resource-tiles" aria-label="Доступность ресурсов">${tiles}</div>
-      <button type="button" class="battle-movement-entry" data-battle-menu="movement"
-        aria-pressed="${selectedMenu === "movement"}">Перемещение · ${derived.monk?.speedFeet ?? state.profile?.speedFeet ?? "—"} фт.</button>
-      ${sequenceCards ? `<section class="battle-continuations"><h4>Продолжить начатое</h4>${sequenceCards}</section>` : ""}
+      ${sequenceCards.length ? `<section class="battle-continuations"><h4>Продолжить начатое</h4>${sequenceCards}</section>` : ""}
       <div class="battle-quick-rolls">
         <button type="button" class="btn btn--primary" data-battle-command-open="normal-attack"
           ${commands.find((entry) => entry.id === "normal-attack")?.availability.enabled ? "" : "disabled"}>
           Обычная атака</button>
         <button type="button" class="btn btn--utility" data-battle-roll-shortcut="all">Проверка или спасбросок</button>
-        <button type="button" class="btn btn--utility" data-battle-command-open="resource-correction">Исправить ресурс вручную</button>
       </div>
       <p class="battle-console-guidance">Восстановление «Духа воина» отмечается вручную.</p>
+      <details class="battle-secondary-tools"><summary>Дополнительные инструменты</summary>
+        <button type="button" class="btn btn--utility" data-battle-command-open="resource-correction">Исправить ресурс вручную</button>
+        <p>Скорость: ${derived.monk?.speedFeet ?? state.profile?.speedFeet ?? "—"} фт.</p>
+      </details>
       ${selectedMenu ? `<section class="battle-menu-panel" aria-label="${escapeHtml(BATTLE_CATEGORIES.find((item) => item.id === selectedGroup)?.label ?? "Команды")}">
         <div class="battle-menu-heading"><h4>${escapeHtml(BATTLE_CATEGORIES.find((item) => item.id === selectedGroup)?.label ?? "Команды")}</h4>
           <button type="button" class="btn btn--utility" data-battle-menu-close>Готово</button></div>
@@ -214,10 +231,13 @@ export function renderBattleConsole(state) {
       data-battle-end-turn>Завершить мой ход</button>`;
   } else {
     phaseBody = `<section class="battle-player-home">
-      <h3>Сцена приостановлена</h3>
       <p>Текущий контекст сохранён. Продолжение не восстанавливает ресурсы и не создаёт новый ход.</p>
-      ${renderInitiative(view.battle)}
-      <button type="button" class="btn btn--utility" data-battle-command="end-battle">Завершить бой</button>
+      <div class="battle-secondary-tools">
+        ${renderInitiative(view.battle)}
+        <details><summary>Управление сценой</summary>
+        <button type="button" class="btn btn--utility" data-battle-command="end-battle">Завершить бой</button>
+        </details>
+      </div>
     </section>`;
     primaryFooter = `<button type="button" class="btn btn--primary"
       data-battle-command="resume-battle">Продолжить сцену</button>`;
@@ -226,23 +246,43 @@ export function renderBattleConsole(state) {
   const minimizedIds = new Set(minimized.map((entry) => entry.workspaceSessionId));
   const unfinished = view.unfinishedWork.filter((entry) =>
     !entry.workspaceSessionId || !minimizedIds.has(entry.workspaceSessionId));
-  const workPanel = `<details class="battle-unfinished-work">
+  const saveRecovery = activeWorkspace?.appliedUnsaved
+    ? [] : [...unfinished, ...minimized].filter((entry) => entry.appliedUnsaved);
+  const minimizedWithoutRecovery = minimized.filter((entry) => !entry.appliedUnsaved);
+  const visibleUnfinished = unfinished.filter((entry) => !entry.appliedUnsaved);
+  const workPanel = `<details class="battle-unfinished-work"
+      ${!activeWorkspace && unfinished.length + minimized.length ? "open" : ""}>
     <summary>Незавершённое и история · ${unfinished.length + minimized.length}</summary>
-    <div class="battle-unfinished-list">${unfinished.map(renderPlayerWork).join("") ||
+    <div class="battle-unfinished-list">${visibleUnfinished.map(renderPlayerWork).join("") ||
       "<p>Нет ожидающих результатов или черновиков.</p>"}</div>
-    ${minimized.length ? `<div class="battle-unfinished-list" aria-label="Рабочие панели">
-      ${minimized.map(renderPlayerWork).join("")}</div>` : ""}
+    ${minimizedWithoutRecovery.length ? `<div class="battle-unfinished-list" aria-label="Рабочие панели">
+      ${minimizedWithoutRecovery.map(renderPlayerWork).join("")}</div>` : ""}
   </details>`;
-  return `<section class="battle-console battle-player-console panel-section"
+  const workspaceHostMarkup = `<div class="combat-workspace-host" data-combat-workspace-root
+      role="region" aria-label="Активная рабочая панель" hidden>
+    <header class="action-workspace__header"><div data-workspace-header></div></header>
+    <p class="workspace-live-error" data-workspace-error role="alert" hidden></p>
+    <section class="action-workspace__body" data-workspace-body aria-label="Текущий этап"></section>
+    <footer class="action-workspace__footer"><div data-workspace-footer></div>
+      <p data-workspace-status role="status" aria-live="polite"></p></footer>
+  </div>`;
+  const taskRegion = activeWorkspace
+    ? `<div class="combat-active-task" aria-label="Текущее действие" data-combat-task-region>${workspaceHostMarkup}</div>`
+    : `<div class="combat-home-task" data-combat-task-region>${phaseBody}${workspaceHostMarkup}</div>`;
+  const mainAction = activeWorkspace ? "" : primaryFooter;
+  return `<section class="battle-console battle-player-console combat-turn-card panel-section"
     data-player-scene-phase="${view.phase}" aria-labelledby="battleConsoleTitle">
-    <div class="battle-player-heading">
-      <div><div class="eyebrow">Личная сцена</div><h2 id="battleConsoleTitle" tabindex="-1">Боевой пульт</h2></div>
+    <header class="combat-turn-card__header">
+      <h2 id="battleConsoleTitle" tabindex="-1">${escapeHtml(state.profile?.name ?? "Сара")}</h2>
       <span class="battle-console-phase">${escapeHtml(phaseLabels[view.phase])}</span>
-    </div>
-    ${resources}
-    ${phaseBody}
+      ${resources}
+    </header>
+    ${budget}
+    ${taskRegion}
+    ${saveRecovery.length ? `<section class="combat-save-recovery" aria-label="Требуется повторное сохранение">
+      ${saveRecovery.map(renderPlayerWork).join("")}</section>` : ""}
     ${workPanel}
-    <footer class="battle-primary-footer">${primaryFooter}</footer>
+    ${mainAction ? `<footer class="battle-primary-footer">${mainAction}</footer>` : ""}
     <p class="battle-console-status" data-battle-status role="status"></p>
   </section>`;
 }

@@ -4,6 +4,7 @@ import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
 import { calculateRollConsequencePreview } from "../rolls/consequences.js";
 import { calculateCharacterRoll } from "../rolls/calculations.js";
 import { getSaraRollBreakdown } from "../rolls/providers/sara.js";
+import { getWorkspaceHost } from "../workspace/host.js";
 
 function escapeHtml(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
@@ -257,7 +258,7 @@ function formatRollModifier(value) {
 }
 
 export function renderWorkspaceRollPreview(session, state) {
-  const root = document.getElementById("actionWorkspaceRoot");
+  const root = getWorkspaceHost();
   if (!root || session.currentStep !== "command-input" || session.scenarioId !== "character-roll") return;
   const draft = session.rawInputsByStep?.[session.currentStepKey] ?? {};
   const breakdown = getSaraRollBreakdown(state, draft.kind, draft.id);
@@ -312,7 +313,7 @@ export function renderWorkspaceRollPreview(session, state) {
 }
 
 export function renderWorkspaceConsequencePreview(session, state) {
-  const root = document.getElementById("actionWorkspaceRoot");
+  const root = getWorkspaceHost();
   if (!root || session.currentStep !== "roll-result" ||
       session.rollRecord?.consequence?.status !== "awaiting-damage-input") return;
   const draft = session.rawInputsByStep?.[session.currentStepKey] ?? {};

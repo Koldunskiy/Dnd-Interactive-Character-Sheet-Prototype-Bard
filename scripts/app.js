@@ -31,6 +31,7 @@ import {
   disposeWorkspaceOwner,
   initActionWorkspace,
   prepareWorkspaceCharacterTransition,
+  prepareWorkspaceTabTransition,
   reconcileWorkspaceAfterStateChange,
 } from "./workspace/controller.js";
 import { renderSpells } from "./render/render-spells.js";
@@ -858,7 +859,10 @@ function configureTabs(characterId) {
     tabs: getAllowedTabs(characterId),
     characterId,
     sessionGeneration: context.sessionGeneration,
-    beforeActivate: flushLoreNotes,
+    beforeActivate: (fromTab, toTab) => {
+      flushLoreNotes();
+      prepareWorkspaceTabTransition(fromTab, toTab);
+    },
     getLastTab: (id) => {
       const saved = readAppPreferences();
       return saved.status === "loaded" ? saved.preferences.lastTab?.[id] : null;
