@@ -128,7 +128,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     "own-turn": `Бой · Мой ход №${view.battle?.ownTurnNumber ?? "—"}`,
     paused: "Сцена приостановлена",
   };
-  const budget = view.budget ? `<section class="combat-budget" aria-label="Бюджет хода">
+  const budget = view.phase === "own-turn" && view.budget ? `<section class="combat-budget" aria-label="Бюджет хода">
     ${[
       ["action", "Действие", view.budget.actionAvailable],
       ["bonus", "Бонусное", view.budget.bonusActionAvailable],
@@ -189,7 +189,6 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     ${restResumeId ? `<button type="button" data-battle-command-open="${escapeHtml(restResumeId)}">Продолжить сохранённое восстановление</button>` : ""}
     <button type="button" data-battle-roll-shortcut="all">Проверка или спасбросок</button>
     <button type="button" data-battle-menu="home">Назад</button>
-    <button type="button" data-battle-menu="home">Назад</button>
   </section>` : "";
   if (view.phase === "outside") {
     const outsideAbilities = commands.filter((entry) =>
@@ -222,7 +221,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
         <button type="button" data-battle-roll-shortcut="all">Общий бросок</button>
         <button type="button" data-battle-menu="home">Назад</button></section>` : ""}
       ${toolsPanel}`}`;
-    primaryFooter = `<button type="button" class="btn btn--primary"
+    primaryFooter = uiState.panel === "initiative-correct" ? "" : `<button type="button" class="btn btn--primary"
       data-battle-command="begin-own-turn">Мой ход</button>`;
   } else if (view.phase === "own-turn") {
     const panel = uiState.panel === "action" || uiState.panel === "bonus" ? `<section class="battle-menu-panel">
@@ -238,7 +237,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
       : uiState.panel === "home" ? home : panel}
       ${uiState.panel === "incoming" ? renderIncomingEvents(commands) : ""}
       ${toolsPanel}`;
-    primaryFooter = `<button type="button" class="btn btn--primary"
+    primaryFooter = uiState.panel === "initiative-correct" ? "" : `<button type="button" class="btn btn--primary"
       data-battle-command="end-own-turn">Завершить ход</button>`;
   } else {
     const resumable = ["waiting", "own-turn"].includes(view.battle?.phaseBeforePause);
@@ -250,7 +249,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
         ${renderInitiative(view.battle)}
       </div>
     </section>`}${toolsPanel}`;
-    primaryFooter = `${resumable ? `<button type="button" class="btn btn--primary"
+    primaryFooter = uiState.panel === "initiative-correct" ? "" : `${resumable ? `<button type="button" class="btn btn--primary"
       data-battle-command="resume-battle">Продолжить прежний ход</button>` : ""}
       <button type="button" class="btn btn--utility"
         data-battle-command="end-battle">Закончить бой</button>`;
@@ -417,6 +416,7 @@ export function updateBattleConsole(root, state, { forceUi = false } = {}) {
   updateRegion("[data-sara-navigation]", regions.navigation);
   updateRegion("[data-sara-pending-work]", regions.pending);
   updateRegion("[data-sara-turn-controls]", regions.turnControls);
+  updateRegion("[data-sara-phase-content]", regions.phaseBody);
   const initiativeInput = shell.querySelector("[data-initiative-entry]");
   const initiativeTotal = shell.querySelector("[data-initiative-total]");
   if (initiativeInput && initiativeTotal) {
@@ -432,7 +432,6 @@ export function updateBattleConsole(root, state, { forceUi = false } = {}) {
       Number.isInteger(die) && die >= 1 && die <= 20
       ? String(die + modifier) : "—";
   }
-  updateRegion("[data-sara-phase-content]", regions.phaseBody);
   for (const selector of [
     "[data-sara-budget]",
     "[data-sara-navigation]",
@@ -474,6 +473,10 @@ function clearInitiativePresentation(root) {
   initiativePresentationCleanup.delete(root);
 }
 
+export function clearBattleConsolePresentation(root) {
+  clearInitiativePresentation(root);
+}
+
 function activateInitiativePresentation(root, input) {
   clearInitiativePresentation(root);
   const form = input.closest("form");
@@ -493,11 +496,16 @@ function activateInitiativePresentation(root, input) {
   viewport.addEventListener("scroll", update);
   const observer = globalThis.MutationObserver
     ? new globalThis.MutationObserver(() => {
-      if (!root.isConnected || !root.contains(form)) clearInitiativePresentation(root);
+      if (!root.isConnected || !root.contains(form) || form.closest?.("[hidden]")) {
+        clearInitiativePresentation(root);
+      }
     })
     : null;
   observer?.observe(root, { childList: true, subtree: true });
-  if (root.parentElement) observer?.observe(root.parentElement, { childList: true });
+  if (root.parentElement) {
+    observer?.observe(root.parentElement, { childList: true });
+    observer?.observe(root.parentElement, { attributes: true, attributeFilter: ["hidden"] });
+  }
   initiativePresentationCleanup.set(root, () => {
     observer?.disconnect();
     viewport.removeEventListener("resize", update);
@@ -539,7 +547,7 @@ function renderIncomingEvents(commands) {
         data-roll-id="dexterity">Записать спасбросок</button>
       <button type="button" class="btn btn--utility" data-battle-command-open="incoming-damage">
         Записать полученный урон без реакции</button>
-      <button type="button" class="btn btn--utility" data-battle-incoming-close>Закрыть выбор</button>
+      <button type="button" class="btn btn--utility" data-battle-menu="home">Назад</button>
     </div>
   </section>`;
 }

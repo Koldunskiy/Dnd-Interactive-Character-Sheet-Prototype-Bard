@@ -5,11 +5,13 @@ import { beginOwnTurn, endBattle, endOwnTurn, resumeBattle, startBattle } from "
 import {
   battleContextKey,
   bindBattleConsole,
+  clearBattleConsolePresentation,
   renderBattleConsole,
   updateBattleConsole,
 } from "../../scripts/render/render-battle-console.js";
 import { executeBattleCommand } from "../../scripts/battle/commands.js";
 import { getDerivedStats } from "../../scripts/calculations.js";
+import { getSaraInitiativeSnapshot } from "../../scripts/battle/providers/sara.js";
 import {
   getState,
   getSessionContext,
@@ -40,6 +42,7 @@ class FixtureElement {
     if (selector === "[data-battle-scene-action]" && this.dataset.battleSceneAction) return this;
     if (selector === "[data-battle-menu]" && this.dataset.battleMenu) return this;
     if (selector === "[data-battle-navigate]" && this.dataset.battleNavigate) return this;
+    if (selector === "[data-initiative-entry]" && this.dataset.initiativeEntry) return this;
     return null;
   }
   focus() { globalThis.document.activeElement = this; }
@@ -76,6 +79,7 @@ class FixtureShell extends FixtureElement {
       ["[data-sara-pending-work]", new FixtureRegion()],
       ["[data-sara-turn-controls]", new FixtureRegion()],
       ["[data-sara-phase-content]", new FixtureRegion()],
+      ["[data-initiative-total]", new FixtureElement()],
       ["[data-sara-idle-content]", new FixtureRegion()],
       ["[data-sara-task-region]", new FixtureRegion()],
       ["[data-combat-workspace-root]", new FixtureRegion()],
@@ -94,6 +98,7 @@ class FixtureRoot extends FixtureElement {
   querySelector(selector) {
     if (selector === ".sara-combat-shell") return this.shell;
     if (selector === "[data-battle-status]") return this.shell.querySelector("[data-sara-turn-controls]");
+    if (selector === "[data-initiative-total]") return this.shell.querySelector(selector);
     return null;
   }
   contains() { return true; }
@@ -181,6 +186,77 @@ test("initiative preparation and cancel leave game state unchanged", () => {
   assert.equal(JSON.stringify(getState()), before);
 });
 
+test("incoming-event selector closes through the delegated home route", () => {
+  openSara();
+  assert.equal(executeBattleCommand("start-battle", { rawD20: "10" }).status, "applied");
+  const root = createConsole();
+  const incoming = new FixtureElement(root.shell.querySelector("[data-sara-phase-content]"));
+  incoming.dataset.battleMenu = "incoming";
+  root.fire("click", { target: incoming });
+  const phase = root.shell.querySelector("[data-sara-phase-content]");
+  assert.match(phase.innerHTML, /class="battle-incoming-events"/);
+  assert.match(phase.innerHTML, /data-battle-menu="home">Назад/);
+
+  const close = new FixtureElement(phase);
+  close.dataset.battleMenu = "home";
+  root.fire("click", { target: close });
+  assert.doesNotMatch(phase.innerHTML, /class="battle-incoming-events"/);
+});
+
+test("initiative keyboard presentation cleanup removes viewport listeners and inline styles", () => {
+  openSara();
+  const root = createConsole();
+  const observers = [];
+  globalThis.MutationObserver = class {
+    constructor(callback) { this.callback = callback; observers.push(this); }
+    observe(target, options) { this.target = target; this.options = options; }
+    disconnect() { this.disconnected = true; }
+    notify() { this.callback([]); }
+  };
+  const panel = { hidden: false };
+  root.parentElement = panel;
+  const listeners = new Map([["resize", new Set()], ["scroll", new Set()]]);
+  globalThis.visualViewport = {
+    height: 420,
+    offsetTop: 24,
+    addEventListener(type, listener) { listeners.get(type).add(listener); },
+    removeEventListener(type, listener) { listeners.get(type).delete(listener); },
+  };
+  const styles = new Map();
+  const form = {
+    dataset: {},
+    style: {
+      set position(value) { styles.set("position", value); },
+      set top(value) { styles.set("top", value); },
+      set left(value) { styles.set("left", value); },
+      set right(value) { styles.set("right", value); },
+      set height(value) { styles.set("height", value); },
+      set zIndex(value) { styles.set("z-index", value); },
+      removeProperty(name) { styles.delete(name); },
+    },
+  };
+  const input = new FixtureElement();
+  form.closest = (selector) => selector === "[hidden]" && panel.hidden ? panel : null;
+  input.closest = (selector) => selector === "form" ? form
+    : selector === "[data-initiative-entry]" ? input : null;
+  root.fire("focusin", { target: input });
+  assert.equal(form.dataset.initiativePresentation, "true");
+  assert.equal(listeners.get("resize").size, 1);
+  assert.equal(listeners.get("scroll").size, 1);
+  assert.equal(styles.get("position"), "fixed");
+
+  assert.ok(observers.some((observer) => observer.target === panel &&
+    observer.options.attributes && observer.options.attributeFilter.includes("hidden")));
+  panel.hidden = true;
+  observers.at(-1).notify();
+  assert.equal(form.dataset.initiativePresentation, undefined);
+  assert.equal(listeners.get("resize").size, 0);
+  assert.equal(listeners.get("scroll").size, 0);
+  assert.equal(styles.size, 0);
+  delete globalThis.visualViewport;
+  delete globalThis.MutationObserver;
+});
+
 test("empty, fractional, and out-of-range initiative inputs never start a battle", () => {
   for (const rawD20 of ["", "12.5", "0", "21"]) {
     openSara();
@@ -193,6 +269,119 @@ test("empty, fractional, and out-of-range initiative inputs never start a battle
     assert.match(root.shell.querySelector("[data-sara-phase-content]").innerHTML,
       /Введите целое число от 1 до 20/);
   }
+});
+
+test("invalid initiative draft remains editable and a corrected die previews and submits", () => {
+  openSara();
+  const root = createConsole();
+  const phase = root.shell.querySelector("[data-sara-phase-content]");
+  const invalidForm = openInitiativeForm(root, phase, "21");
+  const invalidInput = new FixtureElement(phase);
+  invalidInput.dataset.initiativeEntry = "true";
+  invalidInput.dataset.modifier = "4";
+  invalidInput.value = "21";
+  root.fire("input", { target: invalidInput });
+  root.fire("submit", { target: invalidForm, preventDefault() {} });
+  assert.match(phase.innerHTML, /value="21"/);
+  assert.match(phase.innerHTML, /Введите целое число от 1 до 20/);
+
+  const correctedInput = new FixtureElement(phase);
+  correctedInput.dataset.initiativeEntry = "true";
+  const initiative = getSaraInitiativeSnapshot(getState());
+  correctedInput.dataset.modifier = String(
+    initiative.sources.reduce((total, source) => total + source.value, 0),
+  );
+  correctedInput.value = "16";
+  root.fire("input", { target: correctedInput });
+  assert.equal(root.shell.querySelector("[data-initiative-total]").textContent,
+    String(16 + Number(correctedInput.dataset.modifier)));
+  const correctedForm = openInitiativeForm(root, phase, "16");
+  root.fire("submit", { target: correctedForm, preventDefault() {} });
+  assert.equal(getState().battleConsole.current.initiative.total,
+    16 + Number(correctedInput.dataset.modifier));
+});
+
+test("stale initiative forms cannot start a battle after owner or scene changes", () => {
+  openSara();
+  let root = createConsole();
+  let phase = root.shell.querySelector("[data-sara-phase-content]");
+  let form = openInitiativeForm(root, phase, "12");
+  openCharacterSession("aurelia", () => ({ status: "missing" }));
+  let before = JSON.stringify(getState());
+  root.fire("submit", { target: form, preventDefault() {} });
+  assert.equal(JSON.stringify(getState()), before);
+  assert.equal(getState().battleConsole?.current ?? null, null);
+
+  openSara();
+  root = createConsole();
+  phase = root.shell.querySelector("[data-sara-phase-content]");
+  form = openInitiativeForm(root, phase, "12");
+  assert.equal(executeBattleCommand("start-battle", { rawD20: "10" }).status, "applied");
+  before = JSON.stringify(getState());
+  root.fire("submit", { target: form, preventDefault() {} });
+  assert.equal(JSON.stringify(getState()), before);
+});
+
+test("stale correction form cannot update a replacement battle identity", () => {
+  openSara();
+  assert.equal(executeBattleCommand("start-battle", { rawD20: "10" }).status, "applied");
+  const root = createConsole();
+  const correction = new FixtureElement(root.shell.querySelector("[data-sara-turn-controls]"));
+  correction.dataset.battleSceneAction = "correct-initiative";
+  root.fire("click", { target: correction });
+  const form = new FixtureForm(
+    root.shell.querySelector("[data-sara-phase-content]"),
+    "12",
+    (() => {
+      const { characterId, sessionGeneration } = getSessionContext();
+      return { characterId, sessionGeneration };
+    })(),
+    battleContextKey(getState()),
+  );
+  form.dataset.battleForm = "correct-initiative";
+  form.dataset.battleId = getState().battleConsole.current.id;
+  getState().battleConsole.current.id = "replacement-battle";
+  const before = JSON.stringify(getState());
+  root.fire("submit", { target: form, preventDefault() {} });
+  assert.equal(JSON.stringify(getState()), before);
+  assert.equal(getState().battleConsole.current.initiative.rawD20, 10);
+});
+
+test("own-turn correction hides its competing footer and cancel or success restores it", () => {
+  openSara();
+  assert.equal(executeBattleCommand("start-battle", { rawD20: "10" }).status, "applied");
+  assert.equal(executeBattleCommand("begin-own-turn").status, "applied");
+  const root = createConsole();
+  const openCorrection = () => {
+    const button = new FixtureElement(root.shell.querySelector("[data-sara-turn-controls]"));
+    button.dataset.battleSceneAction = "correct-initiative";
+    root.fire("click", { target: button });
+  };
+  openCorrection();
+  const phase = root.shell.querySelector("[data-sara-phase-content]");
+  assert.match(phase.innerHTML, /data-battle-form="correct-initiative"/);
+  assert.doesNotMatch(phase.innerHTML, /data-battle-command="end-own-turn"/);
+
+  const cancel = new FixtureElement(phase);
+  cancel.dataset.battleMenu = "home";
+  root.fire("click", { target: cancel });
+  assert.match(root.shell.querySelector("[data-sara-turn-controls]").innerHTML,
+    /data-battle-command="end-own-turn"/);
+
+  openCorrection();
+  const { characterId, sessionGeneration } = getSessionContext();
+  const form = new FixtureForm(
+    phase,
+    "12",
+    { characterId, sessionGeneration },
+    battleContextKey(getState()),
+  );
+  form.dataset.battleForm = "correct-initiative";
+  form.dataset.battleId = getState().battleConsole.current.id;
+  root.fire("submit", { target: form, preventDefault() {} });
+  assert.equal(getState().battleConsole.current.initiative.rawD20, 12);
+  assert.match(root.shell.querySelector("[data-sara-turn-controls]").innerHTML,
+    /data-battle-command="end-own-turn"/);
 });
 
 test("repeated bind replaces navigation callback without duplicating listeners", () => {

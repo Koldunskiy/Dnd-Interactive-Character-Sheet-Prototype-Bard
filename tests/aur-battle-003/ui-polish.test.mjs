@@ -57,8 +57,18 @@ test("battle cards use compact reference composition and keep full spell details
   };
   const ownTurnMarkup = renderBattleConsole(ownTurn);
   assert.match(ownTurnMarkup, /aria-label="Бюджет хода"/);
-  assert.match(ownTurnMarkup, /Доступно|Потрачено/);
+  assert.equal((ownTurnMarkup.match(/class="combat-budget__item /g) ?? []).length, 2);
   assert.doesNotMatch(ownTurnMarkup, /<strong>1<\/strong>|<strong>0<\/strong>/);
+  const waiting = structuredClone(sara);
+  assert.equal(startBattle(waiting, { rawD20: "10" }).ok, true);
+  const waitingMarkup = renderBattleConsole(waiting);
+  assert.doesNotMatch(waitingMarkup, /aria-label="Бюджет хода"/);
+
+  const tools = dispatchSceneUi({}, { characterId: "sara-velaris", sessionGeneration: 1 }, "outside", {
+    type: "set-panel", panel: "tools",
+  });
+  const toolsMarkup = renderBattleConsole(structuredClone(sara), tools);
+  assert.equal((toolsMarkup.match(/data-battle-menu="home">Назад/g) ?? []).length, 1);
 });
 
 test("Sara exploration home keeps initiative closed until explicitly opened", () => {
@@ -78,6 +88,10 @@ test("Sara exploration home keeps initiative closed until explicitly opened", ()
   });
   const formMarkup = renderBattleConsole(character, ui);
   assert.match(formMarkup, /data-battle-form="start"/);
+  assert.ok(formMarkup.indexOf("<header>") < formMarkup.indexOf("battle-console-init-fields"));
+  assert.ok(formMarkup.indexOf("battle-console-init-fields") < formMarkup.indexOf("battle-console-init-actions"));
+  assert.match(formMarkup, /battle-console-init-actions[\s\S]*?<output[^>]*data-initiative-total/);
+  assert.match(formMarkup, /battle-console-init-actions[\s\S]*?<button type="submit"/);
   assert.ok(formMarkup.includes(`data-modifier="${modifier}"`));
 });
 
@@ -97,6 +111,15 @@ test("initiative correction preview uses the sources recorded in the active batt
   assert.ok(markup.includes(`data-modifier="${storedModifier}"`));
   assert.ok(markup.includes(`data-initiative-total aria-live="polite">${12 + storedModifier}</output>`));
   assert.match(markup, /data-battle-form="correct-initiative"/);
+  const ownTurn = structuredClone(character);
+  ownTurn.battleConsole.current.phase = "own-turn";
+  const ownTurnUi = dispatchSceneUi({}, { characterId: "sara-velaris", sessionGeneration: 1 }, "battle", {
+    type: "open-initiative",
+    mode: "correct",
+    rawD20: "12",
+    battleId: "stored-source-battle",
+  });
+  assert.doesNotMatch(renderBattleConsole(ownTurn, ownTurnUi), /data-battle-command="end-own-turn"/);
 });
 
 test("battle cards and global surfaces have wrapping and theme-token safeguards", async () => {
@@ -116,6 +139,10 @@ test("battle cards and global surfaces have wrapping and theme-token safeguards"
   assert.match(tokens, /--color-accent:\s*var\(--accent\)/);
   assert.match(workspaceCss, /font-size:\s*clamp\(4rem,\s*18vw,\s*4\.75rem\)/);
   assert.match(battleCss, /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(battleCss, /\.battle-console-init-form\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(battleCss, /\.battle-console-init-form\[data-initiative-presentation="true"\]\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/);
+  assert.match(battleCss, /\.battle-console-init-fields\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/);
+  assert.match(battleCss, /\[data-sara-task-dock\]\[data-entry-active="true"\] \.sara-hud__secondary/);
   assert.match(battleCss, /--sara-bg:\s*#111b24/);
   assert.match(battleCss, /--sara-active:\s*#294c48/);
   assert.match(workspaceCss, /\.action-workspace\[open\]\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/);

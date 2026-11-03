@@ -28,7 +28,10 @@ import {
 import { renderQuickStats, renderSidebarSummary } from "./render/render-sidebar.js";
 import { renderProfile } from "./render/render-profile.js";
 import { renderMeleePanel } from "./render/render-melee.js";
-import { bindBattleConsole } from "./render/render-battle-console.js";
+import {
+  bindBattleConsole,
+  clearBattleConsolePresentation,
+} from "./render/render-battle-console.js";
 import {
   disposeWorkspaceOwner,
   initActionWorkspace,
@@ -1033,6 +1036,9 @@ function configureTabs(characterId) {
     beforeActivate: (fromTab, toTab) => {
       flushLoreNotes();
       prepareWorkspaceTabTransition(fromTab, toTab);
+      if (fromTab === "melee" && toTab !== "melee") {
+        clearBattleConsolePresentation(document.getElementById("meleePanel"));
+      }
     },
     getLastTab: (id) => {
       const saved = readAppPreferences();
@@ -1050,7 +1056,9 @@ function configureTabs(characterId) {
 }
 
 function showPicker(message = "", isError = false) {
-  resetSceneUi(document.getElementById("meleePanel"));
+  const meleePanel = document.getElementById("meleePanel");
+  clearBattleConsolePresentation(meleePanel);
+  resetSceneUi(meleePanel);
   const page = document.querySelector(".page");
   const picker = document.getElementById("characterPicker");
   const status = document.getElementById("characterPickerStatus");
@@ -1259,7 +1267,9 @@ function configureSaraPresentation(characterId) {
 }
 
 function completeCharacterOpen(characterId, warning = "") {
-  resetSceneUi(document.getElementById("meleePanel"));
+  const meleePanel = document.getElementById("meleePanel");
+  clearBattleConsolePresentation(meleePanel);
+  resetSceneUi(meleePanel);
   const context = getSessionContext();
   presentationOwner = {
     characterId: context.characterId,

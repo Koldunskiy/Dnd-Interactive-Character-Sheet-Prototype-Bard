@@ -22,6 +22,7 @@ import {
 import { closeWorkspaceHost, renderWorkspaceHost } from "../../scripts/workspace/host.js";
 import { getUnfinishedPlayerWork } from "../../scripts/battle/player-hub.js";
 import { renderMeleePanel } from "../../scripts/render/render-melee.js";
+import { getSaraHudModel, updateSaraHudRegion } from "../../scripts/render/sara-hud.js";
 import {
   bindBattleConsole,
   renderBattleConsole,
@@ -168,7 +169,7 @@ test("W1 rendering an error does not release active compact-entry presentation",
 });
 
 test("W1 real Sara renderer updates preserve the connected focused workspace input", () => {
-  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const { dialog, taskHud, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
   const panel = new FixtureNode();
   panel.documentRoot = true;
   const shell = new FixtureNode();
@@ -213,16 +214,27 @@ test("W1 real Sara renderer updates preserve the connected focused workspace inp
   dialog.body.querySelector = (selector) =>
     selector === "[data-workspace-form]" ? form : null;
   input.focus();
+  input.dataset.workspaceField = "firstD20";
+  globalThis.requestAnimationFrame = (callback) => {
+    callback();
+    return 1;
+  };
+  globalThis.cancelAnimationFrame = () => {};
+  dialog.fire("focusin", { target: input });
+  assert.equal(dialog.dataset.entryActive, "true");
   assert.equal(form.contains(globalThis.document.activeElement), true);
   assert.match(dialog.body.innerHTML, /data-workspace-form="attack"/);
 
   const workspaceBefore = dialog;
   const stateBefore = getState();
+  const hudBefore = taskHud.innerHTML;
   updateState((state) => {
     state.ui.melee ??= {};
     state.ui.melee.w1RenderPulse = !state.ui.melee.w1RenderPulse;
+    state.ui.activeEffects = [{ id: "hud-effect", name: "Проверка обновления", source: "Тест" }];
     return state;
   });
+  updateSaraHudRegion(taskHud, getSaraHudModel(getState()));
   renderMeleePanel(getState(), {});
 
   assert.equal(panel.querySelector(".sara-combat-shell"), shell);
@@ -231,6 +243,9 @@ test("W1 real Sara renderer updates preserve the connected focused workspace inp
   assert.equal(input.isConnected, true);
   assert.equal(globalThis.document.activeElement, input);
   assert.equal(input.value, "16");
+  assert.notEqual(taskHud.innerHTML, hudBefore);
+  assert.match(taskHud.innerHTML, /sara-hud__secondary/);
+  assert.doesNotMatch(taskHud.innerHTML, /sara-hud--compact/);
   assert.notEqual(getState(), stateBefore);
   const markup = renderBattleConsole(getState());
   assert.match(markup, /class="[^"]*sara-combat-shell[^"]*combat-turn-card/);
@@ -250,6 +265,12 @@ test("W1 real Sara renderer updates preserve the connected focused workspace inp
   assert.equal(panel.listeners.get("click").length, 1);
   assert.equal(shell.querySelector("[data-combat-workspace-root]"), workspaceBefore);
   unsubscribe();
+  closeWorkspaceHost({ restoreFocus: false });
+  assert.equal(dialog.dataset.entryActive, undefined);
+  assert.match(taskHud.innerHTML, /sara-hud__secondary/);
+  assert.doesNotMatch(taskHud.innerHTML, /sara-hud--compact/);
+  delete globalThis.requestAnimationFrame;
+  delete globalThis.cancelAnimationFrame;
 });
 
 test("W1 phase changes replace focused combat controls immediately and discard queued old markup", async () => {

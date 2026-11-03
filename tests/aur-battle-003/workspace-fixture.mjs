@@ -68,7 +68,11 @@ export class FixtureNode {
   }
   closest(selector) {
     if (selector === "[data-workspace-form]" && this.dataset.workspaceForm) return this;
+    if (selector === "[data-workspace-field]" && this.dataset.workspaceField) return this;
     return null;
+  }
+  matches(selector) {
+    return selector === 'input[type="number"]' && this.type === "number";
   }
   focus() {}
   querySelectorAll() { return []; }
@@ -195,7 +199,8 @@ class FixtureDialog extends FixtureNode {
   showModal() { this.open = true; }
   close() { this.open = false; this.closeCount += 1; }
   matches(selector) {
-    return selector === "[data-combat-workspace-root]" && this.embeddedHost;
+    return this.embeddedHost &&
+      ["[data-combat-workspace-root]", "[data-sara-task-dock]"].includes(selector);
   }
   toggleAttribute() {}
 }
@@ -236,10 +241,7 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
     this.open = true;
   };
   const invoker = reusableInvoker ??= new FixtureNode();
-  const taskHud = {
-    innerHTML: "",
-    querySelectorAll: () => [],
-  };
+  const taskHud = new FixtureNode();
   dialog.open = false;
   dialog.forms = {};
   dialog.childNodes = [];
@@ -256,6 +258,7 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
     node.textContent = "";
     node.scrollTop = 0;
   }
+  dialog.appendChild(taskHud);
   invoker.dataset.workspaceInvoker = "normal-attack";
   const rollRoot = { hidden: true };
   globalThis.HTMLDialogElement = FixtureDialog;
@@ -284,6 +287,12 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
       return null;
     },
     querySelector(selector) {
+      if (selector === ".page") {
+        return { dataset: { characterId: embeddedHost ? "sara-velaris" : "aurelia" } };
+      }
+      if (selector === "[data-sara-task-dock][data-combat-workspace-root]") {
+        return embeddedHost ? dialog : null;
+      }
       if (selector === "[data-sara-task-dock] [data-sara-task-hud]") return taskHud;
       if (selector === '[data-panel="melee"].is-active' && embeddedHost) {
         return {

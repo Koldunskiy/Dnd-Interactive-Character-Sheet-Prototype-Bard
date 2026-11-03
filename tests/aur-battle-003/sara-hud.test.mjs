@@ -22,6 +22,7 @@ test("Sara HUD projects current derived resources and escapes optional text with
   const before = structuredClone(state);
   const model = getSaraHudModel(state, getDerivedStats(state));
   const markup = renderSaraHud(model);
+  assert.doesNotMatch(markup, /sara-hud--compact/);
   assert.equal(model.hp, 0);
   assert.equal(model.maxHp, getDerivedStats(state).maxHitPoints);
   assert.equal(model.ki.current, getDerivedStats(state).ki.current);
@@ -46,7 +47,7 @@ test("HUD omits zero temporary HP and renders both reaction states", () => {
   assert.match(renderSaraHud(getSaraHudModel(state)), /Реакция <strong>потрачена/);
 });
 
-test("targeted HUD update preserves details state and never replaces adjacent workspace controls", () => {
+test("targeted HUD update preserves details state without replacing its own region unnecessarily", () => {
   class Details {
     open = false;
   }
@@ -63,7 +64,6 @@ test("targeted HUD update preserves details state and never replaces adjacent wo
     }
   }
   const region = new Region();
-  const workspaceInput = { value: "draft" };
   updateSaraHudRegion(null, getSaraHudModel(sara));
   const withEffect = structuredClone(sara);
   withEffect.ui.activeEffects = [{ id: "effect", name: "Открытый эффект", source: "Тест" }];
@@ -81,15 +81,4 @@ test("targeted HUD update preserves details state and never replaces adjacent wo
   updateSaraHudRegion(region, getSaraHudModel(changed));
   assert.notEqual(region.innerHTML, firstMarkup);
   assert.equal(region.details[0].open, true);
-  assert.equal(workspaceInput.value, "draft");
-
-  const dock = new Region();
-  let entryActive = true;
-  updateSaraHudRegion(dock, getSaraHudModel(withEffect));
-  assert.match(dock.innerHTML, /sara-hud__secondary/);
-  entryActive = false;
-  changed.combat.hp.current -= 1;
-  updateSaraHudRegion(dock, getSaraHudModel(changed));
-  assert.equal(entryActive, false);
-  assert.match(dock.innerHTML, /sara-hud__secondary/);
 });

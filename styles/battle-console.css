@@ -142,7 +142,7 @@
 
 .combat-budget {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   padding: 12px 14px 0;
 }
@@ -223,10 +223,12 @@
 
 .battle-console-init-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 64px;
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
+.battle-console-init-form > header,
+.battle-console-init-fields,
+.battle-console-init-actions { grid-column: 1; }
 
 .battle-console-init-form > button {
   grid-column: 1 / -1;
@@ -829,6 +831,7 @@ html[data-combat-entry-active="true"] .combat-workspace-host .workspace-entry-he
 .sara-hud__primary span { min-width: 0; }
 .battle-console-init-form[data-initiative-presentation="true"] {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: .75rem;
   overflow: hidden;
