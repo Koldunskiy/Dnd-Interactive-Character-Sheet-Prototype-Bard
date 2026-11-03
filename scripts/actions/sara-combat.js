@@ -9,6 +9,7 @@ import { applyHealing } from "../combat/damage-pools.js";
 import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
 import { isCurrentSession, updateSessionState } from "../state.js";
 import { applyMonkTechnique } from "./monk.js";
+import { closeRestWindow, spendBoundDart } from "../sara-functional.js";
 
 const SAVE_ABILITIES = Object.freeze({
   "ll-monk:empowered-strike": "strength",
@@ -208,6 +209,7 @@ export function startAttackSequence(context, input, operationId) {
       }
       sequence.resourcePaymentApplied = resourcePaymentApplied;
       sequence.actionFlagApplied ||= actionFlagApplied;
+      closeRestWindow(draft, "attack-sequence-started");
       assistant.activeSequences.push(sequence);
       return draft;
     },
@@ -311,6 +313,18 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
         damageStatus: preview.hitResult ? "awaiting-damage" : "not-applicable",
         techniqueApplicationId: null
       };
+      const dartId = draft.inventory?.starterManifest?.bindings?.darts;
+      if (profileId === dartId) {
+        if (preview.profile.attackKind !== "weapon" ||
+            !preview.profile.properties?.includes("thrown")) {
+          throw new Error("Привязанный профиль дротика не является метательным оружием.");
+        }
+        attack.ammunitionSpend = {
+          itemId: dartId,
+          quantityAfter: spendBoundDart(draft, dartId),
+        };
+      }
+      closeRestWindow(draft, "recorded-attack");
       sequence.resolvedAttacks.push(attack);
       if (sequence.kind === "attack-action" && !sequence.actionFlagApplied) {
         draft.ui.turn.actionUsed = true;

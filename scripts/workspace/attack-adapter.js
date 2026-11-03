@@ -35,7 +35,10 @@ export function getCurrentWorkspaceStrikeParent(state, sequenceId, attackId) {
   const sequence = getWorkspaceAttackSequence(state, sequenceId);
   const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
   if (!sequence || !attack || attack.hitResult !== "hit" ||
-      attack.profileId !== "unarmed" ||
+      !(attack.profileId === "unarmed" ||
+        attack.profileSnapshot?.attackKind === "weapon" &&
+        attack.profileSnapshot?.melee === true &&
+        attack.profileSnapshot?.martialArtsEligible === true) ||
       !["recorded", "recorded-outside-app"].includes(attack.damageStatus) ||
       attack.techniqueApplicationId ||
       !["open", "complete"].includes(sequence.status) ||
@@ -80,9 +83,8 @@ export function getNormalAttackFingerprint(state, sequenceId, isFirstAttempt) {
   const derived = getDerivedStats(state);
   const sequence = getNormalAttackSequence(state, sequenceId);
   const battle = state.battleConsole?.current;
-  const profile = derived.saraAttackProfiles?.unarmed;
   return JSON.stringify({
-    profile,
+    profiles: derived.saraAttackProfiles,
     maximumAttacks: sequence?.maximumAttacks ?? getSaraAttackCount(state),
     sequence: sequence ? {
       id: sequence.id,
@@ -109,7 +111,7 @@ export function getWorkspaceAttackFingerprint(state, sequenceId, kind, isFirstAt
   const battle = state.battleConsole?.current;
   return JSON.stringify({
     kind,
-    unarmed: derived.saraAttackProfiles?.unarmed,
+    profiles: derived.saraAttackProfiles,
     sequence: sequence ? {
       id: sequence.id,
       kind: sequence.kind,
@@ -131,7 +133,7 @@ export function getWorkspaceAttackFingerprint(state, sequenceId, kind, isFirstAt
 }
 
 export function calculateWorkspaceAttackPreview(state, input) {
-  return calculateAttackPreview(state, { ...input, profileId: "unarmed" });
+  return calculateAttackPreview(state, { ...input, profileId: input.profileId ?? "unarmed" });
 }
 
 export function calculateWorkspaceDamagePreview(profile, rolls, critical) {
@@ -144,7 +146,7 @@ export function submitWorkspaceAttack(owner, sequenceId, attackId, input, operat
     getWorkspaceAttackContext(),
     sequenceId,
     attackId,
-    { ...input, kind: "attack-action", profileId: "unarmed" },
+    { ...input, kind: "attack-action", profileId: input.profileId ?? "unarmed" },
     operationId,
   );
 }
@@ -155,7 +157,7 @@ export function submitWorkspaceSequenceAttack(owner, sequenceId, attackId, kind,
     getWorkspaceAttackContext(),
     sequenceId,
     attackId,
-    { ...input, kind, profileId: "unarmed" },
+    { ...input, kind, profileId: input.profileId ?? "unarmed" },
     operationId,
   );
 }

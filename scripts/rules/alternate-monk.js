@@ -111,6 +111,8 @@ export function getAlternateMonkDerived(character) {
     const isProficient = weapon.proficient === true ||
       weaponProficiencies.has(weapon.proficiencyName) ||
       (weapon.category === "simple-melee" && weaponProficiencies.has("Simple weapons")) ||
+      (weapon.category === "ranged" && weapon.proficiencyName === "Dart" &&
+        weaponProficiencies.has("Simple weapons")) ||
       (weapon.category === "martial-melee" && weapon.proficiencyName === "Shortsword" &&
         weaponProficiencies.has("Shortswords"));
     const attackStat = allowedMartialWeapon && martialArtsAvailable
@@ -171,6 +173,22 @@ export function getAlternateMonkDerived(character) {
     damageType: "bludgeoning",
     range: "20/60"
   };
+  const weaponAttackProfiles = Object.fromEntries(weapons.map((weapon) => {
+    const item = wieldedWeapons.find((entry) => entry.id === weapon.id);
+    return [weapon.id, {
+      attackAbility: weapon.attackBonus - (weapon.proficient ? proficiencyBonus : 0),
+      attackBonus: weapon.attackBonus,
+      damageDice: weapon.damageDice,
+      damageModifier: weapon.damageBonus,
+      attackKind: "weapon",
+      melee: item?.weapon?.category !== "ranged",
+      martialArtsEligible: Boolean(item?.weapon?.category !== "ranged" &&
+        weapon.martialArtsAvailable),
+      damageType: weapon.damageType,
+      name: weapon.name,
+      properties: [...weapon.properties],
+    }];
+  }));
 
   return {
     level,
@@ -215,6 +233,7 @@ export function getAlternateMonkDerived(character) {
     effectiveTechniqueIds: [...effectiveSelections],
     insigniaOfClawsActive: insigniaActive,
     saraAttackProfiles: {
+      ...weaponAttackProfiles,
       unarmed: {
         attackAbility: dexterityModifier,
         attackBonus: unarmedAttackBonus,

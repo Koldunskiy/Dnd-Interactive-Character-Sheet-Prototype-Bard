@@ -3,6 +3,7 @@ import {
   MONK_TECHNIQUE_BY_ID,
   WARRIOR_ADEPT_STYLES
 } from "../data/monk-techniques.js";
+import { eligibleEntitlement } from "./sara-functional.js";
 
 const SIGNATURE_LEVELS = [3, 5, 9];
 
@@ -62,7 +63,7 @@ export function validateTechniqueDraft(character, draft, context) {
   }
   const event = draft.entitlementEvent;
   const recordedEvent = (character.monk?.replacementEntitlements ?? [])
-    .find((entry) => entry.id === event?.id && !entry.consumed);
+    .find((entry) => entry.id === event?.id && eligibleEntitlement(entry, character));
   if (!event?.id || event.id !== draft.entitlementEventId ||
       !recordedEvent ||
       event.type !== recordedEvent.type ||

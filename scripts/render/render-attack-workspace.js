@@ -76,12 +76,15 @@ function techniqueUnavailableReason(state, sequence, attack, technique, paymentM
 function renderAttackForm(session, state) {
   const values = currentInputs(session);
   const actionUsed = !session.isExistingSequence && state.ui?.turn?.actionUsed === true;
+  const profiles = getDerivedStats(state).saraAttackProfiles;
+  const profileId = values.profileId ?? "unarmed";
+  const profile = profiles[profileId] ?? profiles.unarmed;
   const preview = calculateWorkspaceAttackPreview(state, {
+    profileId,
     rollMode: values.rollMode || "normal",
     firstD20: values.firstD20 ?? "",
     secondD20: values.secondD20 ?? "",
   });
-  const profile = getDerivedStats(state).saraAttackProfiles.unarmed;
   const sequence = (state.monk?.combatAssistant?.activeSequences ?? [])
     .find((entry) => entry.id === session.sequenceId);
   const attackNumber = (sequence?.resolvedAttacks?.length ?? 0) + 1;
@@ -95,6 +98,12 @@ function renderAttackForm(session, state) {
       ? "По обычному правилу это натуральная 20 и попадание. Подтвердите, что мастер назначил исключение."
       : "";
   return `<form data-workspace-form="attack" novalidate>
+    ${Object.keys(profiles).length > 1 ? `<label class="workspace-field">Профиль атаки
+      <select data-workspace-field="profileId" name="profileId">
+        ${Object.entries(profiles).map(([id, entry]) => `<option value="${escapeHtml(id)}"
+          ${id === profileId ? "selected" : ""}>${escapeHtml(id === "unarmed" ? "Безоружная атака" : entry.name ?? id)}</option>`).join("")}
+      </select>
+    </label>` : ""}
     <fieldset class="workspace-roll-mode">
       <legend>Режим броска</legend>
       <div role="group" aria-label="Режим броска">
@@ -137,7 +146,8 @@ function renderAttackForm(session, state) {
     ${session.readOnly && !session.error ? `<p class="workspace-warning">Эта запись доступна только для просмотра или восстановления уже ожидающего урона.</p>` : ""}
     </div>
     <details class="workspace-entry-details"><summary>Расчёт и параметры</summary>
-      <p>Безоружная атака ${formatSigned(profile.attackBonus)} · урон ${escapeHtml(profile.damageDice)} ${formatSigned(profile.damageModifier)}.</p>
+      <p>${escapeHtml(profile.name ?? (profileId === "unarmed" ? "Безоружная атака" : profileId))}
+        ${formatSigned(profile.attackBonus)} · урон ${escapeHtml(profile.damageDice)} ${formatSigned(profile.damageModifier)}.</p>
     </details>
   </form>`;
 }
@@ -302,8 +312,11 @@ export function renderAttackWorkspace(session, state) {
   const currentAttackNumber = session.currentStep === "attack-input"
     ? (sequence?.resolvedAttacks?.length ?? 0) + 1
     : attackNumber(state, session);
+  const activeProfileId = session.rawInputsByStep?.[session.currentStepKey]?.profileId ?? "unarmed";
+  const activeProfileName = derived.saraAttackProfiles?.[activeProfileId]?.name ??
+    (activeProfileId === "unarmed" ? "безоружный" : activeProfileId);
   const heading = session.workspaceType === "attack" && session.currentStep === "attack-input"
-    ? `Удар ${currentAttackNumber}/${attackCount} · безоружный`
+    ? `Удар ${currentAttackNumber}/${attackCount} · ${activeProfileName}`
     : session.workspaceType === "attack" && session.currentStep === "damage-input"
       ? `Урон · удар ${currentAttackNumber}/${attackCount}`
     : session.currentStep === "attack-input" ? commandTitle
@@ -435,6 +448,7 @@ export function renderWorkspaceAttackPreview(session, state) {
   if (!totalNode || !formulaNode || !statusNode || !validationNode) return;
   const inputs = session.rawInputsByStep[session.currentStepKey] ?? {};
   const preview = calculateWorkspaceAttackPreview(state, {
+    profileId: inputs.profileId ?? "unarmed",
     firstD20: inputs.firstD20 ?? "",
     secondD20: inputs.secondD20 ?? "",
     rollMode: inputs.rollMode || "normal",

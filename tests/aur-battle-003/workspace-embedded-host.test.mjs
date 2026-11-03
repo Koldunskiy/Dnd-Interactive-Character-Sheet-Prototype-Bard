@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getState } from "../../scripts/state.js";
-import { openNormalAttack, getWorkspaceSessionForTests } from "../../scripts/workspace/controller.js";
+import { getState, updateState } from "../../scripts/state.js";
+import {
+  openNormalAttack,
+  openSaraBattleCommand,
+  getWorkspaceSessionForTests,
+} from "../../scripts/workspace/controller.js";
 import {
   getWorkspaceHost,
   renderWorkspaceHost,
@@ -10,6 +14,8 @@ import {
 import { renderBattleConsole } from "../../scripts/render/render-battle-console.js";
 import {
   fireWorkspaceInput,
+  fireWorkspaceAction,
+  FixtureForm,
   installWorkspaceFixture,
 } from "./workspace-fixture.mjs";
 
@@ -137,5 +143,85 @@ test("changing workspace steps updates a focused task title immediately", () => 
   });
 
   assert.equal(dialog.header.innerHTML, nextHeader);
+  unsubscribe();
+});
+
+test("potion inventory command opens shared dock, applies physical sum, and shows recorded result", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  updateState((draft) => {
+    draft.combat.hp.current = 1;
+    draft.inventory.items.find((item) => item.id === "healing-potion").quantity = 1;
+    return draft;
+  });
+
+  const opened = openSaraBattleCommand("potion-use:healing-potion:healing-potion");
+  assert.equal(opened.ok, true);
+  assert.match(dialog.body.innerHTML, /Сумма физических костей/);
+  assert.match(dialog.footer.innerHTML, /Применить зелье · записать итог/);
+
+  dialog.forms.command = new FixtureForm("command", {
+    target: "self",
+    sum: "7",
+    intentionalWaste: false,
+  });
+  fireWorkspaceAction(dialog, "apply-command");
+  assert.equal(getWorkspaceSessionForTests().currentStep, "command-result");
+  assert.match(dialog.body.innerHTML, /Полезное лечение: 9 HP/);
+  assert.equal(getState().combat.hp.current, 10);
+  assert.equal(getState().inventory.items.find((item) => item.id === "healing-potion").quantity, 0);
+  unsubscribe();
+});
+
+test("equipped dart profile records the weapon snapshot and spends exactly one dart on a hit", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  updateState((draft) => {
+    draft.inventory.items.find((item) => item.id === "darts").equipped = true;
+    return draft;
+  });
+  const opened = openNormalAttack();
+  assert.equal(opened.ok, true);
+  assert.match(dialog.body.innerHTML, /Профиль атаки/);
+  dialog.forms.attack = new FixtureForm("attack", {
+    profileId: "darts",
+    rollMode: "normal",
+    firstD20: "15",
+  });
+  fireWorkspaceAction(dialog, "attack-hit");
+  const sequence = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === getWorkspaceSessionForTests().sequenceId);
+  const attack = sequence.resolvedAttacks[0];
+  assert.equal(attack.profileId, "darts");
+  assert.equal(attack.profileSnapshot.attackKind, "weapon");
+  assert.equal(attack.ammunitionSpend.itemId, "darts");
+  assert.equal(attack.hitResult, "hit");
+  assert.equal(getState().inventory.items.find((item) => item.id === "darts").quantity, 19);
+  unsubscribe();
+});
+
+test("short rest runs in the dock, accepts sequential physical hit dice, then finishes", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  updateState((draft) => {
+    draft.combat.hp.current = 1;
+    draft.combat.ki.current = 0;
+    draft.combat.hitDice.remaining = 3;
+    return draft;
+  });
+  assert.equal(openSaraBattleCommand("completed-rest").ok, true);
+  dialog.forms.command = new FixtureForm("command", { kind: "short" });
+  fireWorkspaceAction(dialog, "apply-command");
+  assert.equal(getWorkspaceSessionForTests().command.restStage, "hit-die");
+  assert.equal(getState().combat.ki.current, getState().profile.level + 4);
+
+  dialog.forms.command = new FixtureForm("command", { roll: "2" });
+  fireWorkspaceAction(dialog, "apply-command");
+  assert.equal(getState().combat.hitDice.remaining, 2);
+  assert.equal(getState().monk.functionalRuntime.rest.hitDiceSpent, 1);
+  dialog.forms.command = new FixtureForm("command", { roll: "3" });
+  fireWorkspaceAction(dialog, "apply-command");
+  assert.equal(getState().combat.hitDice.remaining, 1);
+  assert.equal(getState().monk.functionalRuntime.rest.hitDiceSpent, 2);
+  fireWorkspaceAction(dialog, "finish-short-rest");
+  assert.equal(getState().monk.functionalRuntime.rest.phase, "finished");
+  assert.equal(getWorkspaceSessionForTests().currentStep, "command-result");
   unsubscribe();
 });

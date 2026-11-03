@@ -62,6 +62,7 @@ import {
   renderCommandWorkspace,
   renderWorkspaceConsequencePreview,
   renderWorkspaceRollPreview,
+  renderWorkspacePotionPreview,
 } from "../render/render-command-workspace.js";
 import {
   renderAttackWorkspace,
@@ -70,6 +71,15 @@ import {
 } from "../render/render-attack-workspace.js";
 import { getSessionContext, retryPersistedState, getState } from "../state.js";
 import { MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
+import { POTIONS } from "../sara-functional.js";
+import {
+  completeSaraRest,
+  declineSaraRestReplacement,
+  finishSaraShortRest,
+  replaceSaraRestTechnique,
+  spendSaraHitDie,
+  useSaraPotion,
+} from "../actions/sara-functional.js";
 import {
   getEffectiveSelectedTechniqueIds,
   getTechniqueAvailability,
@@ -154,6 +164,96 @@ function getRelevantFingerprint(state, sequenceId, firstAttempt) {
 }
 
 function getCommandDescriptor(state, commandId) {
+  if (commandId === "completed-rest") {
+    return {
+      id: commandId,
+      scenarioId: commandId,
+      titleRu: "Завершённый отдых",
+      navigationGroups: [],
+      activationBudget: "none",
+      resourceCost: "Завершённый игровой отдых",
+      trigger: "Выберите завершённый короткий или продолжительный отдых.",
+      availability: { enabled: true, reasonCode: null, reasonRu: "" },
+    };
+  }
+  if (/^rest-hit-die:/.test(commandId) ||
+      /^rest-replacement-(offer|edit):/.test(commandId)) {
+    const [kind, second, ...restParts] = commandId.split(":");
+    const stage = kind === "rest-hit-die" ? "hit-die" : second;
+    const restId = kind === "rest-hit-die" ? [second, ...restParts].join(":") : restParts.join(":");
+    const runtime = state.monk?.functionalRuntime?.rest;
+    const valid = runtime?.id === restId &&
+      (kind === "rest-hit-die" && runtime.kind === "short" &&
+        runtime.phase === "hit-dice" ||
+       kind === "rest-replacement" && runtime.kind === "long" &&
+        ["replacement-offer", "replacement-edit"].includes(runtime.phase));
+    const derived = getDerivedStats(state);
+    const diceAvailable = Number(state.combat?.hitDice?.remaining) > 0 &&
+      Number(state.combat?.hp?.current) < derived.maxHitPoints &&
+      (!state.battleConsole?.current || state.battleConsole.current.phase === "ended");
+    return {
+      id: commandId,
+      scenarioId: commandId,
+      restId,
+      restStage: kind === "rest-hit-die" ? "hit-die"
+        : stage === "offer" ? "offer" : "edit",
+      titleRu: kind === "rest-hit-die" ? "Кость хитов · короткий отдых"
+        : stage === "offer" ? "Замена техники после отдыха" : "Выбрать замену техники",
+      navigationGroups: [],
+      activationBudget: "none",
+      resourceCost: kind === "rest-hit-die" ? "Одна кость хитов" : "Одно право замены",
+      trigger: kind === "rest-hit-die"
+        ? `Кость хитов к${state.combat?.hitDie ?? "?"} + текущий модификатор Телосложения.`
+        : "Можно заменить ровно одну обычную технику; Signature Strike не изменяется.",
+      availability: {
+        enabled: Boolean(valid && (kind !== "rest-hit-die" || diceAvailable)),
+        reasonCode: !valid ? "rest-window-unavailable" : !diceAvailable ? "hit-die-unavailable" : null,
+        reasonRu: !valid ? "Окно отдыха уже закрыто или заменено."
+          : kind === "rest-hit-die" && !diceAvailable
+            ? Number(state.combat?.hitDice?.remaining) <= 0 ? "Нет оставшихся костей хитов."
+              : Number(state.combat?.hp?.current) >= derived.maxHitPoints ? "HP полные; кость хитов тратить не нужно."
+                : "Лечение костями хитов недоступно во время боя."
+            : "",
+      },
+    };
+  }
+  if (commandId.startsWith("potion-use:")) {
+    const [, potionId, ...encodedItemId] = commandId.split(":");
+    const itemId = decodeURIComponent(encodedItemId.join(":"));
+    const potion = POTIONS[potionId];
+    const item = state.inventory?.items?.find((entry) => entry.id === itemId);
+    const manifest = state.inventory?.starterManifest;
+    const bound = manifest?.bindings?.[potionId] === itemId;
+    const battle = state.battleConsole?.current;
+    const battleReason = battle && battle.phase !== "ended"
+      ? battle.phase !== "own-turn" ? "Зелье можно применить только в свой ход."
+        : state.ui?.turn?.actionUsed ? "Действие уже использовано в этом ходу." : ""
+      : "";
+    const enabled = Boolean(potion && item?.consumable?.kind === "healing-potion" &&
+      item.consumable.potionId === potionId && bound && Number.isSafeInteger(item.quantity) &&
+      item.quantity > 0 && !battleReason);
+    return {
+      id: commandId,
+      scenarioId: commandId,
+      potionId,
+      itemId,
+      titleRu: potion?.name ?? "Зелье лечения",
+      navigationGroups: [],
+      activationBudget: "action",
+      resourceCost: "Одна порция",
+      trigger: "Введите сумму физических костей; зелье и поддерживаемое лечение будут применены атомарно.",
+      availability: {
+        enabled,
+        reasonCode: !item || !bound ? "potion-binding-unavailable" : !item?.quantity
+          ? "potion-out-of-stock" : battleReason ? "turn-budget-unavailable" : null,
+        reasonRu: !bound ? "Предмет больше не привязан к этой порции зелья."
+          : !item || item.consumable?.potionId !== potionId
+            ? "Профиль предмета не соответствует зелью."
+            : !item.quantity ? "В инвентаре нет этой порции."
+              : battleReason,
+      },
+    };
+  }
   if (commandId.startsWith("monk-technique:")) {
     const techniqueId = commandId.slice("monk-technique:".length);
     const technique = MONK_TECHNIQUE_BY_ID.get(techniqueId);
@@ -336,6 +436,8 @@ function render() {
   if (session.currentStep === "damage-input") renderWorkspaceDamagePreview(session);
   if (session.workspaceType === "command" && session.scenarioId === "character-roll" &&
       session.currentStep === "command-input") renderWorkspaceRollPreview(session, state);
+  if (session.workspaceType === "command" && session.scenarioId?.startsWith("potion-use:") &&
+      session.currentStep === "command-input") renderWorkspacePotionPreview(session, state);
   if (session.workspaceType === "command" && session.currentStep === "roll-result") {
     renderWorkspaceConsequencePreview(session, state);
   }
@@ -367,7 +469,7 @@ function updateInput(field) {
     draft.practicedConditions = false;
   }
   if (session.currentStep === "attack-input" &&
-      ["firstD20", "secondD20", "rollMode"].includes(field.name)) {
+      ["firstD20", "secondD20", "rollMode", "profileId"].includes(field.name)) {
     session.naturalExceptionOutcome = null;
     draft.dmExceptionConfirmed = false;
     clearAttackInputFeedback({ hideNaturalException: true });
@@ -422,6 +524,9 @@ function updateInput(field) {
   } else if (session.workspaceType === "command" &&
       ["kind", "spellSaveSource"].includes(field.name)) {
     render();
+  } else if (session.workspaceType === "command" &&
+      session.scenarioId?.startsWith("potion-use:")) {
+    renderWorkspacePotionPreview(session, getState());
   }
 }
 
@@ -732,6 +837,10 @@ export function openSaraBattleCommand(commandId, invoker = null, options = {}) {
       timingConfirmed: false,
     };
   }
+  if (commandId === "completed-rest" &&
+      ["short", "long"].includes(options.restKind)) {
+    session.rawInputsByStep[session.currentStepKey] = { kind: options.restKind };
+  }
   if (invoker) {
     invoker.dataset.workspaceInvoker = `battle-command-${commandId}`;
     session.returnTarget = {
@@ -966,6 +1075,7 @@ function submitAttack(outcome, button = null) {
   const parsed = parseForm(form);
   const previous = session.rawInputsByStep[session.currentStepKey] ?? {};
   const raw = {
+    profileId: parsed.profileId ?? previous.profileId ?? "unarmed",
     rollMode: parsed.rollMode || previous.rollMode || "normal",
     firstD20: parsed.firstD20 ?? previous.firstD20 ?? "",
     secondD20: parsed.secondD20 ?? previous.secondD20 ?? "",
@@ -976,6 +1086,7 @@ function submitAttack(outcome, button = null) {
   session.dirty = true;
   session.error = "";
   const values = {
+    profileId: raw.profileId,
     rollMode: raw.rollMode,
     firstD20: raw.firstD20,
     secondD20: raw.secondD20,
@@ -1463,7 +1574,10 @@ function submitCommand() {
   session.submitting = true;
   let result;
   const id = session.scenarioId;
-  const operation = operationId(`apply:${id}`);
+  const activeRest = getState().monk?.functionalRuntime?.rest;
+  const operation = session.command?.restStage === "hit-die"
+    ? operationId(`hit-die:${session.command.restId}:${Number(activeRest?.hitDiceSpent ?? 0) + 1}`)
+    : operationId(`apply:${id}`);
   if (id === "mystic-regeneration") {
     result = commitRegeneration(session.owner, values.dieResult, operation, {
       confirmNoHealing: values.confirmNoHealing === true,
@@ -1561,6 +1675,40 @@ function submitCommand() {
     });
   } else if (id === "resource-correction") {
     result = correctSaraResource(session.owner, values.resourceId, values.value, operation);
+  } else if (id.startsWith("potion-use:")) {
+    result = useSaraPotion(session.owner, {
+      id: operation,
+      potionId: currentCommand.potionId,
+      itemId: currentCommand.itemId,
+      target: values.target,
+      sum: values.sum,
+      intentionalWaste: values.intentionalWaste === true,
+    });
+  } else if (id === "completed-rest") {
+    session.pendingRestId ??= createId("rest");
+    result = completeSaraRest(session.owner, {
+      id: operation,
+      restId: session.pendingRestId,
+      kind: values.kind,
+    });
+  } else if (session.command?.restStage === "hit-die") {
+    result = spendSaraHitDie(session.owner, {
+      id: operation,
+      restId: session.command.restId,
+      roll: values.roll,
+    });
+  } else if (session.command?.restStage === "edit") {
+    const choices = values.add === "ll-monk:divine-light"
+      ? { clericCantripIds: [values.cantrip1, values.cantrip2] }
+      : values.add === "ll-monk:warrior-adept"
+        ? { styleId: values.styleId } : {};
+    result = replaceSaraRestTechnique(session.owner, {
+      id: operation,
+      restId: currentCommand.restId,
+      remove: values.remove,
+      add: values.add,
+      choices,
+    });
   } else {
     result = { status: "rejected", reason: "Для этой команды ещё нет подключённого исполнителя." };
   }
@@ -1585,8 +1733,31 @@ function submitCommand() {
   session.error = "";
   session.status = result.persistence?.ok === false ? "Применено, но не сохранено." : "";
   session.currentStep = id === "character-roll" ? "roll-result" : "command-result";
+  if (id === "completed-rest" && result.outcome?.phase === "hit-dice") {
+    session.scenarioId = `rest-hit-die:${result.outcome.restId}`;
+    session.command = getCommandDescriptor(getState(), session.scenarioId);
+    session.currentStep = "command-input";
+    session.resultMessage = `Короткий отдых завершён. Ци восстановлена до ${result.outcome.ki}; лечение костями хитов необязательно.`;
+    session.rawInputsByStep[stepKey("command-input", session.scenarioId)] = {};
+  } else if (id === "completed-rest" && result.outcome?.phase === "replacement-offer") {
+    session.scenarioId = `rest-replacement:offer:${result.outcome.restId}`;
+    session.command = getCommandDescriptor(getState(), session.scenarioId);
+    session.currentStep = "command-input";
+    session.resultMessage = "Продолжительный отдых завершён. Доступно одно право замены обычной техники.";
+  } else if (session.command?.restStage === "hit-die") {
+    const hitDiceSpent = Number(getState().monk?.functionalRuntime?.rest?.hitDiceSpent ?? 0);
+    session.resultMessage = `Кость ${result.outcome.roll} + Телосложение ${result.outcome.constitutionModifier >= 0 ? "+" : ""}${result.outcome.constitutionModifier}: полезное лечение ${result.outcome.usefulHealing} HP; осталось ${result.outcome.remaining}.`;
+    session.currentStep = "command-input";
+    session.currentStepKey = stepKey("command-input", `${id}:${hitDiceSpent + 1}`);
+    session.command = getCommandDescriptor(getState(), id);
+    session.rawInputsByStep[session.currentStepKey] = {};
+  }
   session.rollRecord = id === "character-roll" ? result.record : null;
-  session.currentStepKey = stepKey(session.currentStep, session.scenarioId);
+  if (!["completed-rest"].includes(id) && session.command?.restStage !== "hit-die") {
+    session.currentStepKey = stepKey(session.currentStep, session.scenarioId);
+  } else if (id === "completed-rest") {
+    session.currentStepKey = stepKey(session.currentStep, session.scenarioId);
+  }
   session.canReturnMissile = result.outcome?.techniqueResult?.canCatch === true &&
     id === "deflect-missile" && values.mode === "weapon";
   session.canDeflectCounter = result.outcome?.techniqueResult?.canCounterattack === true &&
@@ -2049,6 +2220,57 @@ function handleAction(action, button = null) {
     submitDamage();
   } else if (action === "apply-command") {
     submitCommand();
+  } else if (action === "edit-rest-replacement" &&
+      session.command?.restStage === "offer") {
+    session.scenarioId = `rest-replacement:edit:${session.command.restId}`;
+    session.command = getCommandDescriptor(getState(), session.scenarioId);
+    session.currentStepKey = stepKey("command-input", session.scenarioId);
+    session.rawInputsByStep[session.currentStepKey] = {};
+    session.error = "";
+    render();
+  } else if (action === "cancel-rest-replacement" &&
+      session.command?.restStage === "edit") {
+    session.scenarioId = `rest-replacement:offer:${session.command.restId}`;
+    session.command = getCommandDescriptor(getState(), session.scenarioId);
+    session.currentStepKey = stepKey("command-input", session.scenarioId);
+    session.error = "";
+    render();
+  } else if (action === "decline-rest-replacement" &&
+      session.command?.restStage === "offer" && requireOwner()) {
+    const restId = session.command.restId;
+    session.submitting = true;
+    const result = declineSaraRestReplacement(session.owner, {
+      id: operationId(`decline-rest:${restId}`),
+      restId,
+    });
+    session.submitting = false;
+    if (result.status !== "applied") setError(result.reason);
+    else {
+      refreshWorkspaceOwnerRevision();
+      session.resultMessage = "Замена техники отклонена. Остальные последствия отдыха сохранены.";
+      session.currentStep = "command-result";
+      session.currentStepKey = stepKey("command-result", restId);
+    }
+    session.appliedUnsaved = result.status === "applied" && result.persistence?.ok === false;
+    render();
+  } else if (action === "finish-short-rest" &&
+      session.command?.restStage === "hit-die" && requireOwner()) {
+    const restId = session.command.restId;
+    session.submitting = true;
+    const result = finishSaraShortRest(session.owner, {
+      id: operationId(`finish-short-rest:${restId}`),
+      restId,
+    });
+    session.submitting = false;
+    if (result.status !== "applied") setError(result.reason);
+    else {
+      refreshWorkspaceOwnerRevision();
+      session.resultMessage = "Лечение короткого отдыха завершено.";
+      session.currentStep = "command-result";
+      session.currentStepKey = stepKey("command-result", restId);
+    }
+    session.appliedUnsaved = result.status === "applied" && result.persistence?.ok === false;
+    render();
   } else if (action === "return-missile") {
     openMissileReturnForm();
   } else if (action === "decline-return-missile") {

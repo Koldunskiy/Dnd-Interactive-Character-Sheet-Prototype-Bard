@@ -320,6 +320,10 @@ function renderInventoryItemCard(item, expandedItemIds = [], isSara = false) {
             ${Number(item.quantity ?? 0) <= 0 ? "disabled" : ""}>−1</button>
           <button type="button" class="btn btn--utility" data-action="inventory-quantity-adjust"
             data-item-id="${escapeHtml(itemId)}" data-quantity-delta="1">+1</button>
+          ${item.consumable?.kind === "healing-potion" && Number(item.quantity ?? 0) > 0
+            ? `<button type="button" class="btn btn--primary" data-action="open-potion-use"
+                data-command-id="potion-use:${escapeHtml(item.consumable.potionId)}:${encodeURIComponent(itemId)}">
+                Использовать · записать лечение</button>` : ""}
           <button
             type="button"
             class="btn btn--utility"

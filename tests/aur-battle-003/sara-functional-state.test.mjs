@@ -3,14 +3,19 @@ import assert from "node:assert/strict";
 import { sara } from "../../data/sara.js";
 import { getCharacterDescriptor } from "../../scripts/characters.js";
 import { getDerivedStats } from "../../scripts/calculations.js";
-import { changeQuantity } from "../../scripts/sara-functional.js";
-import { changeSaraItemQuantity } from "../../scripts/actions/sara-functional.js";
+import { adoptStarter, changeQuantity, previewPotion } from "../../scripts/sara-functional.js";
+import {
+  changeSaraItemQuantity,
+  useSaraPotion,
+} from "../../scripts/actions/sara-functional.js";
 import {
   commitFunctionalSessionOperation,
   getSessionContext,
   getState,
   openCharacterSession,
   retryPersistedState,
+  updateState,
+  updateFunctionalSessionState,
 } from "../../scripts/state.js";
 import { loadCharacterState } from "../../scripts/storage.js";
 
@@ -106,6 +111,107 @@ test("functional quantity receipts replay without mutation and reject payload re
   assert.equal(conflict.status, "rejected");
   assert.match(conflict.reason, /different request/i);
   assert.equal(getState().inventory.items.find((entry) => entry.id === item.id).quantity, 23);
+});
+
+test("functional apply and replay expose the same outcome, and failed candidates roll back", (t) => {
+  installStorage(t);
+  openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+  const intent = { id: "quantity-outcome", kind: "quantity", payload: {
+    itemId: "darts", mode: "delta", value: 2,
+  } };
+  const first = updateFunctionalSessionState(getSessionContext(), intent, (draft) => {
+    const item = draft.inventory.items.find((entry) => entry.id === "darts");
+    const before = item.quantity;
+    item.quantity += 2;
+    return { itemId: item.id, before, after: item.quantity };
+  });
+  assert.equal(first.status, "applied");
+  assert.deepEqual(first.outcome, { itemId: "darts", before: 20, after: 22 });
+
+  const replay = updateFunctionalSessionState(getSessionContext(), intent, () => {
+    throw new Error("receipt replay must not execute mutation");
+  });
+  assert.equal(replay.status, "replayed");
+  assert.deepEqual(replay.outcome, first.outcome);
+  assert.equal(getState().inventory.items.find((entry) => entry.id === "darts").quantity, 22);
+
+  const beforeRevision = getSessionContext().stateRevision;
+  const rejected = commitFunctionalSessionOperation(getSessionContext(), "candidate-throws",
+    (candidate) => {
+      candidate.inventory.items.find((entry) => entry.id === "darts").quantity = 0;
+      throw new Error("candidate failed");
+    });
+  assert.equal(rejected.status, "rejected");
+  assert.equal(getSessionContext().stateRevision, beforeRevision);
+  assert.equal(getState().inventory.items.find((entry) => entry.id === "darts").quantity, 22);
+  assert.equal(Object.hasOwn(getState().monk.functionalRuntime.operations, "candidate-throws"), false);
+});
+
+test("durable quantity receipt reloads and replays without another stock change", (t) => {
+  const { storage } = installStorage(t);
+  openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+  const request = { id: "durable-dart-stock", itemId: "darts", mode: "delta", value: 1 };
+  const first = changeSaraItemQuantity(getSessionContext(), request);
+  assert.equal(first.status, "applied");
+  assert.equal(first.persistence.ok, true);
+  const saved = storage.getItem(getCharacterDescriptor("sara-velaris").storageKey);
+  assert.ok(saved);
+
+  const reloaded = openCharacterSession("sara-velaris");
+  assert.equal(reloaded.status, "loaded");
+  assert.equal(getState().inventory.items.find((item) => item.id === "darts").quantity, 21);
+  const replay = changeSaraItemQuantity(getSessionContext(), request);
+  assert.equal(replay.status, "replayed");
+  assert.equal(getState().inventory.items.find((item) => item.id === "darts").quantity, 21);
+});
+
+test("potion route applies the matching bottle, reports outcome, and replays safely", (t) => {
+  installStorage(t);
+  openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+  updateState((draft) => {
+    draft.combat.hp.current = 1;
+    draft.inventory.items.find((item) => item.id === "healing-potion").quantity = 1;
+    return draft;
+  });
+  const request = {
+    id: "potion-route-use-1",
+    potionId: "healing-potion",
+    itemId: "healing-potion",
+    target: "self",
+    sum: "7",
+  };
+  const before = getState().combat.hp.current;
+  const applied = useSaraPotion(getSessionContext(), request);
+  assert.equal(applied.status, "applied");
+  assert.equal(applied.outcome.sum, 7);
+  assert.equal(applied.outcome.healing, 9);
+  assert.equal(getState().combat.hp.current, before + 9);
+  assert.equal(getState().inventory.items.find((item) => item.id === "healing-potion").quantity, 0);
+
+  const replay = useSaraPotion(getSessionContext(), request);
+  assert.equal(replay.status, "replayed");
+  assert.deepEqual(replay.outcome, applied.outcome);
+  assert.equal(getState().combat.hp.current, before + 9);
+});
+
+test("potion binding cannot redirect a potion to darts and deleted stock is not refilled", (t) => {
+  installStorage(t);
+  openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+  const corrupted = structuredClone(getState());
+  corrupted.inventory.starterManifest.bindings["greater-healing-potion"] = "darts";
+  assert.throws(() => previewPotion(corrupted, {
+    potionId: "greater-healing-potion",
+    itemId: "darts",
+    target: "self",
+    sum: 10,
+  }, getDerivedStats));
+  assert.throws(() => adoptStarter(corrupted), /Conflicting starter bindings/i);
+
+  const deleted = structuredClone(getState());
+  deleted.inventory.items = deleted.inventory.items.filter((item) => item.id !== "healing-potion");
+  const adoption = adoptStarter(deleted);
+  assert.equal(adoption.changed, false);
+  assert.equal(adoption.state.inventory.items.some((item) => item.id === "healing-potion"), false);
 });
 
 test("inventory quantity adapter commits a guarded Sara quantity operation", (t) => {

@@ -261,6 +261,19 @@ function bindActionButtons(root = document) {
       const target = event.currentTarget;
       if (!isActiveSheetTarget(target)) return;
       const action = target.dataset.action;
+      if (["short-rest", "long-rest"].includes(action) &&
+          getState().profile?.id === "sara-velaris") {
+        const opened = openSaraBattleCommand("completed-rest", target, {
+          restKind: action === "short-rest" ? "short" : "long",
+        });
+        if (!opened.ok) showPersistenceWarning(`Задачу отдыха нельзя открыть: ${opened.reason}`);
+        return;
+      }
+      if (action === "open-potion-use") {
+        const opened = openSaraBattleCommand(target.dataset.commandId, target);
+        if (!opened.ok) showPersistenceWarning(`Задачу нельзя открыть: ${opened.reason}`);
+        return;
+      }
       if (action === "inventory-quantity-adjust" &&
           getState().profile?.id === "sara-velaris") {
         const delta = Number(target.dataset.quantityDelta);

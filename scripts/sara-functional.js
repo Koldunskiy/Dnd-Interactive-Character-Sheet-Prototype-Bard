@@ -1,8 +1,8 @@
 /**
- * Proposed pure reference algorithms, NOT an applied production patch.
- * No imports, I/O, clocks, random dice, session store or persistence.
- * Functions return new state; production adapters retain ownership/revision guards.
- * derive(state) must provide the current production derived-stat shape.
+ * Pure functional operations for Sara's production state.
+ * No DOM, storage, clocks, randomness, or global state access. Mutations return
+ * isolated candidate states; application adapters own session/revision checks
+ * and persistence. Derivation is supplied by the production rules layer.
  */
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const plain = v => v !== null && typeof v === 'object' &&
@@ -100,13 +100,15 @@ const ALIASES = {
   'healing-potion':['potion of healing'], 'greater-healing-potion':['potion of greater healing'],
   'superior-healing-potion':['potion of superior healing'], 'supreme-healing-potion':['potion of supreme healing'],
 };
-function compatible(actual, canonical) {
-  if (canonical.weapon && actual.weapon != null) {
+function compatible(actual, canonical, { allowMissingSemantic = false } = {}) {
+  if (canonical.weapon && actual.type != null && actual.type !== 'weapon') return false;
+  if (canonical.consumable && actual.type != null && actual.type !== 'consumable') return false;
+  if (canonical.weapon && (actual.weapon != null || !allowMissingSemantic)) {
     if (!plain(actual.weapon)) return false;
     if (actual.weapon.category != null && actual.weapon.category !== canonical.weapon.category) return false;
     if (actual.weapon.damageDice != null && actual.weapon.damageDice !== canonical.weapon.damageDice) return false;
   }
-  if (own(POTIONS,canonical.id) && actual.consumable != null) {
+  if (canonical.consumable && (actual.consumable != null || !allowMissingSemantic)) {
     if (!plain(actual.consumable)) return false;
     if (actual.consumable.potionId != null && actual.consumable.potionId !== canonical.id) return false;
     if (actual.consumable.kind != null && actual.consumable.kind !== 'healing-potion') return false;
@@ -120,9 +122,19 @@ export function validateStarterManifest(s) {
   object(m.bindings,'manifest bindings');
   assert(Array.isArray(m.preservedAbsences) && m.preservedAbsences.every(x => typeof x === 'string'),'Invalid preserved absences');
   assert(Array.isArray(m.conflicts),'Invalid manifest conflicts');
-  for (const key of Object.keys(m.bindings)) text(m.bindings[key],'bound item ID');
+  const slots = new Set(starterItems().map(item => item.id));
+  const boundIds = new Map();
+  for (const key of Object.keys(m.bindings)) {
+    assert(slots.has(key), `Unknown starter manifest slot: ${key}`);
+    const itemId = text(m.bindings[key],'bound item ID');
+    if (boundIds.has(itemId)) {
+      assert(false, `Conflicting starter bindings for item ${itemId}`);
+    }
+    boundIds.set(itemId, key);
+  }
   for (const c of m.conflicts) {
     object(c,'manifest conflict'); text(c.slot,'conflict slot'); text(c.reason,'conflict reason');
+    assert(slots.has(c.slot),'Unknown starter manifest conflict slot');
     assert(Array.isArray(c.candidates) && c.candidates.every(x => typeof x === 'string'),'Invalid conflict candidates');
   }
 }
@@ -143,9 +155,12 @@ export function adoptStarter(state) {
     }
     if (candidates.length===1) {
       const actual=candidates[0];
-      if (typeof actual.id !== 'string' || !actual.id || !compatible(actual,canonical)) {
+      if (typeof actual.id !== 'string' || !actual.id ||
+          !compatible(actual,canonical,{allowMissingSemantic:true})) {
         m.conflicts.push({slot:canonical.id,reason:'incompatible-item',candidates:ids}); continue;
       }
+      if (canonical.weapon && actual.weapon == null) actual.weapon=clone(canonical.weapon);
+      if (canonical.consumable && actual.consumable == null) actual.consumable=clone(canonical.consumable);
       put(m.bindings,canonical.id,actual.id); continue;
     }
     if (unfilled || own(POTIONS,canonical.id)) {
@@ -202,7 +217,10 @@ function boundItem(d,slot,id) {
   validateStarterManifest(d);
   const binding=d.inventory?.starterManifest?.bindings;
   assert(binding && own(binding,slot) && binding[slot]===id,'Canonical item binding required');
-  return itemById(d,id);
+  const item=itemById(d,id);
+  const canonical=starterItems().find(entry=>entry.id===slot);
+  assert(canonical && compatible(item,canonical),'Bound item has incompatible canonical semantics');
+  return item;
 }
 export function changeQuantity(s, request) {
   const mode=request.mode;assert(['delta','set'].includes(mode),'Quantity mode required');
@@ -343,19 +361,53 @@ export function declineRestReplacement(s,request) {
   });
 }
 export function replaceRestTechnique(s,request,validateCandidate) {
-  const p={restId:text(request.restId,'rest ID'),remove:text(request.remove,'removed technique'),add:text(request.add,'added technique')};
+  const remove=text(request.remove,'removed technique'),add=text(request.add,'added technique');
+  const choices=request.choices??{};
+  object(choices,'technique choices');
+  const allowedChoiceKeys=add==='ll-monk:divine-light'?['clericCantripIds']:
+    add==='ll-monk:warrior-adept'?['styleId']:[];
+  assert(Object.keys(choices).every(key=>allowedChoiceKeys.includes(key)),
+    'Unsupported subchoice for selected technique');
+  const normalizedChoices=clone(choices);
+  if (add==='ll-monk:divine-light' && own(normalizedChoices,'clericCantripIds')) {
+    assert(Array.isArray(normalizedChoices.clericCantripIds) &&
+      normalizedChoices.clericCantripIds.every(x=>typeof x==='string'),
+    'Invalid Divine Light subchoices');
+  }
+  if (add==='ll-monk:warrior-adept' && own(normalizedChoices,'styleId')) {
+    text(normalizedChoices.styleId,'Warrior Adept style');
+  }
+  const p={restId:text(request.restId,'rest ID'),remove,add,choices:normalizedChoices};
   assert(typeof validateCandidate==='function','Production selection validator required');
   return recordedMutation(s,{id:request.id,kind:'rest-replacement',payload:p},d=>{
     const r=d.monk.functionalRuntime.rest;assert(r?.id===p.restId,'Rest window unavailable');
     const e=(d.monk.replacementEntitlements??[]).find(x=>x.restId===p.restId&&eligibleEntitlement(x,d));assert(e,'No eligible rest entitlement');
     const list=d.monk.ordinaryTechniqueIds;assert(Array.isArray(list)&&list.filter(x=>x===p.remove).length===1,'Ordinary removed technique required');
     assert(p.remove!==p.add&&!list.includes(p.add)&&!Object.values(d.monk.signatureTechniqueSlots??{}).includes(p.add),'Duplicate or unchanged technique');
-    const signatures=stable(d.monk.signatureTechniqueSlots??{}),choices=stable(d.monk.techniqueChoices??{});
+    const signatures=stable(d.monk.signatureTechniqueSlots??{});
     const candidate=clone(d);candidate.monk.ordinaryTechniqueIds[list.indexOf(p.remove)]=p.add;
-    const verdict=validateCandidate(clone(candidate),{remove:p.remove,add:p.add,entitlement:clone(e)});
+    if (Object.keys(p.choices).length) {
+      candidate.monk.techniqueChoices??={};
+      candidate.monk.techniqueChoices[p.add]={
+        ...(candidate.monk.techniqueChoices[p.add]??{}),
+        ...clone(p.choices),
+      };
+    }
+    const verdict=validateCandidate(clone(candidate),{
+      remove:p.remove,add:p.add,choices:clone(p.choices),entitlement:clone(e),
+    });
     assert(verdict?.ok===true,verdict?.reason??'Technique prerequisites rejected');
-    assert(stable(candidate.monk.signatureTechniqueSlots??{})===signatures&&stable(candidate.monk.techniqueChoices??{})===choices,'Validator must not alter other selections');
+    assert(stable(candidate.monk.signatureTechniqueSlots??{})===signatures,'Validator must not alter signature selections');
+    const unrelatedBefore=clone(d.monk.techniqueChoices??{});
+    const unrelatedAfter=clone(candidate.monk.techniqueChoices??{});
+    delete unrelatedBefore[p.add];
+    delete unrelatedAfter[p.add];
+    assert(stable(unrelatedAfter)===stable(unrelatedBefore),'Replacement changed unrelated technique choices');
     d.monk.ordinaryTechniqueIds=[...candidate.monk.ordinaryTechniqueIds];e.consumed=true;
+    if (Object.keys(p.choices).length) {
+      d.monk.techniqueChoices??={};
+      d.monk.techniqueChoices[p.add]=clone(candidate.monk.techniqueChoices[p.add]);
+    }
     d.monk.replacementEvents??=[];d.monk.replacementEvents.push({id:e.id,type:'rest',consumed:true});
     d.monk.ordinaryReplacementCredit=0;r.phase='finished';return {...p,consumed:true};
   });

@@ -278,6 +278,18 @@ function buildBattleConsole(state) {
     <footer class="action-workspace__footer"><div data-workspace-footer></div>
       <p data-workspace-status role="status" aria-live="polite"></p></footer>
   </div>`;
+  const savedRest = state.monk?.functionalRuntime?.rest;
+  const restResumeId = savedRest?.kind === "short" && savedRest.phase === "hit-dice"
+    ? `rest-hit-die:${savedRest.id}`
+    : savedRest?.kind === "long" && ["replacement-offer", "replacement-edit"].includes(savedRest.phase)
+      ? `rest-replacement:${savedRest.phase === "replacement-edit" ? "edit" : "offer"}:${savedRest.id}`
+      : null;
+  const restTasks = `<section class="battle-secondary-tools" aria-label="Отдых">
+    <button type="button" class="btn btn--utility" data-battle-command-open="completed-rest">
+      Записать завершённый отдых</button>
+    ${restResumeId ? `<button type="button" class="btn btn--utility"
+      data-battle-command-open="${escapeHtml(restResumeId)}">Продолжить сохранённое восстановление</button>` : ""}
+  </section>`;
   const mainAction = activeWorkspace ? "" : primaryFooter;
   return {
     phase: view.phase,
@@ -288,7 +300,7 @@ function buildBattleConsole(state) {
     </header>`,
     budget,
     navigation,
-    phaseBody: `${phaseBody}${commandContent}`,
+    phaseBody: `${phaseBody}${commandContent}${restTasks}`,
     pending: `${saveRecovery.length ? `<section class="combat-save-recovery" aria-label="Требуется повторное сохранение">
       ${saveRecovery.map(renderPlayerWork).join("")}</section>` : ""}
       ${workPanel}`,

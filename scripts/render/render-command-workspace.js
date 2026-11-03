@@ -6,6 +6,13 @@ import { calculateCharacterRoll } from "../rolls/calculations.js";
 import { getSaraRollBreakdown } from "../rolls/providers/sara.js";
 import { getWorkspaceHost } from "../workspace/host.js";
 import { renderTechniqueApplicationFields } from "./technique-application-form.js";
+import { POTIONS } from "../sara-functional.js";
+import { previewSaraPotion } from "../actions/sara-functional.js";
+import {
+  CLERIC_CANTRIPS,
+  MONK_TECHNIQUES,
+  WARRIOR_ADEPT_STYLES,
+} from "../../data/monk-techniques.js";
 
 function escapeHtml(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
@@ -38,6 +45,59 @@ function renderCommandForm(session, state) {
     numberField(name, label, min, max, draft[name] ?? "");
   const check = (name, label) => checkbox(name, label, draft[name] === true);
   const select = (name, label, options) => selectField(name, label, options, draft[name] ?? "");
+  if (id.startsWith("potion-use:")) {
+    const potion = POTIONS[session.command?.potionId];
+    if (!potion) return `<p class="workspace-error" role="alert">Профиль зелья недоступен.</p>`;
+    const target = draft.target ?? "self";
+    const fullHp = Number(state.combat?.hp?.current) >= getDerivedStats(state).maxHitPoints;
+    return `<p>Физически бросьте ${potion.dice}к4 и введите их сумму. Приложение добавит +${potion.bonus}.</p>
+      ${select("target", "Кому применить", [["self", "Себе"], ["other", "Другой цели"]])}
+      ${number("sum", "Сумма физических костей", potion.dice, potion.dice * 4)}
+      ${target === "self" && fullHp
+        ? check("intentionalWaste", "Сознательно потратить зелье без полезного лечения")
+        : ""}
+      <section class="workspace-entry-result workspace-damage-result" aria-live="polite">
+        <span class="workspace-attack-result__label">ПРЕДПРОСМОТР</span>
+        <output data-potion-healing>—</output>
+        <span data-potion-summary>Введите сумму физических костей.</span>
+      </section>`;
+  }
+  if (id === "completed-rest") {
+    return `<p>Отдых считается завершённым по игровому времени. Условия отдыха и медитации подтверждаются самим игроком.</p>
+      ${select("kind", "Завершённый отдых", [
+        ["short", "Короткий отдых"],
+        ["long", "Продолжительный отдых"],
+      ])}`;
+  }
+  if (session.command?.restStage === "hit-die") {
+    return `<p>Текущий запас: ${state.combat.hitDice.remaining} кость хитов к${state.combat.hitDie}. Следующая кость вводится отдельно.</p>
+      ${number("roll", `Физический результат к${state.combat.hitDie}`, 1, state.combat.hitDie)}
+      <p>Текущее Телосложение и Амулет учитываются при применении. Предыдущий бросок не повторяется.</p>`;
+  }
+  if (session.command?.restStage === "offer") {
+    return `<p>Заменить одну обычную технику? Право относится только к этому завершённому отдыху.</p>`;
+  }
+  if (session.command?.restStage === "edit") {
+    const level = Number(state.profile?.level ?? 1);
+    const selected = new Set(state.monk?.ordinaryTechniqueIds ?? []);
+    const additions = MONK_TECHNIQUES.filter((entry) =>
+      entry.category !== "passive" && entry.minimumMonkLevel <= level &&
+      !selected.has(entry.id) &&
+      !Object.values(state.monk?.signatureTechniqueSlots ?? {}).includes(entry.id));
+    return `<p>Выберите ровно одну обычную технику для удаления и одну для добавления.</p>
+      ${select("remove", "Заменить обычную технику", (state.monk?.ordinaryTechniqueIds ?? [])
+        .map((techniqueId) => [techniqueId, MONK_TECHNIQUES.find((entry) => entry.id === techniqueId)?.nameRu ?? techniqueId]))}
+      ${select("add", "Новая обычная техника", additions.map((entry) => [entry.id, entry.nameRu]))}
+      ${select("styleId", "Стиль для «Воинского адепта» (если выбран)", [
+        ...WARRIOR_ADEPT_STYLES.map((style) => [style.id, style.name]),
+      ])}
+      ${select("cantrip1", "Заговор «Сияния божества» 1 (если выбрано)", [
+        ...CLERIC_CANTRIPS.map((spell) => [spell.id, spell.name]),
+      ])}
+      ${select("cantrip2", "Заговор «Сияния божества» 2 (если выбрано)", [
+        ...CLERIC_CANTRIPS.map((spell) => [spell.id, spell.name]),
+      ])}`;
+  }
   if (id.startsWith("monk-technique:")) {
     return `<p>${escapeHtml(session.command?.trigger ?? "")}</p>
       ${session.command?.technique
@@ -294,6 +354,7 @@ export function renderWorkspaceRollPreview(session, state) {
     formulaNode.textContent = preview.ok
       ? `${preview.chosenD20} ${formatRollModifier(preview.totalModifier)} = ${preview.total}` : "";
   }
+
   if (selectedNode) {
     selectedNode.textContent = preview.ok
       ? `Выбрана кость ${preview.chosenD20}${preview.rawD20Rolls.length > 1
@@ -318,6 +379,34 @@ export function renderWorkspaceRollPreview(session, state) {
     '[data-workspace-action="record-roll"], [data-workspace-action$="-preview"]',
   )) {
     button.disabled = !preview.ok || session.submitting || session.appliedUnsaved;
+  }
+}
+
+export function renderWorkspacePotionPreview(session, state) {
+  const root = getWorkspaceHost();
+  if (!root || session.currentStep !== "command-input" ||
+      !session.scenarioId?.startsWith("potion-use:")) return;
+  const draft = session.rawInputsByStep?.[session.currentStepKey] ?? {};
+  const output = root.querySelector("[data-potion-healing]");
+  const summary = root.querySelector("[data-potion-summary]");
+  if (!output || !summary) return;
+  try {
+    const result = previewSaraPotion(state, {
+      potionId: session.command.potionId,
+      itemId: session.command.itemId,
+      target: draft.target ?? "self",
+      sum: draft.sum,
+      intentionalWaste: draft.intentionalWaste === true,
+    });
+    output.textContent = `+${result.healing} HP`;
+    summary.textContent = result.target === "self"
+      ? `HP ${result.hpBefore} → ${result.hpAfter}; полезное лечение ${result.usefulHealing}.`
+      : `Потенциальное лечение другой цели: ${result.healing} HP; HP Сары не меняются.`;
+    summary.dataset.state = "ready";
+  } catch (error) {
+    output.textContent = "—";
+    summary.textContent = error?.message ?? "Некорректный ввод.";
+    summary.dataset.state = "invalid";
   }
 }
 
@@ -431,11 +520,23 @@ export function renderCommandWorkspace(session, state) {
     : session.currentStep === "command-input" && isTechniqueApplication
     ? `<button type="button" class="btn btn--primary" data-workspace-action="apply-command"
         ${session.submitting || session.appliedUnsaved || unavailableReason ? "disabled" : ""}>Применить · ${escapeHtml(session.command?.resourceCost ?? "по правилу")}</button>`
+    : session.currentStep === "command-input" && session.command?.restStage === "offer"
+      ? `<button type="button" class="btn btn--utility" data-workspace-action="decline-rest-replacement">Нет, завершить отдых</button>
+        <button type="button" class="btn btn--primary" data-workspace-action="edit-rest-replacement">Да, выбрать технику</button>`
+    : session.currentStep === "command-input" && session.command?.restStage === "hit-die"
+      ? `<button type="button" class="btn btn--utility" data-workspace-action="finish-short-rest">Закончить лечение</button>
+        <button type="button" class="btn btn--primary" data-workspace-action="apply-command"
+          ${session.submitting || session.appliedUnsaved || unavailableReason ? "disabled" : ""}>Потратить кость хитов</button>`
+    : session.currentStep === "command-input" && session.command?.restStage === "edit"
+      ? `<button type="button" class="btn btn--utility" data-workspace-action="cancel-rest-replacement">Назад к предложению</button>
+        <button type="button" class="btn btn--primary" data-workspace-action="apply-command"
+          ${session.submitting || session.appliedUnsaved || unavailableReason ? "disabled" : ""}>Применить замену</button>`
     : session.currentStep === "command-input" && session.scenarioId === "character-roll"
     ? renderCharacterRollFooter(session)
     : session.currentStep === "command-input"
     ? `<button type="button" class="btn btn--primary" data-workspace-action="apply-command"
-        ${session.submitting || session.appliedUnsaved || unavailableReason ? "disabled" : ""}>Подтвердить и записать</button>`
+        ${session.submitting || session.appliedUnsaved || unavailableReason ? "disabled" : ""}>${session.scenarioId?.startsWith("potion-use:")
+          ? "Применить зелье · записать итог" : "Подтвердить и записать"}</button>`
     : session.currentStep === "missile-return"
       ? `<button type="button" class="btn btn--primary" data-workspace-action="submit-missile-return"
           ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Вернуть снаряд · 1 ци</button>`

@@ -12,6 +12,7 @@ import {
   calculateAttackDamage,
   parsePhysicalInteger
 } from "../combat/sara-combat.js";
+import { closeRestWindow } from "../sara-functional.js";
 
 function isSara(character) {
   return character.profile?.id === "sara-velaris" &&
@@ -126,6 +127,7 @@ export function recordSaraIncomingDamage(context, damage, { confirmed = false, o
     if (!parsedDamage.ok) throw new Error(parsedDamage.reason);
     outcome = applySaraDamage(draft, parsedDamage.value);
     if (!outcome.ok) throw new Error(outcome.reason);
+    closeRestWindow(draft, "incoming-damage");
     return draft;
   }, {
     operationId,
@@ -253,6 +255,7 @@ function applyToCharacter(character, techniqueId, input) {
     character.monk.techniqueRuntime.practicedUsedThisTurn = true;
   }
   markActivation(character, technique, { countTurnBudget: !outsideRegeneration });
+  closeRestWindow(character, `technique:${techniqueId}`);
   if (technique.limit === "once-per-turn") {
     character.monk.techniqueRuntime[techniqueId] = { ...runtime, usedThisTurn: true };
   }

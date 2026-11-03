@@ -2,6 +2,7 @@ import { parsePhysicalInteger } from "../combat/physical-input.js";
 import { BATTLE_HISTORY_LIMIT, getBattleConsole } from "./model.js";
 import { getSaraInitiativeSnapshot } from "./providers/sara.js";
 import { getDerivedStats } from "../calculations.js";
+import { closeRestWindow } from "../sara-functional.js";
 import { getEffectiveTechniqueIds } from "../selectors/techniques.js";
 
 let battleSequence = 0;
@@ -71,6 +72,7 @@ export function startBattle(character, input, { id = null, now = new Date().toIS
   const initiativeSnapshot = getSaraInitiativeSnapshot(character);
   if (!initiativeSnapshot.ok) return reject(initiativeSnapshot.reason);
   const initiativeSources = initiativeSnapshot.sources;
+  closeRestWindow(character, "battle-started");
   closeAllOpenAttacks(character, "battle-started");
   if (character.monk?.techniqueRuntime?.deflectContinuation) {
     character.monk.techniqueRuntime.deflectContinuation = null;

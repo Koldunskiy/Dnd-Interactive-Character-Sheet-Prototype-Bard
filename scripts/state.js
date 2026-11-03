@@ -195,25 +195,8 @@ export function updateSessionState(context, updater, {
 }
 
 export function updateFunctionalSessionState(context, intent, mutate, options = {}) {
-  if (!isCurrentSession(context)) return { status: "rejected", reason: "stale-session" };
-  if (context.stateRevision !== stateRevision) return { status: "rejected", reason: "stale-revision" };
-  let mutation;
-  try {
-    mutation = recordedMutation(state, intent, mutate);
-  } catch (error) {
-    return { status: "rejected", reason: error?.message ?? "operation-validation-failed" };
-  }
-  if (mutation.replayed) {
-    return {
-      status: "replayed",
-      revision: stateRevision,
-      outcome: mutation.outcome,
-    };
-  }
-  return updateSessionState(context, () => mutation.state, {
-    ...options,
-    operationId: intent.id,
-  });
+  return commitFunctionalSessionOperation(context, intent.id,
+    (candidate) => recordedMutation(candidate, intent, mutate), options);
 }
 
 export function commitFunctionalSessionOperation(context, operationId, execute, options = {}) {
@@ -221,11 +204,12 @@ export function commitFunctionalSessionOperation(context, operationId, execute, 
   if (context.stateRevision !== stateRevision) return { status: "rejected", reason: "stale-revision" };
   let result;
   try {
-    result = execute(state);
+    result = execute(cloneState(state));
   } catch (error) {
     return { status: "rejected", reason: error?.message ?? "operation-validation-failed" };
   }
-  if (!result || !result.state || typeof result.replayed !== "boolean") {
+  if (!result || !result.state || typeof result.replayed !== "boolean" ||
+      !Object.prototype.hasOwnProperty.call(result, "outcome")) {
     return { status: "rejected", reason: "invalid-functional-operation-result" };
   }
   if (result.replayed) {
@@ -235,10 +219,17 @@ export function commitFunctionalSessionOperation(context, operationId, execute, 
       outcome: result.outcome,
     };
   }
-  return updateSessionState(context, () => result.state, {
+  const receipts = result.state.monk?.functionalRuntime?.operations;
+  if (!receipts || !Object.prototype.hasOwnProperty.call(receipts, operationId) ||
+      !receipts[operationId]) {
+    return { status: "rejected", reason: "functional-operation-receipt-mismatch" };
+  }
+  const committed = updateSessionState(context, () => result.state, {
     ...options,
     operationId,
   });
+  if (committed.status !== "applied") return committed;
+  return { ...committed, outcome: cloneState(result.outcome) };
 }
 
 export function retryPersistedState() {

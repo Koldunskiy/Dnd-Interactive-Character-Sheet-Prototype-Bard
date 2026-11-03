@@ -25,6 +25,7 @@ import {
   techniqueTitle
 } from "../presentation/ru.js";
 import { isTechniqueEffectivelySelected } from "../selectors/techniques.js";
+import { eligibleEntitlement } from "../sara-functional.js";
 import { setPanelMarkup } from "./sara-dom.js";
 import { openSaraTechniqueApplication, getMinimizedWorkspaceSessions, resumeWorkspace } from "../workspace/controller.js";
 
@@ -199,7 +200,7 @@ export function renderTechniquesPanel(character) {
   const typeFilter = view.type;
   const entries = MONK_TECHNIQUES;
   const entitlements = (character.monk?.replacementEntitlements ?? [])
-    .filter((event) => !event.consumed);
+    .filter((event) => eligibleEntitlement(event, character));
   const entitlementId = view.entitlementEventId;
   const entitlement = entitlements.find((event) => event.id === entitlementId) ?? entitlements[0] ?? null;
   const thirdEye = character.monk?.techniqueRuntime?.["ll-monk:awaken-the-third-eye"] ?? {};
@@ -348,7 +349,8 @@ export function renderTechniquesPanel(character) {
         return;
       }
       if (target.matches("[data-technique-edit]")) {
-        const available = (currentState.monk?.replacementEntitlements ?? []).filter((item) => !item.consumed);
+        const available = (currentState.monk?.replacementEntitlements ?? [])
+          .filter((item) => eligibleEntitlement(item, currentState));
         const currentView = getTechniqueView(currentState, key);
         const currentEntitlement = available.find((item) => item.id === currentView.entitlementEventId) ?? available[0];
         if (!currentEntitlement) return;
@@ -366,7 +368,7 @@ export function renderTechniquesPanel(character) {
       }
       if (target.matches("[data-technique-rebuild]")) {
         const available = (currentState.monk?.replacementEntitlements ?? [])
-          .filter((item) => !item.consumed);
+          .filter((item) => eligibleEntitlement(item, currentState));
         const selectedEntitlement = available.find((item) =>
           item.id === pendingDrafts.get(key)?.draft?.entitlementEventId);
         const entitlement = selectedEntitlement ?? available[0];

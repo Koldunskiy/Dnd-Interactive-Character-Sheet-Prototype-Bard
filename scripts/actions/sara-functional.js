@@ -59,7 +59,7 @@ export function declineSaraRestReplacement(owner, request) {
 
 export function replaceSaraRestTechnique(owner, request) {
   return commit(owner, request, "sara-rest-replacement", (state) =>
-    replaceRestTechnique(state, request, (candidate, { remove, add, entitlement }) => {
+    replaceRestTechnique(state, request, (candidate, { remove, add, choices, entitlement }) => {
       const context = {
         characterId: owner.characterId,
         sessionGeneration: owner.sessionGeneration,
@@ -75,6 +75,12 @@ export function replaceSaraRestTechnique(owner, request) {
       draft.ordinaryTechniqueIds = [...candidate.monk.ordinaryTechniqueIds];
       draft.signatureTechniqueSlots = structuredClone(candidate.monk.signatureTechniqueSlots ?? {});
       draft.techniqueChoices = structuredClone(candidate.monk.techniqueChoices ?? {});
+      if (Object.keys(choices).length) {
+        draft.techniqueChoices[add] = {
+          ...(draft.techniqueChoices[add] ?? {}),
+          ...structuredClone(choices),
+        };
+      }
       const differences = validateTechniqueDraft(before, draft, context);
       if (differences.length) return { ok: false, reason: differences.join(" ") };
       if (!draft.ordinaryTechniqueIds.includes(add) || draft.ordinaryTechniqueIds.includes(remove)) {
