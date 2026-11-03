@@ -34,7 +34,7 @@ import {
   prepareWorkspaceCharacterTransition,
   prepareWorkspaceTabTransition,
   reconcileWorkspaceAfterStateChange,
-  workspaceHostIsOpen,
+  isWorkspaceOpen,
 } from "./workspace/controller.js";
 import { renderSpells } from "./render/render-spells.js";
 import { renderLorePanel } from "./render/render-lore.js";
@@ -747,7 +747,7 @@ function renderApp() {
   const spellsPanel = document.getElementById("spellsPanel");
   const page = document.querySelector(".page");
   if (page) page.toggleAttribute("data-task-open",
-    state.profile?.id === "sara-velaris" && workspaceHostIsOpen());
+    state.profile?.id === "sara-velaris" && isWorkspaceOpen());
 
   renderHeader(state, derived);
   syncThemePreferenceControl(state.profile?.id);
