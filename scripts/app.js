@@ -83,6 +83,7 @@ let activeTabsController = null;
 let switchingCharacter = false;
 let isSheetVisible = false;
 let saraFocusModeBound = false;
+const boundElements = new WeakSet();
 
 function updateCurrentSession(updater, metadata = null) {
   const context = getSessionContext();
@@ -211,7 +212,7 @@ function setByPathOnObject(target, path, value) {
 
 function bindEditableFields(root = document) {
   root.querySelectorAll("[data-bind]").forEach((element) => {
-    if (element.dataset.bound === "true") {
+    if (boundElements.has(element)) {
       return;
     }
 
@@ -237,13 +238,13 @@ function bindEditableFields(root = document) {
       setCurrentValue(path, value);
     });
 
-    element.dataset.bound = "true";
+    boundElements.add(element);
   });
 }
 
 function bindActionButtons(root = document) {
   root.querySelectorAll("[data-action]").forEach((element) => {
-    if (element.dataset.bound === "true") {
+    if (boundElements.has(element)) {
       return;
     }
 
@@ -288,13 +289,13 @@ function bindActionButtons(root = document) {
       }
     });
 
-    element.dataset.bound = "true";
+    boundElements.add(element);
   });
 }
 
 function bindEffectFields(root = document) {
   root.querySelectorAll("[data-bind-effect-field]").forEach((element) => {
-    if (element.dataset.bound === "true") {
+    if (boundElements.has(element)) {
       return;
     }
 
@@ -324,13 +325,13 @@ function bindEffectFields(root = document) {
       });
     });
 
-    element.dataset.bound = "true";
+    boundElements.add(element);
   });
 }
 
 function bindInventoryFields(root = document) {
   root.querySelectorAll("[data-bind-item-field]").forEach((element) => {
-    if (element.dataset.bound === "true") {
+    if (boundElements.has(element)) {
       return;
     }
 
@@ -375,7 +376,7 @@ function bindInventoryFields(root = document) {
       });
     });
 
-    element.dataset.bound = "true";
+    boundElements.add(element);
   });
 }
 
@@ -386,7 +387,7 @@ function bindClickAction(root, selector, actionKey) {
   }
 
   root.querySelectorAll(selector).forEach((element) => {
-    if (element.dataset.bound === "true") {
+    if (boundElements.has(element)) {
       return;
     }
 
@@ -403,7 +404,7 @@ function bindClickAction(root, selector, actionKey) {
       }
     });
 
-    element.dataset.bound = "true";
+    boundElements.add(element);
   });
 }
 
@@ -411,7 +412,7 @@ function bindSpellLibrarySearch(root = document) {
   root
     .querySelectorAll("[data-spell-library-search]")
     .forEach((element) => {
-      if (element.dataset.bound === "true") {
+      if (boundElements.has(element)) {
         return;
       }
 
@@ -454,7 +455,7 @@ function bindSpellLibrarySearch(root = document) {
         });
       });
 
-      element.dataset.bound = "true";
+      boundElements.add(element);
     });
 }
 
@@ -515,7 +516,7 @@ function flushLoreNotes() {
 
 function bindLoreNoteControls() {
   const root = document.getElementById("loreNotesRoot");
-  if (!root || root.dataset.bound === "true") return;
+  if (!root || boundElements.has(root)) return;
   root.addEventListener("input", (event) => {
     const input = event.target.closest?.("[data-note-field]");
     if (!input || !root.contains(input) || !isActiveSheetTarget(input) || input.dataset.composing === "true") return;
@@ -604,12 +605,12 @@ function bindLoreNoteControls() {
   root.querySelectorAll("[data-note-field]").forEach((input) => {
     input.dataset.noteId = input.closest("[data-note-id]").dataset.noteId;
   });
-  root.dataset.bound = "true";
+  boundElements.add(root);
 }
 
 function bindSpellSlotSelectors() {
   document.querySelectorAll("[data-spell-slot-select]").forEach((select) => {
-    if (select.dataset.bound === "true") return;
+    if (boundElements.has(select)) return;
     select.addEventListener("change", () => {
       if (!isActiveSheetTarget(select)) return;
       const panel = select.closest("[data-panel]");
@@ -626,7 +627,7 @@ function bindSpellSlotSelectors() {
         hint.textContent = getSpellPersonalHint(spell, getDerivedStats(state), slotLevel) ?? "";
       }
     });
-    select.dataset.bound = "true";
+    boundElements.add(select);
   });
 }
 
@@ -652,14 +653,14 @@ function bindSaraFilters() {
       profile.querySelectorAll("[data-sara-skill]").forEach((card) => {
         card.hidden = query && !card.textContent.toLocaleLowerCase("ru").includes(query);
       });
-      profile.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-open-character-roll]");
-        if (!button || !profile.contains(button) || !isActiveSheetTarget(button)) return;
-        const result = openSaraBattleCommand("character-roll", button, {
-          rollPreset: { kind: button.dataset.rollKind, id: button.dataset.rollId },
-        });
-        if (!result.ok) showPersistenceWarning(`Не удалось открыть бросок: ${result.reason}`);
+    });
+    profile.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-open-character-roll]");
+      if (!button || !profile.contains(button) || !isActiveSheetTarget(button)) return;
+      const result = openSaraBattleCommand("character-roll", button, {
+        rollPreset: { kind: button.dataset.rollKind, id: button.dataset.rollId },
       });
+      if (!result.ok) showPersistenceWarning(`Не удалось открыть бросок: ${result.reason}`);
     });
     profile.dataset.saraSkillSearchBound = "true";
   }
@@ -1322,7 +1323,7 @@ function returnToCharacterPicker() {
 
 function bindAppControls() {
   document.querySelectorAll("[data-app-action]").forEach((button) => {
-    if (button.dataset.bound === "true") return;
+    if (boundElements.has(button)) return;
     button.addEventListener("click", () => {
       if (!button.isConnected) return;
       if (button.dataset.appAction === "choose-characters") returnToCharacterPicker();
@@ -1332,14 +1333,14 @@ function bindAppControls() {
         showPersistenceWarning(result.ok ? "" : "Сохранение не удалось. Попробуйте ещё раз.");
       }
     });
-    button.dataset.bound = "true";
+    boundElements.add(button);
   });
   document.querySelectorAll("[data-theme-preference]").forEach((control) => {
-    if (control.dataset.bound === "true") return;
+    if (boundElements.has(control)) return;
     control.addEventListener("change", () => {
       if (control.isConnected) handleThemePreferenceChange(control);
     });
-    control.dataset.bound = "true";
+    boundElements.add(control);
   });
 }
 
