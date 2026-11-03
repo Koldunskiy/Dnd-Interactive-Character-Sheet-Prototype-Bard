@@ -1377,7 +1377,6 @@ function initTelegramWebApp() {
 
 function initApp() {
   initTelegramWebApp();
-  bindSaraFocusMode();
   initActionWorkspace();
   bindAppControls();
   const preferences = readAppPreferences();
