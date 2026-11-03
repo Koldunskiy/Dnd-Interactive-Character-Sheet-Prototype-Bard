@@ -30,6 +30,8 @@ test("W-03 historical damage ends without a dead next-attack action; current con
   assert.equal(getWorkspaceSessionForTests().currentStep, "checkpoint");
   assert.equal(getWorkspaceSessionForTests().historicalOnly, true);
   assert.doesNotMatch(dialog.footer.innerHTML, /data-workspace-action="next-attack"/);
+  assert.doesNotMatch(dialog.footer.innerHTML, /data-workspace-action="no-technique-continue"/);
+  assert.match(dialog.footer.innerHTML, /data-workspace-action="summary"/);
   assert.equal(getState().monk.combatAssistant.activeSequences[0].resolvedAttacks.length, 1);
 
   const current = openNormalAttack({ sequenceId, mode: "current" });

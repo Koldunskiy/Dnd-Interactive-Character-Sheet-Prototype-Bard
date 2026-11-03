@@ -62,3 +62,48 @@ test("Sara combat tasks use the embedded host without dialog or body-lock behavi
   assert.equal(dialog.error.hidden, false);
   unsubscribe();
 });
+
+test("changing workspace steps replaces the focused form instead of leaving stale controls", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const focusedInput = {};
+  const attackForm = {
+    dataset: { workspaceForm: "attack" },
+    contains: (node) => node === focusedInput,
+  };
+  dialog.body.innerHTML = '<form data-workspace-form="attack"></form>';
+  dialog.body.querySelector = (selector) =>
+    selector === "[data-workspace-form]" ? attackForm : null;
+  dialog.body.contains = (node) => node === focusedInput;
+  globalThis.document.activeElement = focusedInput;
+
+  const damageMarkup = '<form data-workspace-form="damage"></form>';
+  renderWorkspaceHost({
+    header: "<h2>Урон</h2>",
+    body: damageMarkup,
+    footer: "<button>Записать урон</button>",
+  });
+
+  assert.equal(dialog.body.innerHTML, damageMarkup);
+  assert.match(dialog.footer.innerHTML, /Записать урон/);
+  unsubscribe();
+});
+
+test("changing workspace steps updates a focused task title immediately", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const focusedTitle = {
+    matches: (selector) => selector === "[data-workspace-title]",
+  };
+  dialog.header.innerHTML = "<h2>Продолжение атаки</h2>";
+  dialog.header.contains = (node) => node === focusedTitle;
+  globalThis.document.activeElement = focusedTitle;
+
+  const nextHeader = '<div><h2 data-workspace-title>Удар 2/2 · безоружный</h2></div>';
+  renderWorkspaceHost({
+    header: nextHeader,
+    body: dialog.body.innerHTML,
+    footer: dialog.footer.innerHTML,
+  });
+
+  assert.equal(dialog.header.innerHTML, nextHeader);
+  unsubscribe();
+});

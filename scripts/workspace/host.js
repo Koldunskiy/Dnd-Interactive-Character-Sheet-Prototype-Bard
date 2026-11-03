@@ -253,7 +253,7 @@ export function renderWorkspaceHost({ header, body, footer, status = "", error =
     keepFocusedForm = !forceBody && currentForm && nextFormKind &&
       currentForm.dataset.workspaceForm === nextFormKind &&
       currentForm.contains(activeElement);
-    if (keepFocusedForm || !forceBody && bodyNode.contains(activeElement)) {
+    if (keepFocusedForm) {
       deferredHostMarkup.set(bodyNode, body);
     } else {
       bodyNode.innerHTML = body;
@@ -275,7 +275,9 @@ function updateHostMarkup(node, markup, host) {
     if (node) deferredHostMarkup.delete(node);
     return;
   }
-  if (node.contains(document.activeElement)) {
+  const activeElement = document.activeElement;
+  const focusedTitle = activeElement?.matches?.("[data-workspace-title]");
+  if (node.contains(activeElement) && !focusedTitle) {
     deferredHostMarkup.set(node, markup);
     return;
   }

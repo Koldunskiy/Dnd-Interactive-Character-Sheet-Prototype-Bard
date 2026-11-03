@@ -374,7 +374,7 @@ export function renderAttackWorkspace(session, state) {
     const displayedIndex = currentIndex >= 0 ? currentIndex : attacks.length - 1;
     const currentAttack = attacks[displayedIndex];
     const previousAttacks = attacks.filter((_, index) => index !== displayedIndex);
-    const strikeParent = session.currentStep === "checkpoint"
+    const strikeParent = session.currentStep === "checkpoint" && !session.historicalOnly
       ? getCurrentWorkspaceStrikeParent(
         state, session.strikeParent?.sequenceId, session.strikeParent?.attackId,
       )
