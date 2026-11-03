@@ -15,6 +15,8 @@ import {
   parsePhysicalInteger
 } from "../../scripts/combat/sara-combat.js";
 import { getEffectiveSelectedTechniqueIds } from "../../scripts/selectors/techniques.js";
+import { completeSaraRest } from "../../scripts/actions/sara-functional.js";
+import { getEligibleAttackProfiles } from "../../scripts/combat/attack-profile-eligibility.js";
 
 const persisted = new Map();
 let storageFails = false;
@@ -217,6 +219,118 @@ test("bonus attack consumption occurs only on attempt and cannot be repeated in 
     triggerConfirmed: true
   }, "bonus-2-op");
   assert.equal(repeat.status, "rejected");
+});
+
+test("short-rest lifetime distinguishes unpaid preparation from paid Flurry and rejects crafted profiles", () => {
+  let context = openFreshSession();
+  assert.equal(completeSaraRest(context, {
+    id: "rest-preparation",
+    restId: "rest-preparation",
+    kind: "short",
+  }).status, "applied");
+  context = getSessionContext();
+  assert.equal(combatActions.startAttackSequence(context, {
+    sequenceId: "unpaid-preparation",
+    kind: "attack-action",
+  }, "unpaid-preparation-op").status, "applied");
+  assert.equal(getState().monk.functionalRuntime.rest.phase, "hit-dice");
+
+  context = openFreshSession();
+  assert.equal(completeSaraRest(context, {
+    id: "rest-paid",
+    restId: "rest-paid",
+    kind: "short",
+  }).status, "applied");
+  context = getSessionContext();
+  assert.equal(combatActions.startAttackSequence(context, {
+    sequenceId: "paid-flurry",
+    kind: "flurry",
+    confirmed: true,
+  }, "paid-flurry-op").status, "applied");
+  assert.equal(getState().monk.functionalRuntime.rest.phase, "superseded");
+  context = getSessionContext();
+  const sequence = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === "paid-flurry");
+  const craftedWeapon = combatActions.recordAttackOutcome(context, sequence.id,
+    "crafted-weapon", {
+      kind: "flurry",
+      profileId: "club",
+      firstD20: "12",
+      targetArmorClass: "10",
+    }, "crafted-weapon-op");
+  assert.equal(craftedWeapon.status, "rejected");
+  assert.equal(sequence.resolvedAttacks.length, 0);
+
+  const profiles = getDerivedStats(getState()).saraAttackProfiles;
+  assert.deepEqual(getEligibleAttackProfiles("flurry", profiles).map(([id]) => id), ["unarmed"]);
+  assert.equal(getEligibleAttackProfiles("attack-action", profiles)
+    .some(([id]) => id === "returnedProjectile"), false);
+  assert.equal(combatActions.startAttackSequence(context, {
+    sequenceId: "standalone-return",
+    kind: "returned-projectile",
+    parentId: "fabricated-parent",
+    triggerConfirmed: true,
+  }, "standalone-return-op").status, "rejected");
+});
+
+test("melee Martial Arts weapon hit can use an eligible Strike while ranged attacks cannot", () => {
+  let context = openFreshSession();
+  const changed = updateSessionState(context, (draft) => {
+    draft.inventory.items.find((item) => item.id === "club").equipped = true;
+    draft.monk.ordinaryTechniqueIds.push("ll-monk:empowered-strike");
+    return draft;
+  }, { operationId: "equip-club-for-strike", metadata: { kind: "test-setup" } });
+  assert.equal(changed.status, "applied");
+  context = getSessionContext();
+  const profiles = getDerivedStats(getState()).saraAttackProfiles;
+  assert.equal(profiles.club.melee, true);
+  assert.equal(profiles.club.martialArtsEligible, true);
+  assert.equal(combatActions.startAttackSequence(context, {
+    sequenceId: "club-sequence", kind: "attack-action",
+  }, "club-sequence-op").status, "applied");
+  context = getSessionContext();
+  const clubHit = combatActions.recordAttackOutcome(context, "club-sequence", "club-hit", {
+    kind: "attack-action",
+    profileId: "club",
+    rollMode: "normal",
+    firstD20: "18",
+    targetArmorClass: "10",
+  }, "club-hit-op");
+  assert.equal(clubHit.status, "applied", clubHit.reason);
+  context = getSessionContext();
+  assert.equal(combatActions.recordAttackDamage(context, "club-sequence", "club-hit",
+    ["4"], "club-damage-op").status, "applied");
+  context = getSessionContext();
+  assert.equal(combatActions.applyTechniqueToHit(context, "club-sequence", "club-hit",
+    "ll-monk:empowered-strike", { confirmed: true, paymentMode: "ki" },
+    "club-strike-op").status, "applied");
+
+  context = openFreshSession();
+  const dart = updateSessionState(context, (draft) => {
+    draft.inventory.items.find((item) => item.id === "darts").equipped = true;
+    draft.monk.ordinaryTechniqueIds.push("ll-monk:empowered-strike");
+    return draft;
+  }, { operationId: "equip-dart-for-strike", metadata: { kind: "test-setup" } });
+  assert.equal(dart.status, "applied");
+  context = getSessionContext();
+  assert.equal(combatActions.startAttackSequence(context, {
+    sequenceId: "dart-sequence", kind: "attack-action",
+  }, "dart-sequence-op").status, "applied");
+  context = getSessionContext();
+  assert.equal(combatActions.recordAttackOutcome(context, "dart-sequence", "dart-hit", {
+    kind: "attack-action",
+    profileId: "darts",
+    rollMode: "normal",
+    firstD20: "18",
+    targetArmorClass: "10",
+  }, "dart-hit-op").status, "applied");
+  context = getSessionContext();
+  assert.equal(combatActions.recordAttackDamage(context, "dart-sequence", "dart-hit",
+    ["4"], "dart-damage-op").status, "applied");
+  context = getSessionContext();
+  assert.equal(combatActions.applyTechniqueToHit(context, "dart-sequence", "dart-hit",
+    "ll-monk:empowered-strike", { confirmed: true, paymentMode: "ki" },
+    "dart-strike-op").status, "rejected");
 });
 
 test("attack damage and Strike are recorded after a hit; target save remains a manual outcome", () => {

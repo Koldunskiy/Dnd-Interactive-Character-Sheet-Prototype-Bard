@@ -258,6 +258,7 @@ test("Dexterity-save Evasion consequence is explicit and corrections do not reca
     incomingDamage: "17",
     consequenceProfile: "save-half",
   });
+
   assert.equal(recorded.status, "applied");
   assert.equal(recorded.record.evasionEligible, true);
   assert.equal(recorded.record.dcResult, false);
@@ -278,4 +279,33 @@ test("Dexterity-save Evasion consequence is explicit and corrections do not reca
   assert.equal(corrected.record.consequence.calculatedDamage, 8);
   assert.equal(getState().combat.hp.current, hpAfter);
   assert.equal(getState().combat.hp.temp, tempAfter);
+});
+
+test("modern applied incoming-damage consequence closes a rest window only with gameplay", () => {
+  openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+  updateState((draft) => {
+    draft.monk.functionalRuntime = {
+      version: 1,
+      operations: {},
+      rest: { id: "modern-damage-rest", kind: "short", phase: "hit-dice", hitDiceSpent: 0 },
+    };
+    return draft;
+  });
+  const roll = recordCharacterRoll({
+    kind: "saving-throw", id: "dexterity", rollMode: "normal", firstD20: "4",
+  }, { outcome: "failure", askForDamage: true });
+  assert.equal(roll.status, "applied");
+  assert.equal(getState().monk.functionalRuntime.rest.phase, "hit-dice");
+  assert.equal(resolveCharacterRollConsequence(roll.record.id, "has-damage").status, "applied");
+  assert.equal(getState().monk.functionalRuntime.rest.phase, "hit-dice");
+  const invalid = resolveCharacterRollConsequence(
+    roll.record.id, "apply-to-character", { damage: "", damageBasis: "dm-final" },
+  );
+  assert.notEqual(invalid.status, "applied");
+  assert.equal(getState().monk.functionalRuntime.rest.phase, "hit-dice");
+  const applied = resolveCharacterRollConsequence(
+    roll.record.id, "apply-to-character", { damage: "4", damageBasis: "dm-final" },
+  );
+  assert.equal(applied.status, "applied");
+  assert.equal(getState().monk.functionalRuntime.rest.phase, "superseded");
 });

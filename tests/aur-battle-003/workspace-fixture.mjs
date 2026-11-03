@@ -77,17 +77,36 @@ export class FixtureNode {
 }
 
 class FixtureForm extends FixtureNode {
-  constructor(kind, values) {
+  constructor(kind, values, schema = {}) {
     super();
     this.dataset.workspaceForm = kind;
+    this.schema = schema;
     this.elements = Object.entries(values).map(([name, value]) => ({
       name,
       type: typeof value === "boolean" ? "checkbox" :
-        name.startsWith("damage") || name.includes("D20") ? "number" : "text",
+        schema[name]?.type ?? (name.startsWith("damage") || name.includes("D20") ? "number" : "text"),
       checked: value === true,
       value: typeof value === "boolean" ? "" : value,
     }));
   }
+
+  checkValidity() {
+    return this.elements.every((field) => {
+      const rule = this.schema[field.name] ?? {};
+      if (rule.required && (field.type === "checkbox" ? !field.checked : !String(field.value).trim())) {
+        return false;
+      }
+      if (field.type === "number" && String(field.value).trim()) {
+        const value = Number(field.value);
+        if (!Number.isInteger(value) ||
+            rule.min != null && value < rule.min ||
+            rule.max != null && value > rule.max) return false;
+      }
+      return true;
+    });
+  }
+
+  reportValidity() { return this.checkValidity(); }
 }
 
 class FixtureDialog extends FixtureNode {
@@ -116,6 +135,10 @@ class FixtureDialog extends FixtureNode {
     this.appendChild(this.status);
     this.appendChild(this.error);
     this.secondD20 = new FixtureNode();
+    this.hitDieHealing = new FixtureNode();
+    this.hitDieHpAfter = new FixtureNode();
+    this.cantrip2 = new FixtureNode();
+    this.restReplacementSubchoices = new FixtureNode();
     this.secondD20.hidden = true;
     this.secondD20Input = { required: false };
     this.secondD20.querySelector = (selector) =>
@@ -152,6 +175,10 @@ class FixtureDialog extends FixtureNode {
       "[data-damage-total]": this.damageTotal,
       "[data-damage-formula]": this.damageFormula,
       "[data-workspace-second-d20]": this.secondD20,
+      "[data-hit-die-healing]": this.hitDieHealing,
+      "[data-hit-die-hp-after]": this.hitDieHpAfter,
+      '[data-workspace-field="cantrip2"]': this.cantrip2,
+      "[data-rest-replacement-subchoices]": this.restReplacementSubchoices,
     };
     return nodes[selector] ?? null;
   }

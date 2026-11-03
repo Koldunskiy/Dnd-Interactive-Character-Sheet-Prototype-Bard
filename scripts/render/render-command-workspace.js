@@ -80,8 +80,8 @@ function renderCommandForm(session, state) {
       ${number("roll", `Физический результат к${state.combat.hitDie}`, 1, state.combat.hitDie)}
       <section class="workspace-entry-result workspace-damage-result" aria-live="polite">
         <span>Телосложение ${constitution >= 0 ? "+" : ""}${constitution}</span>
-        <span>Лечение ${healing ?? "—"}</span>
-        <span>HP ${hp} → ${healing == null ? "—" : Math.min(derived.maxHitPoints, hp + healing)}</span>
+        <span>Лечение <output data-hit-die-healing>${healing ?? "—"}</output></span>
+        <span>HP ${hp} → <output data-hit-die-hp-after>${healing == null ? "—" : Math.min(derived.maxHitPoints, hp + healing)}</output></span>
       </section>
       <p>Предпросмотр не тратит кость. Предыдущий бросок не повторяется.</p>`;
   }
@@ -96,23 +96,11 @@ function renderCommandForm(session, state) {
       !selected.has(entry.id) &&
       !Object.values(state.monk?.signatureTechniqueSlots ?? {}).includes(entry.id));
     const selectedAdd = MONK_TECHNIQUES.find((entry) => entry.id === draft.add);
-    const choices = selectedAdd?.id === "ll-monk:warrior-adept"
-      ? select("styleId", "Стиль для «Воинского адепта»", [
-        ...WARRIOR_ADEPT_STYLES.map((style) => [style.id, style.name]),
-      ])
-      : selectedAdd?.id === "ll-monk:divine-light"
-        ? `${select("cantrip1", "Заговор «Сияния божества» 1", [
-          ...CLERIC_CANTRIPS.map((spell) => [spell.id, spell.name]),
-        ])}${select("cantrip2", "Заговор «Сияния божества» 2", [
-          ...CLERIC_CANTRIPS.filter((spell) => spell.id !== draft.cantrip1)
-            .map((spell) => [spell.id, spell.name]),
-        ])}`
-        : "";
     return `<p>Выберите ровно одну обычную технику для удаления и одну для добавления.</p>
       ${select("remove", "Заменить обычную технику", (state.monk?.ordinaryTechniqueIds ?? [])
         .map((techniqueId) => [techniqueId, MONK_TECHNIQUES.find((entry) => entry.id === techniqueId)?.nameRu ?? techniqueId]))}
       ${select("add", "Новая обычная техника", additions.map((entry) => [entry.id, entry.nameRu]))}
-      ${choices}`;
+      <div data-rest-replacement-subchoices>${renderRestReplacementSubchoices(session, state)}</div>`;
   }
   if (id.startsWith("monk-technique:")) {
     return `<p>${escapeHtml(session.command?.trigger ?? "")}</p>
@@ -398,6 +386,64 @@ export function renderWorkspaceRollPreview(session, state) {
   }
 }
 
+export function renderRestReplacementSubchoices(session, state) {
+  const draft = session.rawInputsByStep?.[session.currentStepKey] ?? {};
+  const selected = MONK_TECHNIQUES.find((entry) => entry.id === draft.add);
+  if (selected?.id === "ll-monk:warrior-adept") {
+    return selectField("styleId", "Стиль для «Воинского адепта»",
+      WARRIOR_ADEPT_STYLES.map((style) => [style.id, style.name]), draft.styleId ?? "");
+  }
+  if (selected?.id === "ll-monk:divine-light") {
+    const first = selectField("cantrip1", "Заговор «Сияния божества» 1",
+      CLERIC_CANTRIPS.map((spell) => [spell.id, spell.name]), draft.cantrip1 ?? "");
+    const second = selectField("cantrip2", "Заговор «Сияния божества» 2",
+      CLERIC_CANTRIPS.filter((spell) => spell.id !== draft.cantrip1)
+        .map((spell) => [spell.id, spell.name]), draft.cantrip2 ?? "");
+    return first + second;
+  }
+  return "";
+}
+
+export function updateRestReplacementSubchoices(session, state, { refreshFields = false } = {}) {
+  const root = getWorkspaceHost();
+  const draft = session.rawInputsByStep?.[session.currentStepKey] ?? {};
+  if (refreshFields) {
+    const region = root?.querySelector("[data-rest-replacement-subchoices]");
+    if (region) region.innerHTML = renderRestReplacementSubchoices(session, state);
+    return;
+  }
+  const second = root?.querySelector('[data-workspace-field="cantrip2"]');
+  if (!second) return;
+  const legalIds = CLERIC_CANTRIPS.map((spell) => spell.id)
+    .filter((id) => id !== draft.cantrip1);
+  if (draft.cantrip2 && !legalIds.includes(draft.cantrip2)) {
+    draft.cantrip2 = "";
+    second.value = "";
+  }
+  for (const option of second.options ?? []) {
+    if (option.value) option.disabled = !legalIds.includes(option.value);
+  }
+}
+
+export function renderWorkspaceHitDiePreview(session, state) {
+  const root = getWorkspaceHost();
+  if (!root || session.currentStep !== "command-input" ||
+      session.command?.restStage !== "hit-die") return;
+  const draft = session.rawInputsByStep?.[session.currentStepKey] ?? {};
+  const healingOutput = root.querySelector("[data-hit-die-healing]");
+  const hpOutput = root.querySelector("[data-hit-die-hp-after]");
+  if (!healingOutput || !hpOutput) return;
+  const sides = Number(state.combat?.hitDie);
+  const roll = Number(draft.roll);
+  const valid = Number.isInteger(roll) && roll >= 1 && roll <= sides;
+  const con = Number(getDerivedStats(state).abilityModifiers.constitution);
+  const hp = Number(state.combat?.hp?.current);
+  const healing = valid ? Math.max(0, roll + con) : null;
+  healingOutput.textContent = healing == null ? "—" : String(healing);
+  hpOutput.textContent = healing == null
+    ? "—" : String(Math.min(getDerivedStats(state).maxHitPoints, hp + healing));
+}
+
 export function renderWorkspacePotionPreview(session, state) {
   const root = getWorkspaceHost();
   if (!root || session.currentStep !== "command-input" ||
@@ -500,6 +546,7 @@ function renderConsequenceInput(record, state, session) {
 
 export function renderCommandWorkspace(session, state) {
   const derived = getDerivedStats(state);
+  const canSpend = session.command?.availability?.canSpend === true;
   const title = session.command?.titleRu ?? "Боевое действие";
   const unavailableReason = session.command?.availability?.enabled
     ? "" : session.command?.availability?.reasonRu ?? "Команда больше недоступна.";
@@ -551,7 +598,7 @@ export function renderCommandWorkspace(session, state) {
       ? `<button type="button" class="btn btn--utility" data-workspace-action="finish-short-rest"
           ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Закончить лечение</button>
         <button type="button" class="btn btn--primary" data-workspace-action="apply-command"
-          ${session.submitting || session.appliedUnsaved || !session.command?.canSpend ? "disabled" : ""}>Потратить кость хитов</button>`
+          ${session.submitting || session.appliedUnsaved || !canSpend ? "disabled" : ""}>Потратить кость хитов</button>`
     : session.currentStep === "command-input" && session.command?.restStage === "edit"
       ? `<button type="button" class="btn btn--utility" data-workspace-action="cancel-rest-replacement"
           ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Назад к предложению</button>

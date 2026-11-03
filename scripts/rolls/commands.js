@@ -397,6 +397,7 @@ export function resolveCharacterRollConsequence(rollId, resolution, input = null
         }
         hp.current = pools.hpAfter;
         hp.temp = pools.tempHpAfter;
+        closeRestWindow(draft, "incoming-damage-consequence");
         hpSnapshot = {
           hpBefore: pools.hpBefore,
           hpAfter: pools.hpAfter,

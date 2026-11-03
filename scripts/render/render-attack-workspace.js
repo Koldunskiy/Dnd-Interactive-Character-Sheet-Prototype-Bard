@@ -8,6 +8,7 @@ import {
 import { MONK_TECHNIQUES, MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
 import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
 import { getWorkspaceHost } from "../workspace/host.js";
+import { getEligibleAttackProfiles } from "../combat/attack-profile-eligibility.js";
 
 const STRIKE_SAVE_ABILITIES = Object.freeze({
   "ll-monk:empowered-strike": "Сила",
@@ -39,11 +40,10 @@ function formatSigned(value) {
   return amount < 0 ? `− ${Math.abs(amount)}` : `+ ${amount}`;
 }
 
-function strikeChoices(state) {
+function strikeChoices(state, attack = null) {
   const effective = getEffectiveSelectedTechniqueIds(state);
   return MONK_TECHNIQUES.filter((entry) => entry.eligibleStrike && effective.has(entry.id) &&
-    ["ll-monk:empowered-strike", "ll-monk:stunning-strike",
-      "ll-monk:crippling-strike", "ll-monk:slowing-strike"].includes(entry.id));
+    (!attack || entry.unarmedOnly !== true || attack.profileId === "unarmed"));
 }
 
 function techniqueUnavailableReason(state, sequence, attack, technique, paymentMode = "ki") {
@@ -65,7 +65,15 @@ function techniqueUnavailableReason(state, sequence, attack, technique, paymentM
        state.battleConsole?.current && state.battleConsole.current.phase !== "own-turn")) {
     return "Practiced доступен только в свой ход.";
   }
-  if (attack.profileId !== "unarmed") return "Требуется безоружное попадание.";
+  if (technique.unarmedOnly && attack.profileId !== "unarmed") {
+    return "Требуется безоружное попадание.";
+  }
+  if (attack.profileId !== "unarmed" &&
+      !(attack.profileSnapshot?.attackKind === "weapon" &&
+        attack.profileSnapshot?.melee === true &&
+        attack.profileSnapshot?.martialArtsEligible === true)) {
+    return "Требуется попадание безоружной атакой или подходящим melee Martial Arts оружием.";
+  }
   if (paymentMode === "practiced" && technique.practicedStrikesEligible) {
     if (Number(state.combat?.practiced?.current) < 1) return "Нет применений Practiced.";
     if (runtime.practicedUsedThisTurn) return "Practiced уже использован в этом ходу.";
@@ -76,7 +84,10 @@ function techniqueUnavailableReason(state, sequence, attack, technique, paymentM
 function renderAttackForm(session, state) {
   const values = currentInputs(session);
   const actionUsed = !session.isExistingSequence && state.ui?.turn?.actionUsed === true;
-  const profiles = getDerivedStats(state).saraAttackProfiles;
+  const allProfiles = getDerivedStats(state).saraAttackProfiles;
+  const profiles = Object.fromEntries(getEligibleAttackProfiles(
+    session.sequenceKind ?? "attack-action", allProfiles, state,
+  ));
   const profileId = values.profileId ?? "unarmed";
   const profile = profiles[profileId] ?? profiles.unarmed;
   const preview = calculateWorkspaceAttackPreview(state, {
@@ -222,7 +233,7 @@ function renderStrikeForm(session, state) {
     return `<p class="workspace-warning">Для этой записи нельзя применить новую технику: попадание больше не является текущим или техника уже применена.</p>`;
   }
   const values = currentInputs(session);
-  const choices = strikeChoices(state);
+  const choices = strikeChoices(state, parent.attack);
   if (!choices.length) {
     return `<p class="workspace-warning">Нет выбранных и доступных техник для этого попадания.</p>`;
   }
@@ -410,7 +421,7 @@ export function renderAttackWorkspace(session, state) {
       ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}`;
     if (session.currentStep === "checkpoint" && strikeParent) {
       footer = `<button type="button" class="btn btn--primary" data-workspace-action="no-technique-continue" ${session.appliedUnsaved ? "disabled" : ""}>${session.capabilities.canContinueSequence ? "Без техники → следующий удар" : "Завершить без техники"}</button>
-        ${strikeChoices(state).length ? `<button type="button" class="btn btn--utility" data-workspace-action="open-strike" ${session.appliedUnsaved ? "disabled" : ""}>Выбрать необязательную технику</button>` : ""}`;
+        ${strikeChoices(state, strikeParent.attack).length ? `<button type="button" class="btn btn--utility" data-workspace-action="open-strike" ${session.appliedUnsaved ? "disabled" : ""}>Выбрать необязательную технику</button>` : ""}`;
     } else if (session.currentStep === "checkpoint" && session.appliedUnsaved) {
       footer = "<p>Продолжение доступно после сохранения результата.</p>";
     } else if (session.currentStep === "checkpoint" && session.capabilities.canContinueSequence) {

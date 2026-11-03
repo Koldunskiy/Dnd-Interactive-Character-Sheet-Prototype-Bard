@@ -7,9 +7,11 @@ import {
 } from "../combat/sara-combat.js";
 import { applyHealing } from "../combat/damage-pools.js";
 import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
+import { MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
 import { isCurrentSession, updateSessionState } from "../state.js";
 import { applyMonkTechnique } from "./monk.js";
 import { closeRestWindow, spendBoundDart } from "../sara-functional.js";
+import { isAttackProfileEligible } from "../combat/attack-profile-eligibility.js";
 
 const SAVE_ABILITIES = Object.freeze({
   "ll-monk:empowered-strike": "strength",
@@ -200,6 +202,10 @@ export function startAttackSequence(context, input, operationId) {
         actionFlagApplied = false;
       }
       const sequence = createSequenceRecord(draft, input.sequenceId, kind, input);
+      if (kind === "returned-projectile" &&
+          input.parentId !== draft.monk.techniqueRuntime?.deflectContinuation?.id) {
+        throw new Error("Возвращённый снаряд требует текущего продолжения отражения.");
+      }
       if (kind === "bonus-unarmed") {
         turn.bonusActionUsed = true;
         sequence.actionFlagApplied = true;
@@ -209,6 +215,9 @@ export function startAttackSequence(context, input, operationId) {
       }
       sequence.resourcePaymentApplied = resourcePaymentApplied;
       sequence.actionFlagApplied ||= actionFlagApplied;
+      if (sequence.resourcePaymentApplied || sequence.actionFlagApplied) {
+        closeRestWindow(draft, "paid-or-budgeted-sequence-started");
+      }
       assistant.activeSequences.push(sequence);
       return draft;
     },
@@ -276,6 +285,10 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
       }
       const derived = getDerivedStats(draft);
       const profileId = input.profileId ?? "unarmed";
+      if (!isAttackProfileEligible(sequence.kind, profileId,
+        derived.saraAttackProfiles, draft)) {
+        throw new Error("Этот профиль атаки недопустим для текущей последовательности.");
+      }
       const previewInput = { ...input, profileId };
       let preview = calculateAttackPreview(draft, previewInput);
       if (!preview.ok) throw new Error(preview.reason);
@@ -431,8 +444,15 @@ export function applyTechniqueToHit(context, actionId, attackId, techniqueId, in
       const assistant = ensureCombatAssistant(draft);
       const sequence = assistant.activeSequences.find((entry) => entry.id === actionId);
       const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
-      if (!isSara(draft) || !attack || attack.hitResult !== "hit" ||
-          attack.profileId !== "unarmed" || attack.techniqueApplicationId ||
+      const weaponEligible = attack?.profileSnapshot?.attackKind === "weapon" &&
+        attack.profileSnapshot?.melee === true &&
+        attack.profileSnapshot?.martialArtsEligible === true;
+      const technique = getEffectiveSelectedTechniqueIds(draft).has(techniqueId)
+        ? MONK_TECHNIQUE_BY_ID.get(techniqueId) : null;
+      if (!isSara(draft) || !technique?.eligibleStrike || !attack || attack.hitResult !== "hit" ||
+          !(attack.profileId === "unarmed" || weaponEligible) ||
+          technique?.unarmedOnly === true && attack.profileId !== "unarmed" ||
+          attack.techniqueApplicationId ||
           !isCurrentStrikeParent(draft, sequence)) {
         throw new Error("Техника удара требует подтверждённое безоружное попадание без уже применённой техники.");
       }
@@ -481,8 +501,14 @@ export function applyTechniqueToHit(context, actionId, attackId, techniqueId, in
     (current) => {
       const sequence = current.monk?.combatAssistant?.activeSequences?.find((entry) => entry.id === actionId);
       const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
-      return isSara(current) && attack?.hitResult === "hit" &&
-        attack.profileId === "unarmed" && !attack.techniqueApplicationId &&
+      const weaponEligible = attack?.profileSnapshot?.attackKind === "weapon" &&
+        attack.profileSnapshot?.melee === true &&
+        attack.profileSnapshot?.martialArtsEligible === true;
+      const technique = MONK_TECHNIQUE_BY_ID.get(techniqueId);
+      return isSara(current) && technique?.eligibleStrike === true && attack?.hitResult === "hit" &&
+        (attack.profileId === "unarmed" || weaponEligible) &&
+        !(technique?.unarmedOnly === true && attack.profileId !== "unarmed") &&
+        !attack.techniqueApplicationId &&
         isCurrentStrikeParent(current, sequence) &&
         getEffectiveSelectedTechniqueIds(current).has(techniqueId)
         ? null

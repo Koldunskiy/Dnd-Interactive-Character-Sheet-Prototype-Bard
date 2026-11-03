@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { getState, updateState } from "../../scripts/state.js";
+import { getDerivedStats } from "../../scripts/calculations.js";
 import {
+  disposeWorkspaceOwner,
   openNormalAttack,
   openSaraBattleCommand,
   getWorkspaceSessionForTests,
@@ -12,6 +14,10 @@ import {
   workspaceHostIsEmbedded,
 } from "../../scripts/workspace/host.js";
 import { renderBattleConsole } from "../../scripts/render/render-battle-console.js";
+import { CLERIC_CANTRIPS } from "../../data/monk-techniques.js";
+import { MONK_TECHNIQUES } from "../../data/monk-techniques.js";
+import { renderCommandWorkspace } from "../../scripts/render/render-command-workspace.js";
+import { updateRestReplacementSubchoices } from "../../scripts/render/render-command-workspace.js";
 import {
   fireWorkspaceInput,
   fireWorkspaceAction,
@@ -213,6 +219,17 @@ test("short rest runs in the dock, accepts sequential physical hit dice, then fi
   assert.equal(getState().combat.ki.current, getState().profile.level + 4);
 
   dialog.forms.command = new FixtureForm("command", { roll: "2" });
+  const rollControl = dialog.forms.command.elements[0];
+  const originalBody = dialog.body.innerHTML;
+  const focusedRoll = {};
+  globalThis.document.activeElement = focusedRoll;
+  fireWorkspaceInput(dialog, "roll", "2");
+  assert.equal(dialog.body.innerHTML, originalBody);
+  assert.equal(dialog.hitDieHealing.textContent, String(Math.max(
+    0, 2 + getDerivedStats(getState()).abilityModifiers.constitution,
+  )));
+  assert.equal(globalThis.document.activeElement, focusedRoll);
+  assert.equal(dialog.forms.command.elements[0], rollControl);
   fireWorkspaceAction(dialog, "apply-command");
   assert.equal(getState().combat.hitDice.remaining, 2);
   assert.equal(getState().monk.functionalRuntime.rest.hitDiceSpent, 1);
@@ -220,8 +237,115 @@ test("short rest runs in the dock, accepts sequential physical hit dice, then fi
   fireWorkspaceAction(dialog, "apply-command");
   assert.equal(getState().combat.hitDice.remaining, 1);
   assert.equal(getState().monk.functionalRuntime.rest.hitDiceSpent, 2);
+  updateState((draft) => {
+    draft.combat.hp.current = getDerivedStats(draft).maxHitPoints;
+    return draft;
+  });
+  assert.match(dialog.footer.innerHTML, /data-workspace-action="apply-command"[^>]*disabled/);
+  assert.match(dialog.footer.innerHTML, /data-workspace-action="finish-short-rest"/);
+  let activeSession = getWorkspaceSessionForTests();
+  disposeWorkspaceOwner(activeSession.owner, "reload-test");
+  assert.equal(openSaraBattleCommand(`rest-hit-die:${getState().monk.functionalRuntime.rest.id}`).ok, true);
+  assert.match(dialog.footer.innerHTML, /data-workspace-action="apply-command"[^>]*disabled/);
+  updateState((draft) => {
+    draft.combat.hp.current -= 1;
+    draft.combat.hitDice.remaining = 0;
+    return draft;
+  });
+  assert.match(dialog.footer.innerHTML, /data-workspace-action="apply-command"[^>]*disabled/);
+  assert.match(dialog.footer.innerHTML, /data-workspace-action="finish-short-rest"/);
+  activeSession = getWorkspaceSessionForTests();
+  disposeWorkspaceOwner(activeSession.owner, "reload-test");
+  assert.equal(openSaraBattleCommand(`rest-hit-die:${getState().monk.functionalRuntime.rest.id}`).ok, true);
+  assert.match(dialog.footer.innerHTML, /data-workspace-action="apply-command"[^>]*disabled/);
   fireWorkspaceAction(dialog, "finish-short-rest");
   assert.equal(getState().monk.functionalRuntime.rest.phase, "finished");
   assert.equal(getWorkspaceSessionForTests().currentStep, "command-result");
+  const finishedOperationCount = Object.keys(getState().monk.functionalRuntime.operations).length;
+  fireWorkspaceAction(dialog, "finish-short-rest");
+  assert.equal(Object.keys(getState().monk.functionalRuntime.operations).length, finishedOperationCount);
+  unsubscribe();
+});
+
+test("completed long rest routes through colon command IDs, cancellation, decline, and a passive replacement", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  assert.equal(openSaraBattleCommand("completed-rest").ok, true);
+  dialog.forms.command = new FixtureForm("command", { kind: "long" }, {
+    kind: { required: true },
+  });
+  fireWorkspaceAction(dialog, "apply-command");
+  let session = getWorkspaceSessionForTests();
+  assert.match(session.scenarioId, /^rest-replacement:offer:.+$/);
+  const restId = session.command.restId;
+  assert.equal(session.command.restStage, "offer");
+
+  fireWorkspaceAction(dialog, "edit-rest-replacement");
+  session = getWorkspaceSessionForTests();
+  const normalAddition = MONK_TECHNIQUES.find((entry) =>
+    entry.category !== "passive" &&
+    !getState().monk.ordinaryTechniqueIds.includes(entry.id) &&
+    !Object.values(getState().monk.signatureTechniqueSlots).includes(entry.id));
+  assert.ok(normalAddition);
+  session.rawInputsByStep[session.currentStepKey].add = normalAddition.id;
+  const ordinaryMarkup = renderCommandWorkspace(session, getState()).body;
+  assert.doesNotMatch(ordinaryMarkup, /name="(?:styleId|cantrip1|cantrip2)"/);
+  const ordinaryForm = new FixtureForm("command", {
+    remove: getState().monk.ordinaryTechniqueIds[0],
+    add: normalAddition.id,
+  }, { remove: { required: true }, add: { required: true } });
+  assert.equal(ordinaryForm.checkValidity(), true);
+  assert.equal(ordinaryForm.elements.some((field) =>
+    ["styleId", "cantrip1", "cantrip2"].includes(field.name)), false);
+  session.rawInputsByStep[session.currentStepKey].add = "";
+  const cantrips = CLERIC_CANTRIPS.slice(0, 2).map((entry) => entry.id);
+  dialog.forms.command = new FixtureForm("command", {
+    add: "ll-monk:divine-light",
+    cantrip1: cantrips[0],
+    cantrip2: cantrips[0],
+  });
+  fireWorkspaceInput(dialog, "add", "ll-monk:divine-light", "select-one");
+  assert.match(dialog.restReplacementSubchoices.innerHTML, /name="cantrip1"/);
+  assert.match(dialog.restReplacementSubchoices.innerHTML, /name="cantrip2"/);
+  session.rawInputsByStep[session.currentStepKey].cantrip2 = cantrips[0];
+  fireWorkspaceInput(dialog, "cantrip1", cantrips[0], "select-one");
+  session.rawInputsByStep[session.currentStepKey].cantrip1 = cantrips[0];
+  updateRestReplacementSubchoices(session, getState());
+  assert.equal(session.rawInputsByStep[session.currentStepKey].cantrip2, "");
+  assert.equal(getWorkspaceSessionForTests().scenarioId, `rest-replacement:edit:${restId}`);
+  fireWorkspaceAction(dialog, "cancel-rest-replacement");
+  assert.equal(getWorkspaceSessionForTests().scenarioId, `rest-replacement:offer:${restId}`);
+  fireWorkspaceAction(dialog, "decline-rest-replacement");
+  assert.equal(getState().monk.functionalRuntime.rest.phase, "finished");
+  const declinedOperationCount = Object.keys(getState().monk.functionalRuntime.operations).length;
+  fireWorkspaceAction(dialog, "decline-rest-replacement");
+  assert.equal(Object.keys(getState().monk.functionalRuntime.operations).length, declinedOperationCount);
+
+  assert.equal(openSaraBattleCommand("completed-rest").ok, true);
+  dialog.forms.command = new FixtureForm("command", { kind: "long" }, {
+    kind: { required: true },
+  });
+  fireWorkspaceAction(dialog, "apply-command");
+  fireWorkspaceAction(dialog, "edit-rest-replacement");
+  session = getWorkspaceSessionForTests();
+  const remove = getState().monk.ordinaryTechniqueIds[0];
+  assert.equal(cantrips.length, 2);
+  const markup = dialog.body.innerHTML;
+  assert.match(markup, /data-rest-replacement-subchoices/);
+  dialog.forms.command = new FixtureForm("command", {
+    remove,
+    add: "ll-monk:divine-light",
+    cantrip1: cantrips[0],
+    cantrip2: cantrips[1],
+  }, {
+    remove: { required: true },
+    add: { required: true },
+    cantrip1: { required: true },
+    cantrip2: { required: true },
+  });
+  assert.equal(dialog.forms.command.checkValidity(), true);
+  fireWorkspaceAction(dialog, "apply-command");
+  assert.equal(getState().monk.functionalRuntime.rest.phase, "finished");
+  assert.ok(getState().monk.ordinaryTechniqueIds.includes("ll-monk:divine-light"));
+  assert.deepEqual(getState().monk.techniqueChoices["ll-monk:divine-light"].clericCantripIds, cantrips);
   unsubscribe();
 });

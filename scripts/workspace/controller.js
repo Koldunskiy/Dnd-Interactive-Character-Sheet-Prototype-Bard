@@ -67,6 +67,8 @@ import {
   renderWorkspaceConsequencePreview,
   renderWorkspaceRollPreview,
   renderWorkspacePotionPreview,
+  renderWorkspaceHitDiePreview,
+  updateRestReplacementSubchoices,
 } from "../render/render-command-workspace.js";
 import {
   renderAttackWorkspace,
@@ -533,10 +535,13 @@ function updateInput(field) {
     renderWorkspacePotionPreview(session, getState());
   } else if (session.workspaceType === "command" &&
       session.command?.restStage === "edit" && field.name === "add") {
-    render();
+    updateRestReplacementSubchoices(session, getState(), { refreshFields: true });
+  } else if (session.workspaceType === "command" &&
+      session.command?.restStage === "edit" && field.name === "cantrip1") {
+    updateRestReplacementSubchoices(session, getState());
   } else if (session.workspaceType === "command" &&
       session.command?.restStage === "hit-die" && field.name === "roll") {
-    render();
+    renderWorkspaceHitDiePreview(session, getState());
   }
 }
 
@@ -2249,6 +2254,7 @@ function handleAction(action, button = null) {
     session.error = "";
     render();
   } else if (action === "decline-rest-replacement" &&
+      session.currentStep === "command-input" &&
       session.command?.restStage === "offer" && !session.submitting &&
       !session.appliedUnsaved && requireOwner()) {
     const restId = session.command.restId;
@@ -2270,6 +2276,7 @@ function handleAction(action, button = null) {
     }
     render();
   } else if (action === "finish-short-rest" &&
+      session.currentStep === "command-input" &&
       session.command?.restStage === "hit-die" && !session.submitting &&
       !session.appliedUnsaved && requireOwner()) {
     const restId = session.command.restId;
