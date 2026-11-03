@@ -17,9 +17,11 @@ import {
 import { getEffectiveSelectedTechniqueIds } from "../../scripts/selectors/techniques.js";
 import { completeSaraRest } from "../../scripts/actions/sara-functional.js";
 import { getEligibleAttackProfiles } from "../../scripts/combat/attack-profile-eligibility.js";
+import { getCurrentWorkspaceStrikeParent } from "../../scripts/workspace/attack-adapter.js";
 import {
   applyGentlingTouchToAttackSlot,
   beginSeekingStrike,
+  getUsedAttackSlots,
   resolveSeekingStrike,
 } from "../../scripts/actions/sara-combat.js";
 
@@ -279,60 +281,69 @@ test("short-rest lifetime distinguishes unpaid preparation from paid Flurry and 
 });
 
 test("returned projectile requires an exact current continuation and pays once on recorded physical outcome", () => {
-  const setupContinuation = () => {
+  const setupContinuation = (overrides = {}) => {
     let context = openFreshSession();
     const tokenId = "real-return-continuation";
+    const token = {
+      id: tokenId,
+      kind: "missile-return",
+      sourceSessionGeneration: context.sessionGeneration,
+      reactionAlreadyUsed: true,
+      ...overrides,
+    };
+    if (overrides.wrongSession) token.sourceSessionGeneration += 1;
+    delete token.wrongSession;
     const setup = updateSessionState(context, (draft) => {
-      draft.monk.techniqueRuntime.deflectContinuation = {
-        id: tokenId,
-        kind: "missile-return",
-        sourceSessionGeneration: context.sessionGeneration,
-        reactionAlreadyUsed: true,
-      };
+      draft.monk.techniqueRuntime.deflectContinuation = token;
       return draft;
     }, { operationId: "install-return-continuation", metadata: { kind: "test-setup" } });
     assert.equal(setup.status, "applied");
     context = getSessionContext();
     return { context, tokenId };
   };
-  const attempt = (parentId, op) => {
-    const { context } = setupContinuation();
-    return combatActions.startAttackSequence(context, {
-      sequenceId: `return-sequence-${op}`,
-      kind: "returned-projectile",
-      parentId,
-      proficiencyConfirmed: true,
-    }, `return-start-${op}`);
-  };
-  for (const [parent, op] of [
-    [undefined, "missing"],
-    ["", "empty"],
-    ["fabricated", "fabricated"],
-  ]) {
-    const rejected = attempt(parent, op);
-    assert.equal(rejected.status, "rejected");
-    assert.match(rejected.reason, /токен|продолжен/i);
-    assert.equal(getState().monk.techniqueRuntime.deflectContinuation.consumed, undefined);
-  }
-
-  const { context, tokenId } = setupContinuation();
-  const beforeKi = getState().combat.ki.current;
-  const started = combatActions.startAttackSequence(context, {
-    sequenceId: "return-sequence-valid",
-    kind: "returned-projectile",
-    parentId: tokenId,
-    proficiencyConfirmed: true,
-  }, "return-start-valid");
-  assert.equal(started.status, "applied");
-  let latest = getSessionContext();
-  const first = combatActions.recordAttackOutcome(latest, "return-sequence-valid",
-    "return-attack-one", {
+  const attempt = (parentId, op, overrides = {}) => {
+    const { context } = setupContinuation(overrides);
+    return combatActions.recordAttackOutcome(context, `return-sequence-${op}`,
+      `return-attack-${op}`, {
       kind: "returned-projectile",
       profileId: "returnedProjectile",
       rollMode: "normal",
       firstD20: "18",
       targetArmorClass: "10",
-    }, "return-attack-op");
+      sequenceId: `return-sequence-${op}`,
+      parentId,
+      proficiencyConfirmed: true,
+    }, `return-start-${op}`);
+  };
+  for (const [parent, op, overrides] of [
+    [undefined, "missing", {}],
+    ["", "empty", {}],
+    ["fabricated", "fabricated", {}],
+    ["real-return-continuation", "wrong-session", { wrongSession: true }],
+    ["real-return-continuation", "wrong-battle", { battleId: "expired-battle" }],
+    ["real-return-continuation", "consumed", { consumed: true }],
+  ]) {
+    const rejected = attempt(parent, op, overrides);
+    assert.equal(rejected.status, "rejected");
+    assert.match(rejected.reason, /токен|продолжен/i);
+    assert.equal(getState().monk.combatAssistant.activeSequences.length, 0);
+    assert.equal(getState().monk.techniqueRuntime.deflectContinuation.consumed,
+      op === "consumed" ? true : undefined);
+  }
+
+  const { context, tokenId } = setupContinuation();
+  const beforeKi = getState().combat.ki.current;
+  const first = combatActions.recordAttackOutcome(context, "return-sequence-valid",
+    "return-attack-one", {
+    kind: "returned-projectile",
+    profileId: "returnedProjectile",
+    rollMode: "normal",
+    firstD20: "18",
+    targetArmorClass: "10",
+    sequenceId: "return-sequence-valid",
+    parentId: tokenId,
+    proficiencyConfirmed: true,
+  }, "return-start-valid");
   assert.equal(first.status, "applied", first.reason);
   assert.equal(getState().combat.ki.current, beforeKi - 1);
   assert.equal(getState().monk.techniqueRuntime.deflectContinuation.consumed, true);
@@ -340,7 +351,7 @@ test("returned projectile requires an exact current continuation and pays once o
   assert.equal(getState().monk.combatAssistant.activeSequences
     .find((entry) => entry.id === "return-sequence-valid").resolvedAttacks[0].damageStatus,
   "awaiting-damage");
-  latest = getSessionContext();
+  const latest = getSessionContext();
   const repeated = combatActions.recordAttackOutcome(latest, "return-sequence-valid",
     "return-attack-two", {
       kind: "returned-projectile",
@@ -353,10 +364,81 @@ test("returned projectile requires an exact current continuation and pays once o
   assert.equal(getState().combat.ki.current, beforeKi - 1);
 });
 
+test("returned projectile validates before mutation, survives save retry/load, and uses ordinary pending damage", () => {
+  let context = openFreshSession();
+  const tokenId = "atomic-return-token";
+  const setup = updateSessionState(context, (draft) => {
+    draft.combat.ki.current = 0;
+    draft.monk.techniqueRuntime.deflectContinuation = {
+      id: tokenId,
+      kind: "missile-return",
+      sourceSessionGeneration: context.sessionGeneration,
+      reactionAlreadyUsed: true,
+    };
+    return draft;
+  }, { operationId: "atomic-return-setup", metadata: { kind: "test-setup" } });
+  assert.equal(setup.status, "applied");
+  context = getSessionContext();
+  const makeInput = (firstD20) => ({
+    kind: "returned-projectile",
+    sequenceId: "atomic-return-sequence",
+    parentId: tokenId,
+    proficiencyConfirmed: true,
+    profileId: "returnedProjectile",
+    rollMode: "normal",
+    firstD20,
+    targetArmorClass: "10",
+  });
+  const invalidDie = combatActions.recordAttackOutcome(context, "atomic-return-sequence",
+    "atomic-return-attack", makeInput(""), "atomic-return-invalid");
+  assert.equal(invalidDie.status, "rejected");
+  assert.equal(getState().monk.combatAssistant.activeSequences.length, 0);
+  assert.equal(getState().monk.techniqueRuntime.deflectContinuation.consumed, undefined);
+  const noKi = combatActions.recordAttackOutcome(getSessionContext(),
+    "atomic-return-sequence", "atomic-return-attack", makeInput("18"), "atomic-return-no-ki");
+  assert.equal(noKi.status, "rejected");
+  assert.equal(getState().monk.combatAssistant.activeSequences.length, 0);
+  assert.equal(getState().monk.techniqueRuntime.deflectContinuation.consumed, undefined);
+
+  const restored = updateSessionState(getSessionContext(), (draft) => {
+    draft.combat.ki.current = 2;
+    return draft;
+  }, { operationId: "atomic-return-restore-ki", metadata: { kind: "test-setup" } });
+  assert.equal(restored.status, "applied");
+  const beforeKi = getState().combat.ki.current;
+  storageFails = true;
+  const applied = combatActions.recordAttackOutcome(getSessionContext(),
+    "atomic-return-sequence", "atomic-return-attack", makeInput("18"), "atomic-return-paid");
+  assert.equal(applied.status, "applied");
+  assert.equal(applied.persistence.ok, false);
+  assert.equal(getState().combat.ki.current, beforeKi - 1);
+  assert.equal(getState().monk.techniqueRuntime.deflectContinuation.consumed, true);
+  const replayAfterFailure = combatActions.recordAttackOutcome(getSessionContext(),
+    "atomic-return-sequence", "atomic-return-attack", makeInput("18"),
+    "atomic-return-paid");
+  assert.equal(replayAfterFailure.status, "rejected");
+  assert.equal(getState().combat.ki.current, beforeKi - 1);
+  assert.equal(getState().monk.combatAssistant.activeSequences.length, 1);
+  storageFails = false;
+  assert.equal(retryPersistedState().ok, true);
+  assert.equal(openCharacterSession("sara-velaris").status, "loaded");
+  const loadedSequence = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === "atomic-return-sequence");
+  assert.equal(loadedSequence.resolvedAttacks.length, 1);
+  assert.equal(getState().combat.ki.current, beforeKi - 1);
+  const damage = combatActions.recordAttackDamage(getSessionContext(),
+    "atomic-return-sequence", "atomic-return-attack", [1], "atomic-return-damage");
+  assert.equal(damage.status, "applied", damage.reason);
+  assert.equal(getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === "atomic-return-sequence")
+    .resolvedAttacks[0].damageStatus, "recorded");
+});
+
 test("Seeking Strike is paid from a recorded miss and replaces the same attack with mandatory physical dice", () => {
   let context = openFreshSession();
   const setup = updateSessionState(context, (draft) => {
     draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+    draft.inventory.items.find((item) => item.id === "club").equipped = true;
     return draft;
   }, { operationId: "select-seeking-strike", metadata: { kind: "test-setup" } });
   assert.equal(setup.status, "applied");
@@ -366,7 +448,7 @@ test("Seeking Strike is paid from a recorded miss and replaces the same attack w
   }, "seeking-sequence-op").status, "applied");
   context = getSessionContext();
   const miss = combatActions.recordAttackOutcome(context, "seeking-sequence", "recorded-miss", {
-    kind: "attack-action", profileId: "unarmed", rollMode: "normal",
+    kind: "attack-action", profileId: "club", rollMode: "normal",
     firstD20: "2", targetArmorClass: "30",
   }, "seeking-miss-op");
   assert.equal(miss.status, "applied", miss.reason);
@@ -375,6 +457,21 @@ test("Seeking Strike is paid from a recorded miss and replaces the same attack w
   assert.equal(beginSeekingStrike(context, "seeking-sequence", "recorded-miss",
     "seeking-paid-op").status, "applied");
   assert.equal(getState().combat.ki.current, beforeKi - 1);
+  const duplicatePaid = beginSeekingStrike(getSessionContext(), "seeking-sequence",
+    "recorded-miss", "seeking-paid-op");
+  assert.equal(duplicatePaid.status, "applied");
+  assert.equal(duplicatePaid.replayed, true);
+  assert.equal(getState().combat.ki.current, beforeKi - 1);
+  const savedAttack = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === "seeking-sequence").resolvedAttacks[0];
+  const savedBonus = savedAttack.attackBonusSnapshot;
+  assert.equal(openCharacterSession("sara-velaris").status, "loaded");
+  updateSessionState(getSessionContext(), (draft) => {
+    draft.abilities.dexterity = 8;
+    draft.inventory.items.find((item) => item.id === "club").equipped = false;
+    draft.ui.turn.turnNumber += 1;
+    return draft;
+  }, { operationId: "seeking-expire-and-change-stats", metadata: { kind: "test-setup" } });
   context = getSessionContext();
   const missingPhysical = resolveSeekingStrike(context, "seeking-sequence",
     "recorded-miss", { firstD20: "", targetArmorClass: "30" }, "seeking-result-empty");
@@ -388,11 +485,130 @@ test("Seeking Strike is paid from a recorded miss and replaces the same attack w
     .find((entry) => entry.id === "seeking-sequence").resolvedAttacks[0];
   assert.equal(attack.id, "recorded-miss");
   assert.equal(attack.hitResult, "hit");
+  assert.equal(attack.attackTotal, 19 + savedBonus);
   assert.equal(attack.damageStatus, "awaiting-damage");
   assert.deepEqual(attack.seekingAmendment.original.rawD20Rolls, [2]);
   assert.equal(attack.seekingAmendment.status, "resolved");
   assert.equal(attack.historicalResolution, true);
+  assert.equal(getCurrentWorkspaceStrikeParent(
+    getState(), "seeking-sequence", "recorded-miss",
+  ), null);
   assert.equal(getState().combat.ki.current, beforeKi - 1);
+});
+
+test("Seeking Strike enforces parent battle/turn windows but allows a matching reaction parent", () => {
+  let context = openFreshSession();
+  updateSessionState(context, (draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+    draft.battleConsole.current = {
+      id: "seeking-battle-a", phase: "own-turn", ownTurnId: "seeking-turn-a",
+    };
+    return draft;
+  }, { operationId: "seeking-context-setup", metadata: { kind: "test-setup" } });
+  context = getSessionContext();
+  assert.equal(combatActions.startAttackSequence(context, {
+    sequenceId: "seeking-context-sequence", kind: "attack-action",
+  }, "seeking-context-start").status, "applied");
+  context = getSessionContext();
+  assert.equal(recordAttack("seeking-context-sequence", "seeking-context-miss", {
+    firstD20: "2", targetArmorClass: "30",
+  }, "seeking-context-miss-op").status, "applied");
+  const kiBefore = getState().combat.ki.current;
+
+  updateSessionState(getSessionContext(), (draft) => {
+    draft.battleConsole.current.id = "seeking-battle-b";
+    return draft;
+  }, { operationId: "seeking-wrong-battle", metadata: { kind: "test-setup" } });
+  assert.equal(beginSeekingStrike(getSessionContext(), "seeking-context-sequence",
+    "seeking-context-miss", "seeking-wrong-battle-op").status, "rejected");
+  assert.equal(getState().combat.ki.current, kiBefore);
+
+  updateSessionState(getSessionContext(), (draft) => {
+    draft.battleConsole.current.id = "seeking-battle-a";
+    draft.ui.turn.turnNumber += 1;
+    return draft;
+  }, { operationId: "seeking-wrong-turn", metadata: { kind: "test-setup" } });
+  assert.equal(beginSeekingStrike(getSessionContext(), "seeking-context-sequence",
+    "seeking-context-miss", "seeking-wrong-turn-op").status, "rejected");
+  updateSessionState(getSessionContext(), (draft) => {
+    draft.ui.turn.turnNumber -= 1;
+    draft.battleConsole.current.phase = "waiting";
+    return draft;
+  }, { operationId: "seeking-ended-turn", metadata: { kind: "test-setup" } });
+  assert.equal(beginSeekingStrike(getSessionContext(), "seeking-context-sequence",
+    "seeking-context-miss", "seeking-ended-turn-op").status, "rejected");
+  assert.equal(getState().combat.ki.current, kiBefore);
+
+  context = openFreshSession();
+  updateSessionState(context, (draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+    draft.battleConsole.current = {
+      id: "seeking-reaction-battle", phase: "waiting", ownTurnId: null,
+    };
+    return draft;
+  }, { operationId: "seeking-reaction-setup", metadata: { kind: "test-setup" } });
+  assert.equal(combatActions.startAttackSequence(getSessionContext(), {
+    sequenceId: "seeking-reaction-sequence", kind: "reaction-unarmed",
+    triggerConfirmed: true,
+  }, "seeking-reaction-start").status, "applied");
+  assert.equal(recordAttack("seeking-reaction-sequence", "seeking-reaction-miss", {
+    kind: "reaction-unarmed", firstD20: "2", targetArmorClass: "30",
+  }, "seeking-reaction-miss-op").status, "applied");
+  const reactionKi = getState().combat.ki.current;
+  const reactionStart = beginSeekingStrike(getSessionContext(),
+    "seeking-reaction-sequence", "seeking-reaction-miss", "seeking-reaction-seeking");
+  assert.equal(reactionStart.status, "applied", reactionStart.reason);
+  assert.equal(getState().combat.ki.current, reactionKi - 1);
+});
+
+test("unknown AC remains null when an explicit master miss is supplied", () => {
+  openFreshSession();
+  const result = combatActions.recordAttackOutcome(getSessionContext(),
+    "unknown-ac-sequence", "unknown-ac-attack", {
+      kind: "attack-action", profileId: "unarmed", rollMode: "normal",
+      firstD20: "12", targetArmorClass: "", dmHitResult: "miss",
+    }, "unknown-ac-operation");
+  assert.equal(result.status, "applied", result.reason);
+  assert.equal(getState().monk.combatAssistant.activeSequences[0]
+    .resolvedAttacks[0].targetArmorClass, null);
+});
+
+test("a resolved Seeking miss may start a new paid invocation without replaying the old payment", () => {
+  let context = openFreshSession();
+  updateSessionState(context, (draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+    return draft;
+  }, { operationId: "seeking-repeat-setup", metadata: { kind: "test-setup" } });
+  assert.equal(combatActions.startAttackSequence(getSessionContext(), {
+    sequenceId: "seeking-repeat-sequence", kind: "attack-action",
+  }, "seeking-repeat-start").status, "applied");
+  assert.equal(recordAttack("seeking-repeat-sequence", "seeking-repeat-attack", {
+    firstD20: "2", targetArmorClass: "30",
+  }, "seeking-repeat-miss").status, "applied");
+  const startingKi = getState().combat.ki.current;
+  assert.equal(beginSeekingStrike(getSessionContext(), "seeking-repeat-sequence",
+    "seeking-repeat-attack", "seeking-invocation-one").status, "applied");
+  const paidKi = getState().combat.ki.current;
+  assert.equal(paidKi, startingKi - 1);
+  const resolved = resolveSeekingStrike(getSessionContext(), "seeking-repeat-sequence",
+    "seeking-repeat-attack", {
+      firstD20: "3", targetArmorClass: "30",
+    }, "seeking-invocation-one-result");
+  assert.equal(resolved.status, "applied", resolved.reason);
+  assert.equal(getState().combat.ki.current, paidKi);
+  const duplicate = beginSeekingStrike(getSessionContext(), "seeking-repeat-sequence",
+    "seeking-repeat-attack", "seeking-invocation-one");
+  assert.equal(duplicate.replayed, true);
+  assert.equal(getState().combat.ki.current, paidKi);
+  const next = beginSeekingStrike(getSessionContext(), "seeking-repeat-sequence",
+    "seeking-repeat-attack", "seeking-invocation-two");
+  assert.equal(next.status, "applied", next.reason);
+  assert.equal(getState().combat.ki.current, paidKi - 1);
+  const attack = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === "seeking-repeat-sequence").resolvedAttacks[0];
+  assert.equal(attack.seekingAmendments.length, 2);
+  assert.equal(attack.seekingAmendments[0].status, "resolved");
+  assert.equal(attack.seekingAmendments[1].status, "awaiting-replacement");
 });
 
 test("Gentling Touch atomically replaces one live Attack slot by physical dice sum", () => {
@@ -431,11 +647,59 @@ test("Gentling Touch atomically replaces one live Attack slot by physical dice s
   assert.equal(sequence.replacementResults[0].thresholdMet, true);
   assert.equal(sequence.replacementResults[0].dice, dieCount);
   assert.equal(sequence.replacementResults[0].slotNumber, 2);
+  assert.equal(getState().ui.turn.actionUsed, true);
   assert.equal(getState().combat.ki.current, beforeKi - 2);
-  assert.equal(applyGentlingTouchToAttackSlot(getSessionContext(), "gentling-sequence", {
+  assert.equal(openCharacterSession("sara-velaris").status, "loaded");
+  const replay = applyGentlingTouchToAttackSlot(getSessionContext(), "gentling-sequence", {
     extraKi: "1", targetHp: "7", sum: String(dieCount * sides),
-  }, "gentling-slot-op").status, "rejected");
+  }, "gentling-slot-op");
+  assert.equal(replay.status, "applied");
+  assert.equal(replay.replayed, true);
+  const mismatchedReplay = applyGentlingTouchToAttackSlot(getSessionContext(),
+    "gentling-sequence", {
+      extraKi: "0", targetHp: "7", sum: String(dieCount * sides),
+    }, "gentling-slot-op");
+  assert.equal(mismatchedReplay.status, "rejected");
   assert.equal(getState().combat.ki.current, beforeKi - 2);
+});
+
+test("two Gentling replacements consume both Attack slots and reject a third ordinary attack", () => {
+  let context = openFreshSession();
+  const setup = updateSessionState(context, (draft) => {
+    draft.profile.level = 5;
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:gentling-touch";
+    return draft;
+  }, { operationId: "two-gentling-setup", metadata: { kind: "test-setup" } });
+  assert.equal(setup.status, "applied");
+  context = getSessionContext();
+  assert.equal(combatActions.startAttackSequence(context, {
+    sequenceId: "two-gentling-sequence", kind: "attack-action",
+  }, "two-gentling-start").status, "applied");
+  let state = getState();
+  const sides = getDerivedStats(state).monk.martialDieSides;
+  for (let slot = 1; slot <= 2; slot += 1) {
+    const result = applyGentlingTouchToAttackSlot(getSessionContext(),
+      "two-gentling-sequence", {
+        extraKi: "0", targetHp: "7", sum: "5",
+      }, `two-gentling-slot-${slot}`);
+    assert.equal(result.status, "applied", result.reason);
+    state = getState();
+  }
+  const sequence = state.monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === "two-gentling-sequence");
+  assert.equal(sequence.replacementResults.length, 2);
+  assert.deepEqual(sequence.replacementResults.map((entry) => entry.slotNumber), [1, 2]);
+  assert.equal(sequence.status, "complete");
+  assert.equal(getUsedAttackSlots(sequence), sequence.maximumAttacks);
+  const third = combatActions.recordAttackOutcome(getSessionContext(),
+    "two-gentling-sequence", "forbidden-third", {
+      kind: "attack-action", profileId: "unarmed", rollMode: "normal",
+      firstD20: "12", dmHitResult: "miss",
+    }, "forbidden-third-op");
+  assert.equal(third.status, "rejected");
+  assert.equal(getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === sequence.id).resolvedAttacks.length, 0);
+  assert.ok(sides > 0);
 });
 
 test("melee Martial Arts weapon hit can use an eligible Strike while ranged attacks cannot", () => {

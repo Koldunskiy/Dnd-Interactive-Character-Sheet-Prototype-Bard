@@ -162,6 +162,8 @@ class FixtureDialog extends FixtureNode {
       '[data-workspace-form="strike"]': this.forms.strike,
       '[data-workspace-form="command"]': this.forms.command,
       '[data-workspace-form="missile-return"]': this.forms.missileReturn,
+      '[data-workspace-form="seeking"]': this.forms.seeking,
+      '[data-workspace-form="gentling"]': this.forms.gentling,
       '[data-workspace-form="roll-followup"]': this.forms.rollFollowup,
       '[data-workspace-form="roll-consequence"]': this.forms.rollConsequence,
       "[data-workspace-hp]": this.hp,
@@ -330,7 +332,8 @@ export function fireWorkspaceAction(dialog, action, data = {}) {
 
 export function fireWorkspaceInput(dialog, name, value, type = "number") {
   const form = dialog.forms.attack ?? dialog.forms.damage ?? dialog.forms.strike ??
-    dialog.forms.command ?? dialog.forms.missileReturn;
+    dialog.forms.command ?? dialog.forms.missileReturn ?? dialog.forms.seeking ??
+    dialog.forms.gentling;
   const control = form?.elements?.find((entry) => entry.name === name);
   if (control) {
     if (type === "checkbox") control.checked = value === true;

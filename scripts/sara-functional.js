@@ -417,7 +417,7 @@ export function spendBoundDart(draft,itemId) {
   const item=boundItem(draft,'darts',itemId);assert(item.quantity>0,'No darts');item.quantity--;return item.quantity;
 }
 export function gentlingPreview({extraKi,targetHp,sum,martialDieSides,wisdomModifier}) {
-  const extra=integer(extraKi,0,integer(wisdomModifier,0,30)),sides=integer(martialDieSides,1,100),dice=5+extra;
+  const wisdomCap=Math.max(0,integer(wisdomModifier,-30,30)),extra=integer(extraKi,0,wisdomCap),sides=integer(martialDieSides,1,100),dice=5+extra;
   const rolled=integer(sum,dice,dice*sides),hp=integer(targetHp);
   return {cost:1+extra,dice,sides,sum:rolled,targetHp:hp,thresholdMet:hp<=rolled};
 }

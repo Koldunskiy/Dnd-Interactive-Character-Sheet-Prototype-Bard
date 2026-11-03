@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getState, updateState } from "../../scripts/state.js";
+import { getState, openCharacterSession, updateState } from "../../scripts/state.js";
 import { getDerivedStats } from "../../scripts/calculations.js";
 import {
   disposeWorkspaceOwner,
@@ -201,6 +201,148 @@ test("equipped dart profile records the weapon snapshot and spends exactly one d
   assert.equal(attack.ammunitionSpend.itemId, "darts");
   assert.equal(attack.hitResult, "hit");
   assert.equal(getState().inventory.items.find((item) => item.id === "darts").quantity, 19);
+  unsubscribe();
+});
+
+test("Seeking Strike is paid from the miss checkpoint and its physical replacement uses the live workspace route", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  updateState((draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+    return draft;
+  });
+  assert.equal(openNormalAttack().ok, true);
+  dialog.forms.attack = new FixtureForm("attack", {
+    profileId: "unarmed",
+    rollMode: "normal",
+    firstD20: "2",
+    targetArmorClass: "30",
+  }, {
+    firstD20: { required: true, min: 1, max: 20, type: "number" },
+  });
+  fireWorkspaceAction(dialog, "attack-miss");
+  assert.equal(getWorkspaceSessionForTests().currentStep, "checkpoint");
+  assert.match(dialog.footer.innerHTML, /begin-seeking/);
+  const sequenceId = getWorkspaceSessionForTests().sequenceId;
+  const attackId = getWorkspaceSessionForTests().attackId;
+  const kiBefore = getState().combat.ki.current;
+  fireWorkspaceAction(dialog, "begin-seeking");
+  assert.equal(getWorkspaceSessionForTests().currentStep, "seeking-input");
+  assert.equal(getState().combat.ki.current, kiBefore - 1);
+  const pendingOwner = getWorkspaceSessionForTests().owner;
+  disposeWorkspaceOwner(pendingOwner, "session-changed");
+  assert.equal(openCharacterSession("sara-velaris").status, "loaded");
+  assert.match(renderBattleConsole(getState()), /data-battle-open-seeking/);
+  assert.equal(openNormalAttack({ sequenceId, attackId }).ok, true);
+  assert.equal(getWorkspaceSessionForTests().currentStep, "seeking-input");
+  dialog.forms.seeking = new FixtureForm("seeking", {
+    rollMode: "normal",
+    firstD20: "19",
+    targetArmorClass: "10",
+    dmHitResult: "",
+  }, {
+    firstD20: { required: true, min: 1, max: 20, type: "number" },
+    targetArmorClass: { min: 1, max: 99, type: "number" },
+  });
+  fireWorkspaceAction(dialog, "submit-seeking");
+  const attack = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === sequenceId).resolvedAttacks[0];
+  assert.equal(attack.id, attackId);
+  assert.equal(attack.hitResult, "hit");
+  assert.equal(attack.damageStatus, "awaiting-damage");
+  assert.equal(attack.historicalResolution, false);
+  assert.equal(getWorkspaceSessionForTests().currentStep, "damage-input");
+  unsubscribe();
+});
+
+test("Gentling Touch occupies the first real Attack slot, spends action once, and leaves no third slot", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  updateState((draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:gentling-touch";
+    return draft;
+  });
+  assert.equal(openNormalAttack().ok, true);
+  assert.match(dialog.footer.innerHTML, /begin-gentling/);
+  const kiBefore = getState().combat.ki.current;
+  fireWorkspaceAction(dialog, "begin-gentling");
+  assert.equal(getWorkspaceSessionForTests().currentStep, "gentling-input");
+  const dieCount = 5;
+  const sides = getDerivedStats(getState()).monk.martialDieSides;
+  dialog.forms.gentling = new FixtureForm("gentling", {
+    extraKi: "0",
+    targetHp: "7",
+    sum: String(dieCount * sides),
+  }, {
+    extraKi: { required: true, min: 0, max: 30, type: "number" },
+    targetHp: { required: true, min: 0, max: 9999, type: "number" },
+    sum: { required: true, min: 1, max: 9999, type: "number" },
+  });
+  fireWorkspaceAction(dialog, "submit-gentling");
+  assert.equal(getState().ui.turn.actionUsed, true);
+  assert.equal(getState().combat.ki.current, kiBefore - 1);
+  const sequence = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === getWorkspaceSessionForTests().sequenceId);
+  assert.equal(sequence.replacementResults[0].slotNumber, 1);
+  assert.equal(sequence.actionFlagApplied, true);
+  assert.equal(getWorkspaceSessionForTests().currentStep, "attack-input");
+
+  dialog.forms.attack = new FixtureForm("attack", {
+    profileId: "unarmed",
+    rollMode: "normal",
+    firstD20: "15",
+    targetArmorClass: "30",
+  }, {
+    firstD20: { required: true, min: 1, max: 20, type: "number" },
+    targetArmorClass: { min: 1, max: 99, type: "number" },
+  });
+  fireWorkspaceAction(dialog, "attack-miss");
+  const completed = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === sequence.id);
+  assert.equal(completed.status, "complete");
+  assert.equal(completed.resolvedAttacks[0].slotNumber, 2);
+  assert.equal(completed.resolvedAttacks.length + completed.replacementResults.length, 2);
+  assert.equal(getWorkspaceSessionForTests().capabilities.canContinueSequence, false);
+  unsubscribe();
+});
+
+test("Gentling Touch can replace the second slot after an ordinary attack in the workspace", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  updateState((draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:gentling-touch";
+    return draft;
+  });
+  assert.equal(openNormalAttack().ok, true);
+  dialog.forms.attack = new FixtureForm("attack", {
+    profileId: "unarmed",
+    rollMode: "normal",
+    firstD20: "2",
+    targetArmorClass: "30",
+  }, {
+    firstD20: { required: true, min: 1, max: 20, type: "number" },
+    targetArmorClass: { min: 1, max: 99, type: "number" },
+  });
+  fireWorkspaceAction(dialog, "attack-miss");
+  assert.equal(getWorkspaceSessionForTests().currentStep, "checkpoint");
+  assert.match(dialog.footer.innerHTML, /begin-gentling/);
+  fireWorkspaceAction(dialog, "begin-gentling");
+  const sides = getDerivedStats(getState()).monk.martialDieSides;
+  dialog.forms.gentling = new FixtureForm("gentling", {
+    extraKi: "0",
+    targetHp: "7",
+    sum: String(5 * sides),
+  }, {
+    extraKi: { required: true, min: 0, max: 30, type: "number" },
+    targetHp: { required: true, min: 0, max: 9999, type: "number" },
+    sum: { required: true, min: 1, max: 9999, type: "number" },
+  });
+  fireWorkspaceAction(dialog, "submit-gentling");
+  const sequence = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === getWorkspaceSessionForTests().sequenceId);
+  assert.equal(sequence.resolvedAttacks[0].slotNumber, 1);
+  assert.equal(sequence.replacementResults[0].slotNumber, 2);
+  assert.equal(sequence.status, "complete");
+  assert.equal(sequence.actionFlagApplied, true);
+  assert.equal(getState().ui.turn.actionUsed, true);
+  assert.equal(getWorkspaceSessionForTests().capabilities.canContinueSequence, false);
   unsubscribe();
 });
 

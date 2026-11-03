@@ -1,6 +1,7 @@
 import { getActiveBattle, getActionBudget } from "./model.js";
 import { getSaraBattleCommandRegistry } from "./command-registry.js";
 import { isRollConsequencePending } from "../rolls/commands.js";
+import { getUsedAttackSlots } from "../actions/sara-combat.js";
 
 const ATTACK_SEQUENCE_KINDS = new Set([
   "attack-action",
@@ -23,8 +24,7 @@ export function getOwnTurnContinuationTasks(character) {
   const turnNumber = Number(character.ui?.turn?.turnNumber ?? 1);
   return (character.monk?.combatAssistant?.activeSequences ?? [])
     .filter((sequence) => {
-      const remaining = Number(sequence.maximumAttacks) -
-        (sequence.resolvedAttacks?.length ?? 0);
+      const remaining = Number(sequence.maximumAttacks) - getUsedAttackSlots(sequence);
       return ATTACK_SEQUENCE_KINDS.has(sequence.kind) &&
         sequence.status === "open" && remaining > 0 &&
         Number(sequence.turnMarker) === turnNumber &&
@@ -36,7 +36,7 @@ export function getOwnTurnContinuationTasks(character) {
       sequenceId: sequence.id,
       kind: sequence.kind,
       remaining: Math.max(0, Number(sequence.maximumAttacks) -
-        (sequence.resolvedAttacks?.length ?? 0)),
+        getUsedAttackSlots(sequence)),
       label: sequence.kind === "flurry" ? "Продолжить Шквал ударов"
         : sequence.kind === "attack-action" ? "Продолжить атаку"
           : sequence.kind === "bonus-unarmed" ? "Продолжить бонусный удар"
@@ -52,11 +52,27 @@ export function getUnfinishedPlayerWork(character, workspaceSessions = []) {
     .filter((workspace) => workspace.stage === "damage-input" &&
       workspace.sequenceId && workspace.attackId)
     .map((workspace) => `${workspace.sequenceId}:${workspace.attackId}`));
+  const liveSeekingTasks = new Set(workspaceSessions
+    .filter((workspace) => workspace.stage === "seeking-input" &&
+      workspace.sequenceId && workspace.attackId)
+    .map((workspace) => `${workspace.sequenceId}:${workspace.attackId}`));
   for (const sequence of assistant.activeSequences ?? []) {
     for (const attack of sequence.resolvedAttacks ?? []) {
+      if (attack.seekingAmendment?.status === "awaiting-replacement" &&
+          !liveSeekingTasks.has(`${sequence.id}:${attack.id}`)) {
+        work.push({
+          id: `seeking:${sequence.id}:${attack.id}`,
+          kind: "pending-seeking",
+          group: "required",
+          consequenceStatus: "awaiting-replacement",
+          label: `Seeking Strike · новый бросок · удар ${attack.slotNumber ?? sequence.resolvedAttacks.indexOf(attack) + 1}/${sequence.maximumAttacks}`,
+          sequenceId: sequence.id,
+          attackId: attack.id,
+        });
+      }
       if (attack.damageStatus === "awaiting-damage" &&
           !liveDamageTasks.has(`${sequence.id}:${attack.id}`)) {
-        const attackNumber = sequence.resolvedAttacks.indexOf(attack) + 1;
+        const attackNumber = attack.slotNumber ?? sequence.resolvedAttacks.indexOf(attack) + 1;
         work.push({
           id: `damage:${sequence.id}:${attack.id}`,
           kind: "historical-damage",

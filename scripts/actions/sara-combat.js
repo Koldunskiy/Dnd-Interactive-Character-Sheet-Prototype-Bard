@@ -2,13 +2,14 @@ import { getDerivedStats } from "../calculations.js";
 import {
   calculateAttackDamage,
   calculateAttackPreview,
+  calculateAttackPreviewFromSnapshot,
   calculateDeflectionPreview,
   parsePhysicalInteger
 } from "../combat/sara-combat.js";
 import { applyHealing } from "../combat/damage-pools.js";
 import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
 import { MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
-import { isCurrentSession, updateSessionState } from "../state.js";
+import { getState, isCurrentSession, updateSessionState } from "../state.js";
 import { applyMonkTechnique } from "./monk.js";
 import { closeRestWindow, spendBoundDart } from "../sara-functional.js";
 import { isAttackProfileEligible } from "../combat/attack-profile-eligibility.js";
@@ -90,7 +91,7 @@ function createSequenceRecord(character, sequenceId, kind = "attack-action", inp
     parentId: input.parentId ?? null,
     parentFeature: input.parentFeature ?? null,
     turnMarker: Number(character.ui?.turn?.turnNumber ?? 1),
-    battleId: battle?.phase === "own-turn" ? battle.id : null,
+    battleId: battle?.id ?? null,
     ownTurnId: battle?.phase === "own-turn" ? battle.ownTurnId : null,
     status: "open",
     maximumAttacks,
@@ -119,6 +120,23 @@ function validateBattleActionPhase(character, kind) {
     : "Эту боевую атаку можно начать только в свой ход.";
 }
 
+function seekingParentWindowIsCurrent(character, sequence) {
+  if (!sequence || !["open", "complete"].includes(sequence.status) ||
+      Number(sequence.turnMarker) !== Number(character.ui?.turn?.turnNumber ?? 1)) return false;
+  const battle = character.battleConsole?.current;
+  const reaction = ["reaction-unarmed", "returned-projectile"].includes(sequence.kind);
+  if (reaction) {
+    return sequence.kind === "reaction-unarmed" && Boolean(battle) &&
+      ["waiting", "own-turn"].includes(battle.phase) && battle.id === sequence.battleId &&
+      (!sequence.ownTurnId || sequence.ownTurnId === battle.ownTurnId) &&
+      character.ui?.turn?.reactionUsed === true;
+  }
+  if (!["attack-action", "flurry", "bonus-unarmed"].includes(sequence.kind)) return false;
+  if (!battle) return !sequence.battleId;
+  return battle.phase === "own-turn" && battle.id === sequence.battleId &&
+    (!sequence.ownTurnId || sequence.ownTurnId === battle.ownTurnId);
+}
+
 function reject(reason) {
   return { status: "rejected", reason };
 }
@@ -127,6 +145,11 @@ function mayRunAlongside(kind, existingKind) {
   const bonusKinds = new Set(["flurry", "bonus-unarmed"]);
   return kind === "attack-action" && bonusKinds.has(existingKind) ||
     existingKind === "attack-action" && bonusKinds.has(kind);
+}
+
+export function getUsedAttackSlots(sequence) {
+  return (sequence?.resolvedAttacks?.length ?? 0) +
+    (sequence?.replacementResults?.length ?? 0);
 }
 
 export function getSaraAttackCount(character, kind = "attack-action") {
@@ -144,7 +167,10 @@ function commit(context, operationId, metadata, updater, validate) {
 
 export function startAttackSequence(context, input, operationId) {
   const kind = input.kind ?? "attack-action";
-  if (!["attack-action", "flurry", "bonus-unarmed", "reaction-unarmed", "returned-projectile"].includes(kind)) {
+  if (kind === "returned-projectile") {
+    return reject("Возвращённый снаряд применяется одной атомарной записью физической атаки.");
+  }
+  if (!["attack-action", "flurry", "bonus-unarmed", "reaction-unarmed"].includes(kind)) {
     return reject("Неизвестный вид последовательности атак.");
   }
   if (typeof input.sequenceId !== "string" || !input.sequenceId.trim()) {
@@ -203,29 +229,6 @@ export function startAttackSequence(context, input, operationId) {
         actionFlagApplied = false;
       }
       const sequence = createSequenceRecord(draft, input.sequenceId, kind, input);
-      if (kind === "returned-projectile") {
-        const token = draft.monk?.techniqueRuntime?.deflectContinuation;
-        if (typeof input.parentId !== "string" || !input.parentId.trim() ||
-            typeof token?.id !== "string" || !token.id.trim() ||
-            input.parentId !== token.id || token.kind !== "missile-return" ||
-            token.sourceSessionGeneration !== context.sessionGeneration ||
-            token.reactionAlreadyUsed !== true || token.consumed === true ||
-            token.reservedBySequence) {
-          throw new Error("Возвращённый снаряд требует действительный токен текущей реакции.");
-        }
-        if (input.proficiencyConfirmed !== true) {
-          throw new Error("Подтвердите владение простым оружием для возвращённого снаряда.");
-        }
-        const battle = draft.battleConsole?.current;
-        if (token.battleId && (battle?.id !== token.battleId ||
-            !["waiting", "own-turn"].includes(battle.phase) ||
-            token.ownTurnId && token.ownTurnId !== battle.ownTurnId)) {
-          throw new Error("Продолжение возвращённого снаряда устарело для текущего боя.");
-        }
-        token.reservedBySequence = input.sequenceId;
-        sequence.returnContinuationId = token.id;
-        sequence.returnProficiencyConfirmed = true;
-      }
       if (kind === "bonus-unarmed") {
         turn.bonusActionUsed = true;
         sequence.actionFlagApplied = true;
@@ -258,23 +261,6 @@ export function startAttackSequence(context, input, operationId) {
           input.parentFeature !== "deflect-counter") {
         return "Реакция уже использована в этом ходу.";
       }
-      if (kind === "returned-projectile") {
-        const token = current.monk?.techniqueRuntime?.deflectContinuation;
-        if (typeof input.parentId !== "string" || !input.parentId.trim() ||
-            typeof token?.id !== "string" || !token.id.trim() ||
-            token.id !== input.parentId ||
-            token.sourceSessionGeneration !== context.sessionGeneration ||
-            token.kind !== "missile-return" || token.reactionAlreadyUsed !== true ||
-            token.consumed === true || token.reservedBySequence ||
-            input.proficiencyConfirmed !== true) {
-          return "Нет действительного подтверждённого продолжения возвращённого снаряда.";
-        }
-        if (token.battleId && (current.battleConsole?.current?.id !== token.battleId ||
-            !["waiting", "own-turn"].includes(current.battleConsole.current.phase) ||
-            token.ownTurnId && token.ownTurnId !== current.battleConsole.current.ownTurnId)) {
-          return "Продолжение возвращённого снаряда устарело для текущего боя.";
-        }
-      }
       return null;
     });
 }
@@ -292,7 +278,7 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
       if (!sequence && assistant.activeSequences.some((entry) => entry.id === actionId)) {
         throw new Error("Идентификатор последовательности уже использован.");
       }
-      if (!sequence && ["attack-action", "bonus-unarmed", "reaction-unarmed"].includes(input.kind) &&
+      if (!sequence && ["attack-action", "bonus-unarmed", "reaction-unarmed", "returned-projectile"].includes(input.kind) &&
           !assistant.activeSequences.some((entry) => entry.status === "open")) {
         if (input.kind === "bonus-unarmed" && input.triggerConfirmed !== true) {
           throw new Error("Подтвердите условие бонусной атаки Боевых искусств.");
@@ -310,15 +296,38 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
             input.confirmSeparateAction !== true) {
           throw new Error("Действие уже отмечено. Подтвердите отдельное действие или исправьте отметку хода.");
         }
-        sequence = createSequenceRecord(draft, actionId, input.kind);
+        sequence = createSequenceRecord(draft, actionId, input.kind, input);
+        if (input.kind === "returned-projectile") {
+          sequence.returnContinuationId = input.parentId;
+          sequence.returnProficiencyConfirmed = input.proficiencyConfirmed === true;
+        }
         assistant.activeSequences.push(sequence);
       }
       if (!sequence) throw new Error("Последовательность атаки закрыта или недействительна.");
       if (sequence.resolvedAttacks.some((attack) => attack.id === attackId)) {
         throw new Error("Этот удар уже записан.");
       }
-      if (sequence.resolvedAttacks.length >= sequence.maximumAttacks) {
+      if (getUsedAttackSlots(sequence) >= sequence.maximumAttacks) {
         throw new Error("В этой последовательности уже записано максимальное число атак.");
+      }
+      let returnToken = null;
+      if (sequence.kind === "returned-projectile") {
+        returnToken = draft.monk?.techniqueRuntime?.deflectContinuation;
+        if (typeof input.parentId !== "string" || !input.parentId.trim() ||
+            sequence.parentId !== input.parentId ||
+            sequence.returnContinuationId !== input.parentId ||
+            returnToken?.id !== input.parentId || returnToken.kind !== "missile-return" ||
+            returnToken.sourceSessionGeneration !== context.sessionGeneration ||
+            returnToken.reactionAlreadyUsed !== true || returnToken.consumed === true ||
+            returnToken.reservedBySequence || input.proficiencyConfirmed !== true) {
+          throw new Error("Нет действительного токена продолжения возвращённого снаряда.");
+        }
+        const battle = draft.battleConsole?.current;
+        if (returnToken.battleId && (battle?.id !== returnToken.battleId ||
+            !["waiting", "own-turn"].includes(battle.phase) ||
+            returnToken.ownTurnId && returnToken.ownTurnId !== battle.ownTurnId)) {
+          throw new Error("Токен продолжения возвращённого снаряда устарел для этого боя.");
+        }
       }
       const derived = getDerivedStats(draft);
       const profileId = input.profileId ?? "unarmed";
@@ -327,22 +336,12 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
         throw new Error("Этот профиль атаки недопустим для текущей последовательности.");
       }
       if (sequence.kind === "returned-projectile") {
-        const token = draft.monk?.techniqueRuntime?.deflectContinuation;
-        if (!sequence.returnContinuationId ||
-            sequence.parentId !== sequence.returnContinuationId ||
-            token?.id !== sequence.returnContinuationId ||
-            token.reservedBySequence !== sequence.id || token.consumed === true ||
-            token.sourceSessionGeneration !== context.sessionGeneration ||
-            token.reactionAlreadyUsed !== true) {
-          throw new Error("Нет действительного зарезервированного продолжения снаряда.");
-        }
         const currentKi = Number(draft.combat?.ki?.current);
         if (!Number.isInteger(currentKi) || currentKi < 1) {
           throw new Error("Для возвращения снаряда требуется 1 ци.");
         }
         draft.combat.ki.current = currentKi - 1;
-        token.consumed = true;
-        delete token.reservedBySequence;
+        returnToken.consumed = true;
         sequence.resourcePaymentApplied = true;
       }
       const previewInput = { ...input, profileId };
@@ -371,7 +370,8 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
         rollMode: preview.rollMode,
         chosenD20: preview.chosenD20,
         attackBonusSnapshot: preview.attackBonusSnapshot,
-        targetArmorClass: input.targetArmorClass == null ? null : Number(input.targetArmorClass),
+        targetArmorClass: input.targetArmorClass == null ||
+          String(input.targetArmorClass).trim() === "" ? null : Number(input.targetArmorClass),
         attackTotal: preview.attackTotal,
         hitResolutionSource: preview.hitResolutionSource,
         hitResult: preview.hitResult ? "hit" : "miss",
@@ -396,6 +396,7 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
       }
       closeRestWindow(draft, "recorded-attack");
       sequence.resolvedAttacks.push(attack);
+      attack.slotNumber = getUsedAttackSlots(sequence);
       if (sequence.kind === "attack-action" && !sequence.actionFlagApplied) {
         draft.ui.turn.actionUsed = true;
         sequence.actionFlagApplied = true;
@@ -406,7 +407,7 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
         draft.ui.turn.reactionUsed = true;
         sequence.actionFlagApplied = true;
       }
-      if (sequence.resolvedAttacks.length >= sequence.maximumAttacks) {
+      if (getUsedAttackSlots(sequence) >= sequence.maximumAttacks) {
         sequence.status = "complete";
       }
       return draft;
@@ -416,12 +417,12 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
       const sequence = sequences.find((entry) => entry.id === actionId && entry.status === "open");
       const phaseReason = validateBattleActionPhase(current, sequence?.kind ?? input.kind ?? "attack-action");
       if (phaseReason) return phaseReason;
-      const canStart = ["attack-action", "bonus-unarmed", "reaction-unarmed"].includes(input.kind) &&
+      const canStart = ["attack-action", "bonus-unarmed", "reaction-unarmed", "returned-projectile"].includes(input.kind) &&
         !sequences.some((entry) => entry.id === actionId ||
           entry.status === "open" && !mayRunAlongside(input.kind, entry.kind));
       if (!isSara(current) || (!sequence && !canStart)) return "Последовательность атаки закрыта или недействительна.";
       if (sequence && (sequence.resolvedAttacks.some((attack) => attack.id === attackId) ||
-          sequence.resolvedAttacks.length >= sequence.maximumAttacks)) {
+          getUsedAttackSlots(sequence) >= sequence.maximumAttacks)) {
         return "Удар уже записан или достигнут предел атак.";
       }
       return null;
@@ -429,135 +430,207 @@ export function recordAttackOutcome(context, actionId, attackId, input, operatio
 }
 
 export function beginSeekingStrike(context, actionId, attackId, operationId) {
-          return commit(context, operationId, {
-            kind: "sara-seeking-strike-begin", actionId, attackId, paidKi: 1,
-          }, (draft) => {
-            const sequence = draft.monk?.combatAssistant?.activeSequences?.find((entry) => entry.id === actionId);
-            const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
-            if (!isSara(draft) || !sequence || !attack || attack.hitResult !== "miss" ||
-                sequence.status !== "open" && sequence.status !== "complete" ||
-                attack.seekingAmendment ||
-                !(attack.profileId === "unarmed" || attack.profileSnapshot?.martialArtsEligible === true) ||
-                !getEffectiveSelectedTechniqueIds(draft).has("ll-monk:seeking-strike") ||
-                Number(sequence.turnMarker) !== Number(draft.ui?.turn?.turnNumber ?? 1)) {
-              throw new Error("Seeking Strike требует актуальный записанный промах Martial Arts без прежней замены.");
-            }
-            const ki = Number(draft.combat?.ki?.current);
-            if (!Number.isInteger(ki) || ki < 1) throw new Error("Для Seeking Strike требуется 1 ци.");
-            draft.combat.ki.current = ki - 1;
-            attack.seekingAmendment = {
-              status: "awaiting-replacement",
-              original: {
-                rawD20Rolls: structuredClone(attack.rawD20Rolls),
-                chosenD20: attack.chosenD20,
-                attackTotal: attack.attackTotal,
-                hitResult: attack.hitResult,
-                critical: attack.critical,
-              },
-              kiPaid: 1,
-              paidOperationId: operationId,
-            };
-            closeRestWindow(draft, "seeking-strike-paid");
-            return draft;
-          }, (current) => {
-            const sequence = current.monk?.combatAssistant?.activeSequences?.find((entry) => entry.id === actionId);
-            const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
-            return isSara(current) && attack?.hitResult === "miss" && !attack.seekingAmendment &&
-              (attack.profileId === "unarmed" || attack.profileSnapshot?.martialArtsEligible === true) &&
-              getEffectiveSelectedTechniqueIds(current).has("ll-monk:seeking-strike")
-              ? null : "Нет eligible записанного промаха для Seeking Strike.";
-          });
-        }
+  if (!operationId) return reject("Для операции требуется стабильный идентификатор.");
+  if (!isCurrentSession(context)) return reject("stale-session");
+  const state = getState();
+  const oldInvocation = (state.monk?.combatAssistant?.activeSequences ?? [])
+    .flatMap((sequence) => (sequence.resolvedAttacks ?? []).flatMap((attack) =>
+      attack.seekingAmendments ?? (attack.seekingAmendment ? [attack.seekingAmendment] : [])))
+    .find((entry) => entry.paidOperationId === operationId);
+  if (oldInvocation) {
+    return oldInvocation.parent?.actionId === actionId && oldInvocation.parent?.attackId === attackId
+      ? { status: "applied", replayed: true, result: structuredClone(oldInvocation) }
+      : reject("Идентификатор Seeking Strike уже использован для другого родителя.");
+  }
+  return commit(context, operationId, {
+    kind: "sara-seeking-strike-begin", actionId, attackId, paidKi: 1,
+  }, (draft) => {
+    const sequence = draft.monk?.combatAssistant?.activeSequences?.find((entry) => entry.id === actionId);
+    const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
+    const history = attack?.seekingAmendments ??
+      (attack?.seekingAmendment ? [attack.seekingAmendment] : []);
+    if (!isSara(draft) || !sequence || !attack || attack.hitResult !== "miss" ||
+        !seekingParentWindowIsCurrent(draft, sequence) ||
+        !(attack.profileId === "unarmed" || attack.profileSnapshot?.martialArtsEligible === true) ||
+        !attack.profileSnapshot || !Number.isFinite(Number(attack.attackBonusSnapshot)) ||
+        history.some((entry) => entry.status === "awaiting-replacement") ||
+        !getEffectiveSelectedTechniqueIds(draft).has("ll-monk:seeking-strike")) {
+      throw new Error("Seeking Strike требует текущий допустимый записанный промах Martial Arts.");
+    }
+    const ki = Number(draft.combat?.ki?.current);
+    if (!Number.isInteger(ki) || ki < 1) throw new Error("Для Seeking Strike требуется 1 ци.");
+    draft.combat.ki.current = ki - 1;
+    const amendment = {
+      id: operationId,
+      status: "awaiting-replacement",
+      original: {
+        rawD20Rolls: structuredClone(attack.rawD20Rolls),
+        rollMode: attack.rollMode,
+        chosenD20: attack.chosenD20,
+        attackTotal: attack.attackTotal,
+        hitResult: attack.hitResult,
+        critical: attack.critical,
+      },
+      parent: { actionId, attackId },
+      kiPaid: 1,
+      paidOperationId: operationId,
+    };
+    attack.seekingAmendments ??= history;
+    attack.seekingAmendments.push(amendment);
+    attack.seekingAmendment = amendment;
+    closeRestWindow(draft, "seeking-strike-paid");
+    return draft;
+  }, (current) => {
+    const sequence = current.monk?.combatAssistant?.activeSequences?.find((entry) => entry.id === actionId);
+    const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
+    const history = attack?.seekingAmendments ??
+      (attack?.seekingAmendment ? [attack.seekingAmendment] : []);
+    return isSara(current) && attack?.hitResult === "miss" &&
+      seekingParentWindowIsCurrent(current, sequence) &&
+      (attack.profileId === "unarmed" || attack.profileSnapshot?.martialArtsEligible === true) &&
+      !history.some((entry) => entry.status === "awaiting-replacement") &&
+      getEffectiveSelectedTechniqueIds(current).has("ll-monk:seeking-strike")
+      ? null : "Нет допустимого текущего промаха для Seeking Strike.";
+  });
+}
 
 export function resolveSeekingStrike(context, actionId, attackId, input, operationId) {
-          return commit(context, operationId, { kind: "sara-seeking-strike-result", actionId, attackId },
-            (draft) => {
-              const sequence = draft.monk?.combatAssistant?.activeSequences?.find((entry) => entry.id === actionId);
-              const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
-              const pending = attack?.seekingAmendment;
-              if (!pending || pending.status !== "awaiting-replacement" ||
-                  attack.hitResult !== "miss" || sequence.resolvedAttacks.length > sequence.maximumAttacks) {
-                throw new Error("Нет оплаченного Seeking Strike, ожидающего нового физического результата.");
-              }
-              const preview = calculateAttackPreview(draft, {
-                profileId: attack.profileId,
-                rollMode: input.rollMode ?? "normal",
-                firstD20: input.firstD20,
-                secondD20: input.secondD20,
-                targetArmorClass: input.targetArmorClass ?? attack.targetArmorClass,
-                dmHitResult: input.dmHitResult,
-              });
-              if (!preview.ok) throw new Error(preview.reason);
-              if (preview.hitResult == null) throw new Error("Для переброса укажите КД либо явное попадание/промах.");
-              pending.replacement = {
-                rawD20Rolls: structuredClone(preview.rawD20Rolls),
-                chosenD20: preview.chosenD20,
-                attackTotal: preview.attackTotal,
-                hitResult: preview.hitResult ? "hit" : "miss",
-                critical: preview.critical,
-              };
-              pending.status = "resolved";
-              attack.rawD20Rolls = structuredClone(preview.rawD20Rolls);
-              attack.rollMode = preview.rollMode;
-              attack.chosenD20 = preview.chosenD20;
-              attack.attackTotal = preview.attackTotal;
-              attack.hitResolutionSource = preview.hitResolutionSource;
-              attack.hitResult = preview.hitResult ? "hit" : "miss";
-              attack.critical = preview.critical;
-              attack.damageStatus = preview.hitResult ? "awaiting-damage" : "not-applicable";
-              attack.damageRolls = null;
-              attack.damageTotalBeforeTargetModifiers = null;
-              attack.techniqueApplicationId = null;
-              attack.historicalResolution = true;
-              return draft;
-            }, (current) => {
-              const attack = current.monk?.combatAssistant?.activeSequences?.find((entry) =>
-                entry.id === actionId)?.resolvedAttacks?.find((entry) => entry.id === attackId);
-              return attack?.seekingAmendment?.status === "awaiting-replacement"
-                ? null : "Нет оплаченного Seeking Strike, ожидающего результата.";
-            });
-        }
+  return commit(context, operationId, { kind: "sara-seeking-strike-result", actionId, attackId },
+    (draft) => {
+      const sequence = draft.monk?.combatAssistant?.activeSequences?.find((entry) => entry.id === actionId);
+      const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
+      const pending = attack?.seekingAmendment;
+      if (!pending || pending.status !== "awaiting-replacement" || attack.hitResult !== "miss") {
+        throw new Error("Нет оплаченного Seeking Strike, ожидающего нового физического результата.");
+      }
+      const targetArmorClass = input.targetArmorClass == null ||
+        String(input.targetArmorClass).trim() === ""
+        ? attack.targetArmorClass : input.targetArmorClass;
+      const preview = calculateAttackPreviewFromSnapshot(draft, {
+        profileId: attack.profileId,
+        rollMode: input.rollMode ?? attack.rollMode,
+        firstD20: input.firstD20,
+        secondD20: input.secondD20,
+        targetArmorClass,
+        dmHitResult: input.dmHitResult,
+      }, attack.profileSnapshot, attack.attackBonusSnapshot);
+      if (!preview.ok) throw new Error(preview.reason);
+      if (preview.hitResult == null) throw new Error("Для переброса укажите КД либо явное попадание/промах.");
+      const replacement = {
+        rawD20Rolls: structuredClone(preview.rawD20Rolls),
+        rollMode: preview.rollMode,
+        chosenD20: preview.chosenD20,
+        attackTotal: preview.attackTotal,
+        attackBonusSnapshot: preview.attackBonusSnapshot,
+        hitResult: preview.hitResult ? "hit" : "miss",
+        critical: preview.critical,
+        hitResolutionSource: preview.hitResolutionSource,
+      };
+      pending.replacement = replacement;
+      pending.resolutionOperationId = operationId;
+      pending.status = "resolved";
+      attack.rawD20Rolls = structuredClone(preview.rawD20Rolls);
+      attack.rollMode = preview.rollMode;
+      attack.chosenD20 = preview.chosenD20;
+      attack.attackTotal = preview.attackTotal;
+      attack.attackBonusSnapshot = preview.attackBonusSnapshot;
+      attack.hitResolutionSource = preview.hitResolutionSource;
+      attack.hitResult = replacement.hitResult;
+      attack.critical = preview.critical;
+      attack.damageStatus = preview.hitResult ? "awaiting-damage" : "not-applicable";
+      attack.damageRolls = null;
+      attack.damageTotalBeforeTargetModifiers = null;
+      attack.techniqueApplicationId = null;
+      attack.historicalResolution = !seekingParentWindowIsCurrent(draft, sequence);
+      return draft;
+    }, (current) => {
+      const attack = current.monk?.combatAssistant?.activeSequences?.find((entry) =>
+        entry.id === actionId)?.resolvedAttacks?.find((entry) => entry.id === attackId);
+      return attack?.seekingAmendment?.status === "awaiting-replacement"
+        ? null : "Нет оплаченного Seeking Strike, ожидающего результата.";
+    });
+}
 
 export function applyGentlingTouchToAttackSlot(context, actionId, input, operationId) {
-          return commit(context, operationId, { kind: "sara-gentling-touch-slot", actionId,
-            extraKi: input.extraKi, targetHp: input.targetHp, sum: input.sum },
+          if (!operationId) return reject("Для операции требуется стабильный идентификатор.");
+          if (!isCurrentSession(context)) return reject("stale-session");
+          const request = {
+            extraKi: Number(input.extraKi),
+            targetHp: Number(input.targetHp),
+            sum: Number(input.sum),
+          };
+          if (Object.values(request).some((value) => !Number.isSafeInteger(value))) {
+            return reject("Gentling Touch требует целые физические значения.");
+          }
+          const previousSequence = (getState().monk?.combatAssistant?.activeSequences ?? [])
+            .find((entry) => entry.replacementResults?.some((result) =>
+              result.operationId === operationId));
+          const previous = previousSequence?.replacementResults?.find((entry) =>
+            entry.operationId === operationId);
+          if (previous) {
+            const recorded = previous.request;
+            if (previousSequence.id !== actionId || !recorded ||
+                recorded.extraKi !== request.extraKi ||
+                recorded.targetHp !== request.targetHp || recorded.sum !== request.sum) {
+              return reject("Идентификатор Gentling Touch уже использован с другими данными.");
+            }
+            return { status: "applied", replayed: true, result: structuredClone(previous) };
+          }
+          return commit(context, operationId, { kind: "sara-gentling-touch-slot", actionId, request },
           (draft) => {
             const sequence = draft.monk?.combatAssistant?.activeSequences?.find((entry) =>
               entry.id === actionId);
+            const battle = draft.battleConsole?.current;
+            const validTurn = battle
+              ? battle.phase === "own-turn" && sequence?.battleId === battle.id &&
+                sequence?.ownTurnId === battle.ownTurnId
+              : !sequence?.battleId;
             if (!isSara(draft) || sequence?.kind !== "attack-action" ||
-                !["open", "complete"].includes(sequence.status) ||
+                sequence.status !== "open" ||
+                !validTurn ||
                 Number(sequence.turnMarker) !== Number(draft.ui?.turn?.turnNumber ?? 1) ||
-                sequence.resolvedAttacks.length + (sequence.replacementResults?.length ?? 0) >= sequence.maximumAttacks ||
+                getUsedAttackSlots(sequence) >= sequence.maximumAttacks ||
                 !getEffectiveSelectedTechniqueIds(draft).has("ll-monk:gentling-touch")) {
               throw new Error("Gentling Touch требует текущую последовательность Attack и свободный слот.");
             }
             const wisdom = getDerivedStats(draft).abilityModifiers.wisdom;
             const preview = gentlingPreview({
-              extraKi: input.extraKi,
-              targetHp: input.targetHp,
-              sum: input.sum,
+              ...request,
               martialDieSides: getDerivedStats(draft).monk.martialDieSides,
               wisdomModifier: wisdom,
             });
             const ki = Number(draft.combat?.ki?.current);
             if (!Number.isInteger(ki) || ki < preview.cost) throw new Error("Недостаточно ци для Gentling Touch.");
             draft.combat.ki.current = ki - preview.cost;
+            const slotNumber = getUsedAttackSlots(sequence) + 1;
             sequence.replacementResults ??= [];
             sequence.replacementResults.push({
               id: operationId,
+              operationId,
+              request,
               kind: "gentling-touch",
-              slotNumber: sequence.resolvedAttacks.length + sequence.replacementResults.length + 1,
+              slotNumber,
               ...preview,
             });
-            if (sequence.resolvedAttacks.length + sequence.replacementResults.length >= sequence.maximumAttacks) {
+            if (!sequence.actionFlagApplied) {
+              draft.ui.turn.actionUsed = true;
+              sequence.actionFlagApplied = true;
+            }
+            if (getUsedAttackSlots(sequence) >= sequence.maximumAttacks) {
               sequence.status = "complete";
             }
             closeRestWindow(draft, "gentling-touch-slot");
             return draft;
           }, (current) => {
             const sequence = current.monk?.combatAssistant?.activeSequences?.find((entry) => entry.id === actionId);
-            return sequence?.kind === "attack-action" &&
-              sequence.resolvedAttacks.length + (sequence.replacementResults?.length ?? 0) < sequence.maximumAttacks
+            const battle = current.battleConsole?.current;
+            const validTurn = battle
+              ? battle.phase === "own-turn" && sequence?.battleId === battle.id &&
+                sequence?.ownTurnId === battle.ownTurnId
+              : !sequence?.battleId;
+            return sequence?.kind === "attack-action" && sequence.status === "open" && validTurn &&
+              Number(sequence.turnMarker) === Number(current.ui?.turn?.turnNumber ?? 1) &&
+              getUsedAttackSlots(sequence) < sequence.maximumAttacks
               ? null : "В последовательности больше нет свободного слота Attack.";
           });
         }
@@ -568,7 +641,7 @@ export function closeAttackSequence(context, actionId, operationId) {
       const sequence = draft.monk?.combatAssistant?.activeSequences?.find((entry) =>
         entry.id === actionId && entry.status === "open");
       if (!isSara(draft) || !sequence) throw new Error("Нет открытой последовательности для закрытия.");
-      sequence.status = sequence.resolvedAttacks.length ? "abandoned" : "closed";
+      sequence.status = getUsedAttackSlots(sequence) ? "abandoned" : "closed";
       return draft;
     },
     (current) => current.monk?.combatAssistant?.activeSequences?.some((entry) =>

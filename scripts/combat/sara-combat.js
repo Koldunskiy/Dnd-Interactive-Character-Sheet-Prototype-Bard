@@ -16,6 +16,22 @@ export function calculateAttackPreview(character, input) {
   const profiles = getSaraAttackProfiles(character, derived);
   const profile = profiles?.[input.profileId];
   if (!profile) return { ok: false, reason: "Неизвестный профиль атаки Сары." };
+  return calculateAttackPreviewUsingProfile(character, input, profile);
+}
+
+export function calculateAttackPreviewFromSnapshot(character, input, profileSnapshot, attackBonusSnapshot) {
+  if (!profileSnapshot || typeof profileSnapshot !== "object") {
+    return { ok: false, reason: "Снимок профиля атаки недействителен." };
+  }
+  return calculateAttackPreviewUsingProfile(character,
+    { ...input, attackBonusSnapshot }, profileSnapshot);
+}
+
+function calculateAttackPreviewUsingProfile(character, input, profile) {
+  const attackBonus = input.attackBonusSnapshot ?? profile.attackBonus;
+  if (!Number.isFinite(Number(attackBonus))) {
+    return { ok: false, reason: "Снимок бонуса атаки недействителен." };
+  }
   if (!["normal", "advantage", "disadvantage"].includes(input.rollMode)) {
     return { ok: false, reason: "Выберите обычный бросок, преимущество или помеху." };
   }
@@ -30,7 +46,7 @@ export function calculateAttackPreview(character, input) {
   const chosenD20 = input.rollMode === "advantage"
     ? Math.max(...rolls)
     : input.rollMode === "disadvantage" ? Math.min(...rolls) : rolls[0];
-  const attackTotal = chosenD20 + profile.attackBonus;
+  const attackTotal = chosenD20 + Number(attackBonus);
   let hitResult = null;
   let hitResolutionSource = null;
   if (input.targetArmorClass !== undefined &&
@@ -50,7 +66,7 @@ export function calculateAttackPreview(character, input) {
     rollMode: input.rollMode,
     rawD20Rolls: rolls,
     chosenD20,
-    attackBonusSnapshot: profile.attackBonus,
+    attackBonusSnapshot: Number(attackBonus),
     attackTotal,
     critical: chosenD20 === 20,
     naturalMiss: chosenD20 === 1,

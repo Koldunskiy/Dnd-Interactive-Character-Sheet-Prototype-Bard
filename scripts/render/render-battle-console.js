@@ -83,6 +83,12 @@ function renderPlayerWork(work) {
       data-battle-open-historical-damage="${escapeHtml(work.sequenceId)}"
       data-battle-attack-id="${escapeHtml(work.attackId)}">Продолжить</button></article>`;
   }
+  if (work.kind === "pending-seeking") {
+    return `<article class="battle-work-item"><h4>${escapeHtml(work.label)}</h4>
+      <small>1 ци уже уплачена · требуется физический повторный бросок</small>
+      <button type="button" class="primary" data-battle-open-seeking="${escapeHtml(work.sequenceId)}"
+        data-battle-attack-id="${escapeHtml(work.attackId)}">Продолжить</button></article>`;
+  }
   if (work.kind === "sequence-continuation") {
     return `<article class="battle-work-item"><h4>${escapeHtml(work.label)}</h4>
       <small>Последовательность ударов ещё открыта</small><button type="button" class="primary"
@@ -529,6 +535,16 @@ export function bindBattleConsole(root = document) {
         attackId: historicalDamage.dataset.battleAttackId,
         mode: "historical-damage",
         invoker: historicalDamage,
+      });
+      if (!result.ok) reportFailure(result.reason);
+      return;
+    }
+    const seekingTask = event.target.closest("[data-battle-open-seeking]");
+    if (seekingTask && root.contains(seekingTask)) {
+      const result = openNormalAttack({
+        sequenceId: seekingTask.dataset.battleOpenSeeking,
+        attackId: seekingTask.dataset.battleAttackId,
+        invoker: seekingTask,
       });
       if (!result.ok) reportFailure(result.reason);
       return;

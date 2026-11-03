@@ -9,6 +9,7 @@ import { MONK_TECHNIQUES, MONK_TECHNIQUE_BY_ID } from "../../data/monk-technique
 import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
 import { getWorkspaceHost } from "../workspace/host.js";
 import { getEligibleAttackProfiles } from "../combat/attack-profile-eligibility.js";
+import { getUsedAttackSlots } from "../actions/sara-combat.js";
 
 const STRIKE_SAVE_ABILITIES = Object.freeze({
   "ll-monk:empowered-strike": "Сила",
@@ -100,7 +101,7 @@ function renderAttackForm(session, state) {
   });
   const sequence = (state.monk?.combatAssistant?.activeSequences ?? [])
     .find((entry) => entry.id === session.sequenceId);
-  const attackNumber = (sequence?.resolvedAttacks?.length ?? 0) + 1;
+  const attackNumber = getUsedAttackSlots(sequence) + 1;
   const maximumAttacks = sequence?.maximumAttacks ?? getSaraAttackCount(state);
   const hasNaturalException = session.naturalExceptionOutcome === "hit" ||
     session.naturalExceptionOutcome === "miss";
@@ -212,10 +213,63 @@ function renderDamageForm(session, state) {
   </form>`;
 }
 
+function renderSeekingForm(session) {
+  const values = currentInputs(session);
+  const mode = values.rollMode ?? session.selectedDamage?.attack?.rollMode ?? "normal";
+  return `<form data-workspace-form="seeking">
+    <label class="workspace-field">Режим броска
+      <select data-workspace-field="rollMode" name="rollMode" required>
+        <option value="normal" ${mode === "normal" ? "selected" : ""}>Обычный</option>
+        <option value="advantage" ${mode === "advantage" ? "selected" : ""}>Преимущество</option>
+        <option value="disadvantage" ${mode === "disadvantage" ? "selected" : ""}>Помеха</option>
+      </select>
+    </label>
+    ${field("firstD20", "Новый физический к20", values.firstD20 ?? "", {
+      type: "number", min: 1, max: 20, required: true,
+    })}
+    ${mode === "normal" ? "" : field("secondD20", "Второй физический к20", values.secondD20 ?? "", {
+      type: "number", min: 1, max: 20, required: true,
+    })}
+    ${field("targetArmorClass", "КД цели (необязательно)", values.targetArmorClass ?? "", {
+      type: "number", min: 1, max: 99,
+    })}
+    <label class="workspace-field">Ручной исход без известной КД
+      <select data-workspace-field="dmHitResult" name="dmHitResult">
+        <option value="" ${!values.dmHitResult ? "selected" : ""}>Не указан</option>
+        <option value="hit" ${values.dmHitResult === "hit" ? "selected" : ""}>Попадание</option>
+        <option value="miss" ${values.dmHitResult === "miss" ? "selected" : ""}>Промах</option>
+      </select>
+    </label>
+    ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}
+  </form>`;
+}
+
+function renderGentlingForm(session, state) {
+  const values = currentInputs(session);
+  const maximumExtraKi = Math.max(0, Math.min(
+    getDerivedStats(state).abilityModifiers.wisdom,
+    Number(state.combat?.ki?.current ?? 0) - 1,
+  ));
+  return `<form data-workspace-form="gentling">
+    ${field("extraKi", "Дополнительная ци", values.extraKi ?? "0", {
+      type: "number", min: 0, max: maximumExtraKi, required: true,
+    })}
+    ${field("targetHp", "Текущие HP цели", values.targetHp ?? "", {
+      type: "number", min: 0, max: 9999, required: true,
+    })}
+    ${field("sum", "Физическая сумма костей Боевых искусств", values.sum ?? "", {
+      type: "number", min: 1, max: 9999, required: true,
+    })}
+    ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}
+  </form>`;
+}
+
 function attackNumber(state, session) {
   const sequence = (state.monk?.combatAssistant?.activeSequences ?? [])
     .find((entry) => entry.id === session.sequenceId);
-  return (sequence?.resolvedAttacks?.findIndex((entry) => entry.id === session.attackId) ?? -1) + 1;
+  const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === session.attackId);
+  return attack?.slotNumber ??
+    (sequence?.resolvedAttacks?.findIndex((entry) => entry.id === session.attackId) ?? -1) + 1;
 }
 
 function recordedAttackFormula(attack) {
@@ -303,7 +357,7 @@ function renderAttackRecord(attack, state, attackIndex, maximumAttacks) {
   const application = (state.monk?.combatAssistant?.pendingApplications ?? [])
     .find((entry) => entry.id === attack.techniqueApplicationId);
   return `<article class="workspace-record">
-    <h3>Удар ${attackIndex + 1}/${maximumAttacks} · ${attack.hitResult === "hit" ? "попадание" : "промах"}${attack.critical && attack.hitResult === "hit" ? " · критическое" : ""}</h3>
+    <h3>Удар ${attack.slotNumber ?? attackIndex + 1}/${maximumAttacks} · ${attack.hitResult === "hit" ? "попадание" : "промах"}${attack.critical && attack.hitResult === "hit" ? " · критическое" : ""}</h3>
     ${attack.optionalTargetLabel ? `<p>${escapeHtml(attack.optionalTargetLabel)}</p>` : ""}
     <p>${recordedAttackFormula(attack)}</p>
     ${attack.damageStatus === "awaiting-damage" ? "<p>Ожидает записи урона.</p>" : ""}
@@ -323,7 +377,7 @@ export function renderAttackWorkspace(session, state) {
   const commandTitle = session.command?.titleRu ?? "Действие «Атака»";
   const attackCount = sequence?.maximumAttacks ?? getSaraAttackCount(state);
   const currentAttackNumber = session.currentStep === "attack-input"
-    ? (sequence?.resolvedAttacks?.length ?? 0) + 1
+    ? getUsedAttackSlots(sequence) + 1
     : attackNumber(state, session);
   const activeProfileId = session.rawInputsByStep?.[session.currentStepKey]?.profileId ?? "unarmed";
   const activeProfileName = derived.saraAttackProfiles?.[activeProfileId]?.name ??
@@ -334,6 +388,8 @@ export function renderAttackWorkspace(session, state) {
       ? `Урон · удар ${currentAttackNumber}/${attackCount}`
     : session.currentStep === "attack-input" ? commandTitle
     : session.currentStep === "damage-input" ? "Записать урон"
+      : session.currentStep === "seeking-input" ? "Seeking Strike · новый физический результат"
+        : session.currentStep === "gentling-input" ? "Gentling Touch · занять слот"
       : session.currentStep === "strike-input" ? "Необязательная техника"
       : session.currentStep === "confirm-close" ? "Закрыть рабочую панель"
         : session.currentStep === "summary" ? `Итог: ${commandTitle}` : "Продолжение атаки";
@@ -360,6 +416,15 @@ export function renderAttackWorkspace(session, state) {
       <button type="button" class="primary" data-workspace-action="attack-hit" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: попадание" : "Попадание"}</button>
       <button type="button" data-workspace-action="attack-miss" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: промах" : "Промах"}</button>
     </div>`;
+    const canBeginGentling = getEffectiveSelectedTechniqueIds(state)
+      .has("ll-monk:gentling-touch") && session.sequenceKind === "attack-action" &&
+      Number(state.combat?.ki?.current) >= 1 &&
+      (!sequence || sequence.status === "open" &&
+        getUsedAttackSlots(sequence) < sequence.maximumAttacks);
+    if (canBeginGentling) {
+      footer += `<button type="button" class="btn btn--utility" data-workspace-action="begin-gentling"
+        ${disabled ? "disabled" : ""}>Gentling Touch · занять слот Attack</button>`;
+    }
   } else if (session.currentStep === "damage-input") {
     body = renderDamageForm(session, state);
     const snapshot = session.selectedDamage?.attack?.profileSnapshot;
@@ -372,6 +437,15 @@ export function renderAttackWorkspace(session, state) {
       <button type="button" data-workspace-action="outside-damage"
         ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Урон учтён вне приложения</button>
     </div>`;
+  } else if (session.currentStep === "seeking-input") {
+    body = renderSeekingForm(session);
+    footer = `<button type="button" class="primary" data-workspace-action="submit-seeking"
+      ${session.submitting || session.appliedUnsaved || session.readOnly ? "disabled" : ""}>Записать новый бросок</button>`;
+  } else if (session.currentStep === "gentling-input") {
+    body = renderGentlingForm(session, state);
+    footer = `<button type="button" class="primary" data-workspace-action="submit-gentling"
+      ${session.submitting || session.appliedUnsaved || session.readOnly ? "disabled" : ""}>Применить замену слота</button>
+      <button type="button" data-workspace-action="cancel-contextual">Отмена</button>`;
   } else if (session.currentStep === "strike-input") {
     body = renderStrikeForm(session, state);
     const technique = MONK_TECHNIQUE_BY_ID.get(currentInputs(session).techniqueId);
@@ -383,7 +457,7 @@ export function renderAttackWorkspace(session, state) {
       <button type="button" class="btn btn--utility" data-workspace-action="apply-strike" ${session.submitting || session.appliedUnsaved || !canApplyStrike(session, state) ? "disabled" : ""}>${technique ? `Применить за ${escapeHtml(paymentLabel)}` : "Выберите технику"}</button>`;
   } else if (session.currentStep === "confirm-close") {
     const hasRemainder = sequence?.status === "open" &&
-      sequence.resolvedAttacks.length < sequence.maximumAttacks;
+      getUsedAttackSlots(sequence) < sequence.maximumAttacks;
     body = `<p>${hasRemainder
       ? "У этой атаки ещё есть удары. Продолжение, сворачивание и закрытие остатка — разные решения; уже записанные результаты и расходы сохранятся."
       : session.dirty ? "Есть незавершённый ввод." : "Закрыть только эту рабочую панель?"}</p>
@@ -400,6 +474,19 @@ export function renderAttackWorkspace(session, state) {
     const displayedIndex = currentIndex >= 0 ? currentIndex : attacks.length - 1;
     const currentAttack = attacks[displayedIndex];
     const previousAttacks = attacks.filter((_, index) => index !== displayedIndex);
+    const historyRecords = [
+      ...previousAttacks.map((attack) => ({
+        slotNumber: attack.slotNumber ?? attacks.indexOf(attack) + 1,
+        markup: renderAttackRecord(attack, state, attacks.indexOf(attack),
+          sequence?.maximumAttacks ?? attacks.length),
+      })),
+      ...(sequence?.replacementResults ?? []).map((result) => ({
+        slotNumber: result.slotNumber,
+        markup: `<article class="workspace-record"><h3>Удар ${result.slotNumber}/${sequence.maximumAttacks} · Gentling Touch</h3>
+          <p>${result.dice} костей d${result.sides} · сумма ${result.sum} · цель ${result.targetHp} HP</p>
+          <p>${result.thresholdMet ? "Порог достигнут." : "Порог не достигнут."}</p></article>`,
+      })),
+    ].sort((a, b) => a.slotNumber - b.slotNumber);
     const strikeParent = session.currentStep === "checkpoint" && !session.historicalOnly
       ? getCurrentWorkspaceStrikeParent(
         state, session.strikeParent?.sequenceId, session.strikeParent?.attackId,
@@ -410,10 +497,8 @@ export function renderAttackWorkspace(session, state) {
           ${renderAttackRecord(currentAttack, state, displayedIndex,
             sequence?.maximumAttacks ?? attacks.length)}
         </section>` : ""}
-      ${previousAttacks.length ? `<details class="workspace-history"><summary>Предыдущие результаты · ${previousAttacks.length}</summary>
-        ${previousAttacks.map((attack) => renderAttackRecord(
-          attack, state, attacks.indexOf(attack), sequence?.maximumAttacks ?? attacks.length,
-        )).join("")}</details>` : ""}
+      ${historyRecords.length ? `<details class="workspace-history"><summary>Предыдущие результаты · ${historyRecords.length}</summary>
+        ${historyRecords.map((record) => record.markup).join("")}</details>` : ""}
       ${session.currentStep === "checkpoint" && strikeParent
         ? `<section class="workspace-post-hit"><h3>Урон записан</h3><p>Техника необязательна. Можно продолжить без оплаты.</p></section>`
         : session.currentStep === "checkpoint" && session.capabilities.canContinueSequence
@@ -427,7 +512,7 @@ export function renderAttackWorkspace(session, state) {
     } else if (session.currentStep === "checkpoint" && session.appliedUnsaved) {
       footer = "<p>Продолжение доступно после сохранения результата.</p>";
     } else if (session.currentStep === "checkpoint" && session.capabilities.canContinueSequence) {
-      footer = `<button type="button" class="btn btn--primary" data-workspace-action="next-attack">Следующий удар · ${sequence.resolvedAttacks.length + 1} из ${sequence.maximumAttacks}</button>
+      footer = `<button type="button" class="btn btn--primary" data-workspace-action="next-attack">Следующий удар · ${getUsedAttackSlots(sequence) + 1} из ${sequence.maximumAttacks}</button>
         <button type="button" class="btn btn--utility" data-workspace-action="summary">Завершить ввод атак</button>`;
     } else if (session.currentStep === "summary" && sequence?.status === "open" &&
         session.capabilities.canContinueSequence && !session.readOnly) {
@@ -439,6 +524,29 @@ export function renderAttackWorkspace(session, state) {
         ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>${escapeHtml(session.completionLabel ?? "Готово")}</button>`;
     } else {
       footer = `<button type="button" class="btn btn--primary" data-workspace-action="summary">К итогам</button>`;
+    }
+    if (session.currentStep === "checkpoint" && !session.appliedUnsaved &&
+        currentAttack?.hitResult === "miss" &&
+        getEffectiveSelectedTechniqueIds(state).has("ll-monk:seeking-strike") &&
+        (currentAttack.profileId === "unarmed" ||
+          currentAttack.profileSnapshot?.martialArtsEligible === true) &&
+        currentAttack.seekingAmendment?.status !== "awaiting-replacement" &&
+        !currentAttack.historicalResolution) {
+      footer += `<button type="button" class="btn btn--utility" data-workspace-action="begin-seeking">Seeking Strike · 1 ци</button>`;
+    }
+    const activeSequence = sequence?.kind === "attack-action" &&
+      sequence.status === "open";
+    const canBeginNormalGentling = !sequence && session.currentStep === "attack-input" &&
+      session.sequenceKind === "attack-action" && !session.readOnly;
+    if (["attack-input", "checkpoint"].includes(session.currentStep) && activeSequence &&
+        Number(state.combat?.ki?.current) >= 1 &&
+        getUsedAttackSlots(sequence) < sequence.maximumAttacks &&
+        getEffectiveSelectedTechniqueIds(state).has("ll-monk:gentling-touch")) {
+      footer += `<button type="button" class="btn btn--utility" data-workspace-action="begin-gentling">Gentling Touch · заменить слот</button>`;
+    } else if (canBeginNormalGentling &&
+        Number(state.combat?.ki?.current) >= 1 &&
+        getEffectiveSelectedTechniqueIds(state).has("ll-monk:gentling-touch")) {
+      footer += `<button type="button" class="btn btn--utility" data-workspace-action="begin-gentling">Gentling Touch · занять первый слот</button>`;
     }
   }
   const appliedUnsaved = session.appliedUnsaved
