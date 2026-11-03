@@ -236,6 +236,10 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
     this.open = true;
   };
   const invoker = reusableInvoker ??= new FixtureNode();
+  const taskHud = {
+    innerHTML: "",
+    querySelectorAll: () => [],
+  };
   dialog.open = false;
   dialog.forms = {};
   dialog.childNodes = [];
@@ -280,6 +284,7 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
       return null;
     },
     querySelector(selector) {
+      if (selector === "[data-sara-task-dock] [data-sara-task-hud]") return taskHud;
       if (selector === '[data-panel="melee"].is-active' && embeddedHost) {
         return {
           querySelector: (innerSelector) =>
@@ -307,7 +312,7 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
   const unsubscribe = subscribe((state, metadata) =>
     reconcileWorkspaceAfterStateChange(state, metadata));
   assertWorkspaceHostInitialized();
-  return { dialog, invoker, unsubscribe };
+  return { dialog, invoker, taskHud, unsubscribe };
 }
 
 function assertWorkspaceHostInitialized() {

@@ -826,3 +826,6 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
     transform: none;
   }
 }
+.page[data-character-id="sara-velaris"][data-active-tab="melee"] #saraHeaderResources {
+  display: none;
+}

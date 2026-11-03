@@ -1,4 +1,5 @@
 import { getDerivedStats } from "../calculations.js";
+import { getSaraHudModel, updateSaraHudRegion } from "../render/sara-hud.js";
 import {
   buildRestReplacementCommandId,
   parseRestCommandId,
@@ -440,6 +441,10 @@ function render() {
   });
   session.forceWorkspaceBodyRender = false;
   const derived = getDerivedStats(state);
+  updateSaraHudRegion(
+    document.querySelector("[data-sara-task-dock] [data-sara-task-hud]"),
+    getSaraHudModel(state, derived),
+  );
   const host = getWorkspaceHost();
   const hp = host?.querySelector("[data-workspace-hp]");
   const ki = host?.querySelector("[data-workspace-ki]");

@@ -798,3 +798,49 @@ html[data-combat-entry-active="true"] .combat-workspace-host .workspace-entry-he
 :root[data-theme] .sara-combat-shell .combat-workspace-host .workspace-entry-result .workspace-damage-result__total {
   color: var(--sara-accent);
 }
+.sara-hud {
+  display: grid;
+  gap: .35rem;
+  min-width: 0;
+  padding: .5rem;
+  border-radius: .65rem;
+  background: var(--surface-muted, rgba(0, 0, 0, .08));
+}
+.sara-hud__primary,
+.sara-hud__secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem .8rem;
+  min-width: 0;
+}
+.sara-hud__effects li { display: grid; gap: .2rem; }
+.sara-hud--compact .sara-hud__secondary,
+.sara-hud--compact .sara-hud__effects { display: none; }
+[data-sara-task-dock] [data-sara-task-hud] { flex: 0 0 auto; }
+[data-sara-task-dock][data-entry-active="true"] .sara-hud__secondary,
+[data-sara-task-dock][data-entry-active="true"] .sara-hud__effects,
+[data-sara-task-dock][data-entry-active="true"] .sara-hud__temp { display: none; }
+[data-sara-task-dock][data-entry-active="true"] .sara-hud__primary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .25rem;
+  white-space: nowrap;
+}
+.sara-hud__primary span { min-width: 0; }
+.battle-console-init-form[data-initiative-presentation="true"] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: .75rem;
+  overflow: hidden;
+  padding: 1rem;
+  background: var(--sara-panel, var(--panel, #17232d));
+}
+.battle-console-init-fields { min-height: 0; overflow-y: auto; }
+.battle-console-init-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: .5rem;
+}
+.battle-console-init-actions output { grid-column: 1 / -1; }
+.battle-console-init-actions button[type="submit"] { grid-column: 1 / -1; }

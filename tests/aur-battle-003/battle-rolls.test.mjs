@@ -16,6 +16,7 @@ import { getSaraRollBreakdown } from "../../scripts/rolls/providers/sara.js";
 import { calculateCharacterRoll } from "../../scripts/rolls/calculations.js";
 import { getDerivedStats } from "../../scripts/calculations.js";
 import { renderBattleConsole } from "../../scripts/render/render-battle-console.js";
+import { dispatchSceneUi } from "../../scripts/battle/scene-ui-state.js";
 import { getSaraBattleCommandRegistry } from "../../scripts/battle/command-registry.js";
 import {
   amendCharacterRoll,
@@ -239,10 +240,30 @@ test("the phase hub keeps turn actions hidden while waiting and exposes turn res
   beginOwnTurn(character, { id: "render-turn" });
   markup = renderBattleConsole(character);
   assert.match(markup, /data-player-scene-phase="own-turn"/);
-  assert.match(markup, /data-battle-menu="bonus"/);
-  assert.match(markup, /data-battle-end-turn/);
+  assert.match(markup, /data-battle-command-open="normal-attack">Атаковать/);
+  assert.match(markup, /Другое действие/);
+  assert.match(markup, /Бонусное действие/);
+  assert.match(markup, /Входящее событие/);
+  assert.match(markup, /data-battle-menu="action"/);
+  assert.doesNotMatch(markup, /data-battle-command-open="flurry"/);
+  assert.match(markup, /data-battle-command="end-own-turn"/);
+  const root = {};
+  const owner = { characterId: "sara-velaris", sessionGeneration: 1 };
+  const menu = dispatchSceneUi(root, owner, "render-turn", {
+    type: "set-panel", panel: "bonus",
+  });
+  markup = renderBattleConsole(character, menu);
+  assert.match(markup, /data-battle-command-open="flurry"/);
   assert.equal(getSaraBattleCommandRegistry(character)
     .find((entry) => entry.id === "flurry").availability.enabled, true);
+
+  character.battleConsole.current.phase = "waiting";
+  character.ui.turn.reactionUsed = true;
+  const incoming = dispatchSceneUi({}, owner, "render-turn", {
+    type: "set-panel", panel: "incoming",
+  });
+  markup = renderBattleConsole(character, incoming);
+  assert.match(markup, /data-battle-command-open="incoming-damage"(?![^>]*disabled)/);
 });
 
 test("Dexterity-save Evasion consequence is explicit and corrections do not recalculate HP", () => {

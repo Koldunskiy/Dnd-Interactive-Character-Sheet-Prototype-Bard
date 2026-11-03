@@ -14,14 +14,21 @@ import {
 } from "../battle/command-registry.js";
 import { getDerivedStats } from "../calculations.js";
 import { buildRestHitDieCommandId, buildRestReplacementCommandId } from "../workspace/rest-command.js";
-import { getState } from "../state.js";
+import { getState, getSessionContext } from "../state.js";
 import {
   getPlayerHubViewModel,
 } from "../battle/player-hub.js";
 import { getSaraInitiativeSnapshot } from "../battle/providers/sara.js";
-
-let selectedMenu = null;
-let incomingEventsOpen = false;
+import {
+  getSaraHudModel,
+  renderSaraHud,
+  updateSaraHudRegion,
+} from "./sara-hud.js";
+import {
+  dispatchSceneUi,
+  getSceneUiState,
+  resetSceneUi,
+} from "../battle/scene-ui-state.js";
 
 function renderInitiative(battle) {
   const initiative = battle?.initiative;
@@ -30,12 +37,6 @@ function renderInitiative(battle) {
     `${source.label} ${source.value >= 0 ? "+" : ""}${source.value}`).join(" · ");
   return `<details class="battle-console-initiative">
     <summary>Инициатива: <strong>${initiative.rawD20} + ${escapeHtml(details)} = ${initiative.total}</strong></summary>
-    <form class="battle-console-init-form" data-battle-form="correct-initiative">
-      <label>Исправить физический к20
-        <input name="rawD20" type="number" min="1" max="20" required inputmode="numeric" value="${initiative.rawD20}">
-      </label>
-      <button type="submit" class="btn btn--utility">Исправить инициативу</button>
-    </form>
   </details>`;
 }
 
@@ -111,7 +112,7 @@ function renderPlayerWork(work) {
   return "";
 }
 
-function buildBattleConsole(state) {
+function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: { rawD20: "", battleId: null }, error: "" }) {
   const workspaceSessions = getWorkspaceSessions();
   const activeWorkspace = workspaceSessions.find((entry) =>
     !entry.minimized && !entry.suspended);
@@ -119,132 +120,136 @@ function buildBattleConsole(state) {
   const derived = getDerivedStats(state);
   const commands = getSaraBattleCommandRegistry(state);
   const initiativeSnapshot = getSaraInitiativeSnapshot(state);
-  const initiativeModifier = initiativeSnapshot.ok
-    ? initiativeSnapshot.sources.reduce((total, source) => total + source.value, 0)
-    : null;
+  const saraHud = renderSaraHud(getSaraHudModel(state, derived));
   const minimized = getMinimizedWorkspaceSessions();
   const phaseLabels = {
-    outside: "Вне боя",
-    waiting: "Ожидание своего хода",
-    "own-turn": `Мой ход №${view.battle?.ownTurnNumber ?? "—"}`,
+    outside: "Исследование",
+    waiting: "Бой · Ожидание своего хода",
+    "own-turn": `Бой · Мой ход №${view.battle?.ownTurnNumber ?? "—"}`,
     paused: "Сцена приостановлена",
   };
-  if (view.phase !== "own-turn") {
-    selectedMenu = null;
-  }
   const budget = view.budget ? `<section class="combat-budget" aria-label="Бюджет хода">
     ${[
       ["action", "Действие", view.budget.actionAvailable],
       ["bonus", "Бонусное", view.budget.bonusActionAvailable],
-      ["reaction", "Реакция", view.budget.reactionAvailable],
     ].map(([, label, available]) =>
       `<span class="combat-budget__item ${available ? "is-available" : "is-spent"}">
         ${label}<b>${available ? "Доступно" : "Потрачено"}</b></span>`).join("")}
   </section>` : "";
 
   let phaseBody = "";
-  let commandContent = "";
   let primaryFooter = "";
-  const selectedCategory = selectedMenu ?? "action";
+  const selectedCategory = uiState.panel;
   const menuGroups = {
     action: "action",
     bonus: "bonus",
-    reaction: "reaction",
-    other: "other",
   };
   const selectedGroup = menuGroups[selectedCategory];
-  const menuEntries = selectedGroup === "other"
-    ? commands.filter((entry) => entry.navigationGroups.includes("movement") ||
-      entry.activationBudget === "none" || entry.id === "resource-correction")
-    : view.phase === "own-turn"
+  const menuEntries = view.phase === "own-turn" && selectedGroup
       ? commands.filter((entry) => entry.navigationGroups.includes(selectedGroup) &&
         entry.activationBudget !== "none")
       : [];
-  const navigation = view.phase === "own-turn" ? `<nav class="battle-category-tabs"
-    aria-label="Категории команд">
-    ${[["action", "Действие"], ["bonus", "Бонусное"], ["reaction", "Реакция"], ["other", "Другое"]]
-      .map(([id, label]) => `<button type="button" data-battle-menu="${id}"
-        aria-pressed="${selectedCategory === id}">${label}</button>`).join("")}
-  </nav>` : "";
+  const navigation = "";
+  const savedRest = state.monk?.functionalRuntime?.rest;
+  const restResumeId = savedRest?.kind === "short" && savedRest.phase === "hit-dice"
+    ? buildRestHitDieCommandId(savedRest.id)
+    : savedRest?.kind === "long" && ["replacement-offer", "replacement-edit"].includes(savedRest.phase)
+      ? buildRestReplacementCommandId(savedRest.phase === "replacement-edit" ? "edit" : "offer", savedRest.id)
+      : null;
+  const sceneMenu = `<details class="battle-scene-menu">
+    <summary>Меню сцены</summary>
+    ${view.phase !== "outside" ? `<button type="button" data-battle-scene-action="correct-initiative">Исправить инициативу</button>` : ""}
+    ${view.phase === "outside" ? "" : `<button type="button" data-battle-scene-action="initiative-info">Инициатива</button>`}
+    <button type="button" data-battle-scene-action="tools">Дополнительные инструменты</button>
+    ${view.phase === "outside" ? "" : `<button type="button" data-battle-command="end-battle">Завершить бой</button>`}
+  </details>`;
+  const initiativeSources = uiState.panel === "initiative-correct"
+    ? view.battle?.initiative?.sources ?? []
+    : initiativeSnapshot.ok ? initiativeSnapshot.sources : [];
+  const initiativeModifier = initiativeSources.reduce((total, source) => total + source.value, 0);
+  const initiativeRaw = uiState.initiativeDraft?.rawD20 ?? "";
+  const initiativePreview = /^\d+$/.test(initiativeRaw) &&
+    Number(initiativeRaw) >= 1 && Number(initiativeRaw) <= 20
+    ? String(Number(initiativeRaw) + initiativeModifier) : "—";
+  const initiativeForm = (mode) => `<form class="battle-console-init-form"
+    data-battle-form="${mode === "start" ? "start" : "correct-initiative"}"
+    data-owner="${escapeHtml(uiState.ownerKey ?? "")}" data-scene="${escapeHtml(uiState.sceneKey ?? "")}"
+    data-battle-id="${escapeHtml(view.battle?.id ?? "")}">
+    <header><strong>${mode === "start" ? "Начало боя" : "Исправление инициативы"}</strong></header>
+    <div class="battle-console-init-fields"><label>Физический к20 инициативы<input name="rawD20" type="number" min="1" max="20"
+      step="1" required inputmode="numeric" data-initiative-entry data-modifier="${initiativeModifier}"
+      value="${escapeHtml(uiState.initiativeDraft?.rawD20 ?? "")}"></label></div>
+    <div class="battle-console-init-actions"><output data-initiative-total aria-live="polite">${initiativePreview}</output>
+    ${uiState.error ? `<p role="alert">${escapeHtml(uiState.error)}</p>` : ""}
+    <button type="submit" class="btn btn--primary">${mode === "start" ? "В бой" : "Сохранить"}</button>
+    <button type="button" data-battle-menu="home">Отмена</button></div></form>`;
+  const toolsPanel = uiState.panel === "tools" ? `<section class="battle-secondary-tools">
+    ${renderInitiative(view.battle)}
+    <button type="button" data-battle-command-open="completed-rest">Записать завершённый отдых</button>
+    ${restResumeId ? `<button type="button" data-battle-command-open="${escapeHtml(restResumeId)}">Продолжить сохранённое восстановление</button>` : ""}
+    <button type="button" data-battle-roll-shortcut="all">Проверка или спасбросок</button>
+    <button type="button" data-battle-menu="home">Назад</button>
+    <button type="button" data-battle-menu="home">Назад</button>
+  </section>` : "";
   if (view.phase === "outside") {
     const outsideAbilities = commands.filter((entry) =>
       entry.id.startsWith("racial-spell:") || entry.id === "mystic-regeneration");
-    phaseBody = `<section class="battle-player-home">
-      <section class="battle-start">
-        <h3>Инициатива</h3>
-        <p>${initiativeSnapshot.ok
-          ? initiativeSnapshot.sources.map((source) =>
-            `${escapeHtml(source.label)} ${source.value >= 0 ? "+" : ""}${source.value}`).join(" · ")
-          : escapeHtml(initiativeSnapshot.reason)}</p>
-        <form class="battle-console-init-form" data-battle-form="start">
-          <label>Физический к20 инициативы
-            <input name="rawD20" type="number" min="1" max="20" required inputmode="numeric"
-              data-initiative-entry data-modifier="${initiativeModifier ?? ""}">
-          </label>
-          <output class="battle-console-init-total" data-initiative-total aria-live="polite">—</output>
-          <button type="submit" class="btn btn--primary">Начать бой</button>
-        </form>
-        <p class="hint">Порядок ходов определяет ведущий. Ваш ход начнётся только после подтверждения.</p>
-      </section>
-      <h3>Проверки</h3>
-      <div class="battle-quick-rolls">
-        ${[
-          ["persuasion", "Убеждение"],
-          ["athletics", "Атлетика"],
-          ["perception", "Восприятие"],
-        ].map(([id, label]) => `<button type="button" class="btn btn--utility"
-          data-battle-roll-shortcut="ability-check" data-roll-id="${id}">${label}</button>`).join("")}
-        <button type="button" class="btn btn--utility" data-battle-roll-shortcut="all">Все броски</button>
-      </div>
-      <details class="battle-outside-abilities">
-        <summary>Подготовленные способности и расовые заклинания</summary>
-        <div class="battle-command-grid">${outsideAbilities.map(renderBattleCommandCard).join("")}</div>
-      </details>
-    </section>`;
-    primaryFooter = `<button type="button" class="btn btn--primary"
-      data-battle-roll-shortcut="all">Все броски</button>`;
+    const home = `<div class="battle-quick-rolls">
+      <button type="button" data-roll-preset="ability-check">Проверка</button>
+      <button type="button" data-roll-preset="saving-throw">Спасбросок</button>
+      <button type="button" data-battle-menu="abilities">Способности</button>
+      <button type="button" data-battle-navigate="inventory">Инвентарь</button>
+      <button type="button" data-battle-command-open="completed-rest">Отдых</button>
+    </div>`;
+    const abilities = `<section><div class="battle-command-grid">${outsideAbilities.map(renderBattleCommandCard).join("")}</div>
+      <button type="button" data-battle-navigate="techniques">Все техники</button>
+      <button type="button" data-battle-menu="home">Назад</button></section>`;
+    phaseBody = `${uiState.panel === "initiative-start" ? initiativeForm("start")
+      : uiState.panel === "abilities" ? abilities : uiState.panel === "home" ? home : ""}
+      ${toolsPanel}`;
+    primaryFooter = uiState.panel === "home" ? `<button type="button" class="btn btn--primary"
+      data-battle-scene-action="initiative">Начать бой</button>` : "";
   } else if (view.phase === "waiting") {
-    const initiative = view.battle?.initiative;
-    phaseBody = `<section class="battle-player-home">
-      ${renderInitiative(view.battle)}
-      <p class="battle-console-guidance">Следи за событиями. Решение о начале твоего хода принимает ведущий.</p>
-      <div class="battle-quick-rolls">
-        <button type="button" class="btn btn--utility" data-battle-incoming-events>По мне атаковали</button>
-        <button type="button" class="btn btn--utility" data-battle-roll-shortcut="saving-throw"
-          data-roll-id="dexterity">Мой спасбросок</button>
-        <button type="button" class="btn btn--utility" data-battle-roll-shortcut="all">Проверка</button>
-      </div>
-      ${incomingEventsOpen ? renderIncomingEvents(commands) : ""}
-    </section>`;
+    phaseBody = `${uiState.panel === "initiative-correct" ? initiativeForm("correct") : `<div class="battle-quick-rolls">
+      <button type="button" data-battle-menu="incoming">По мне атакуют</button>
+      <button type="button" data-roll-preset="saving-throw">Спасбросок</button>
+      <button type="button" data-roll-preset="ability-check">Проверка</button>
+      <button type="button" data-battle-menu="other-events">Другое событие</button></div>
+      ${uiState.panel === "incoming" ? renderIncomingEvents(commands) : ""}
+      ${uiState.panel === "other-events" ? `<section class="battle-incoming-events">
+        <button type="button" data-battle-command-open="opportunity-unarmed">Провоцированная атака</button>
+        <button type="button" data-battle-command-open="incoming-damage">Получить урон</button>
+        <button type="button" data-battle-roll-shortcut="all">Общий бросок</button>
+        <button type="button" data-battle-menu="home">Назад</button></section>` : ""}
+      ${toolsPanel}`}`;
     primaryFooter = `<button type="button" class="btn btn--primary"
-      data-battle-command="begin-own-turn">Начать свой ход</button>
-      <button type="button" class="btn btn--utility"
-        data-battle-command="end-battle">Закончить бой</button>`;
+      data-battle-command="begin-own-turn">Мой ход</button>`;
   } else if (view.phase === "own-turn") {
-    commandContent = `<section class="battle-menu-panel" aria-label="${selectedGroup === "other"
-      ? "Другое" : escapeHtml(BATTLE_CATEGORIES.find((item) => item.id === selectedGroup)?.label ?? "Команды")}">
+    const panel = uiState.panel === "action" || uiState.panel === "bonus" ? `<section class="battle-menu-panel">
       <div class="battle-command-grid">${menuEntries.map(renderBattleCommandCard).join("") ||
         "<p>Нет доступных команд в этой категории.</p>"}</div>
-    </section>
-    <details class="battle-secondary-tools"><summary>Броски и дополнительные инструменты</summary>
-      <button type="button" data-battle-roll-shortcut="all">Проверка или спасбросок</button>
-      <p>Скорость: ${derived.monk?.speedFeet ?? state.profile?.speedFeet ?? "—"} фт.</p>
-      <p>«Дух воина» восстанавливает 1 ци в начале вашего хода в бою, если вы не недееспособны. Приложение не определяет это состояние автоматически.</p>
-    </details>`;
+      <button type="button" data-battle-menu="home">Назад к ходу</button></section>` : "";
+    const home = `<div class="battle-quick-rolls">
+      <button type="button" data-battle-command-open="normal-attack">Атаковать</button>
+      <button type="button" data-battle-menu="action">Другое действие</button>
+      <button type="button" data-battle-menu="bonus">Бонусное действие</button>
+      <button type="button" data-battle-menu="incoming">Входящее событие</button></div>`;
+    phaseBody = `${uiState.panel === "initiative-correct" ? initiativeForm("correct")
+      : uiState.panel === "home" ? home : panel}
+      ${uiState.panel === "incoming" ? renderIncomingEvents(commands) : ""}
+      ${toolsPanel}`;
     primaryFooter = `<button type="button" class="btn btn--primary"
-      data-battle-end-turn>Закончить свой ход</button>
-      <button type="button" class="btn btn--utility"
-        data-battle-command="end-battle">Закончить бой</button>`;
+      data-battle-command="end-own-turn">Завершить ход</button>`;
   } else {
     const resumable = ["waiting", "own-turn"].includes(view.battle?.phaseBeforePause);
-    phaseBody = `<section class="battle-player-home">
+    phaseBody = `${uiState.panel === "initiative-correct" ? initiativeForm("correct") : `<section class="battle-player-home">
       <p>${resumable
         ? "Текущий контекст сохранён. Продолжение не восстанавливает ресурсы и не создаёт новый ход."
         : "Контекст приостановленной сцены повреждён. Продолжить её безопасно нельзя."}</p>
       <div class="battle-secondary-tools">
         ${renderInitiative(view.battle)}
       </div>
-    </section>`;
+    </section>`}${toolsPanel}`;
     primaryFooter = `${resumable ? `<button type="button" class="btn btn--primary"
       data-battle-command="resume-battle">Продолжить прежний ход</button>` : ""}
       <button type="button" class="btn btn--utility"
@@ -285,18 +290,6 @@ function buildBattleConsole(state) {
     <footer class="action-workspace__footer"><div data-workspace-footer></div>
       <p data-workspace-status role="status" aria-live="polite"></p></footer>
   </div>`;
-  const savedRest = state.monk?.functionalRuntime?.rest;
-  const restResumeId = savedRest?.kind === "short" && savedRest.phase === "hit-dice"
-    ? buildRestHitDieCommandId(savedRest.id)
-    : savedRest?.kind === "long" && ["replacement-offer", "replacement-edit"].includes(savedRest.phase)
-      ? buildRestReplacementCommandId(savedRest.phase === "replacement-edit" ? "edit" : "offer", savedRest.id)
-      : null;
-  const restTasks = `<section class="battle-secondary-tools" aria-label="Отдых">
-    <button type="button" class="btn btn--utility" data-battle-command-open="completed-rest">
-      Записать завершённый отдых</button>
-    ${restResumeId ? `<button type="button" class="btn btn--utility"
-      data-battle-command-open="${escapeHtml(restResumeId)}">Продолжить сохранённое восстановление</button>` : ""}
-  </section>`;
   const mainAction = activeWorkspace ? "" : primaryFooter;
   return {
     phase: view.phase,
@@ -304,10 +297,11 @@ function buildBattleConsole(state) {
     hud: `<header class="sara-app-head">
       <div class="sara-app-head__title"><h2 id="battleConsoleTitle" tabindex="-1">
         ${escapeHtml(phaseLabels[view.phase])}</h2></div>
-    </header>`,
+    </header>${sceneMenu}`,
+    metrics: saraHud,
     budget,
     navigation,
-    phaseBody: `${phaseBody}${commandContent}${restTasks}`,
+    phaseBody,
     pending: `${saveRecovery.length ? `<section class="combat-save-recovery" aria-label="Требуется повторное сохранение">
       ${saveRecovery.map(renderPlayerWork).join("")}</section>` : ""}
       ${workPanel}`,
@@ -317,15 +311,22 @@ function buildBattleConsole(state) {
   };
 }
 
-export function renderBattleConsole(state) {
-  const regions = buildBattleConsole(state);
+export function renderBattleConsole(state, uiState = {
+  panel: "home",
+  initiativeDraft: { rawD20: "", battleId: null },
+}) {
+  const regions = buildBattleConsole(state, uiState);
   const hasPermanentSaraDock = typeof document !== "undefined" &&
     document.querySelector?.("[data-sara-task-dock]");
   return `<section class="sara-combat-shell combat-turn-card panel-section"
       data-player-scene-phase="${regions.phase}"
       data-battle-render-context="${escapeHtml(battleContextKey(state))}"
-      aria-labelledby="battleConsoleTitle">
-    <div data-sara-hud>${regions.hud}</div>
+    data-battle-owner="${escapeHtml(uiState.ownerKey ?? "")}"
+    aria-labelledby="battleConsoleTitle">
+    <div data-sara-hud>
+      <div data-sara-hud-heading>${regions.hud}</div>
+      <div data-sara-home-hud>${regions.metrics}</div>
+    </div>
     <div data-sara-budget ${regions.activeWorkspace ? "hidden" : ""}>${regions.budget}</div>
     <div data-sara-navigation ${regions.activeWorkspace ? "hidden" : ""}>${regions.navigation}</div>
     <div data-sara-task-region data-combat-task-region
@@ -340,18 +341,28 @@ export function renderBattleConsole(state) {
   </section>`;
 }
 
-export function updateBattleConsole(root, state) {
+export function updateBattleConsole(root, state, { forceUi = false } = {}) {
+  const context = getSessionContext();
+  const owner = {
+    characterId: context.characterId,
+    sessionGeneration: context.sessionGeneration,
+  };
+  const uiState = getSceneUiState(root, owner, battleContextKey(state));
   const shell = root.querySelector(".sara-combat-shell");
   if (!shell) {
-    root.innerHTML = renderBattleConsole(state);
+    root.innerHTML = renderBattleConsole(state, uiState);
     return;
   }
+  shell.dataset.battleOwner = uiState.ownerKey;
 
-  const regions = buildBattleConsole(state);
+  const regions = buildBattleConsole(state, uiState);
   const nextContext = battleContextKey(state);
   const contextChanged = shell.dataset.battleRenderContext !== nextContext;
+  if (contextChanged || forceUi && !["initiative-start", "initiative-correct"].includes(uiState.panel)) {
+    clearInitiativePresentation(root);
+  }
   const phaseRegionSelectors = [
-    "[data-sara-hud]",
+    "[data-sara-hud-heading]",
     "[data-sara-budget]",
     "[data-sara-navigation]",
     "[data-sara-pending-work]",
@@ -366,6 +377,16 @@ export function updateBattleConsole(root, state) {
       const region = shell.querySelector(selector);
       if (region) deferredBattleRegionMarkup.delete(region);
     }
+    if (forceUi) {
+      for (const selector of [
+        "[data-sara-phase-content]",
+        "[data-sara-navigation]",
+        "[data-sara-turn-controls]",
+      ]) {
+        const region = shell.querySelector(selector);
+        if (region) deferredBattleRegionMarkup.delete(region);
+      }
+    }
   }
   const updateRegion = (selector, markup) => {
     const region = shell.querySelector(selector);
@@ -374,25 +395,43 @@ export function updateBattleConsole(root, state) {
       deferredBattleRegionMarkup.delete(region);
       return;
     }
-    if (!contextChanged && region.contains(document.activeElement)) {
+    const forceable = [
+      "[data-sara-phase-content]",
+      "[data-sara-navigation]",
+      "[data-sara-turn-controls]",
+    ].includes(selector);
+    if (!contextChanged && !(forceUi && forceable) && region.contains(document.activeElement)) {
       deferredBattleRegionMarkup.set(region, markup);
       return;
     }
     region.innerHTML = markup;
     deferredBattleRegionMarkup.delete(region);
   };
-  updateRegion("[data-sara-hud]", regions.hud);
+  updateRegion("[data-sara-hud-heading]", regions.hud);
+  updateSaraHudRegion(
+    shell.querySelector("[data-sara-home-hud]"),
+    getSaraHudModel(state),
+  );
   updateRegion("[data-sara-budget]", regions.budget);
   const navigation = shell.querySelector("[data-sara-navigation]");
-  if (!contextChanged && regions.phase === "own-turn" && navigation) {
-    for (const button of navigation.querySelectorAll("[data-battle-menu]")) {
-      button.setAttribute("aria-pressed", String(button.dataset.battleMenu === (selectedMenu ?? "action")));
-    }
-  } else {
-    updateRegion("[data-sara-navigation]", regions.navigation);
-  }
+  updateRegion("[data-sara-navigation]", regions.navigation);
   updateRegion("[data-sara-pending-work]", regions.pending);
   updateRegion("[data-sara-turn-controls]", regions.turnControls);
+  const initiativeInput = shell.querySelector("[data-initiative-entry]");
+  const initiativeTotal = shell.querySelector("[data-initiative-total]");
+  if (initiativeInput && initiativeTotal) {
+    const snapshot = uiState.panel === "initiative-correct"
+      ? null : getSaraInitiativeSnapshot(state);
+    const sources = uiState.panel === "initiative-correct"
+      ? state.battleConsole?.current?.initiative?.sources ?? []
+      : snapshot?.sources ?? [];
+    const modifier = sources.reduce((total, source) => total + source.value, 0);
+    initiativeInput.dataset.modifier = String(modifier);
+    const die = Number(initiativeInput.value);
+    initiativeTotal.textContent = (snapshot === null || snapshot.ok) &&
+      Number.isInteger(die) && die >= 1 && die <= 20
+      ? String(die + modifier) : "—";
+  }
   updateRegion("[data-sara-phase-content]", regions.phaseBody);
   for (const selector of [
     "[data-sara-budget]",
@@ -427,6 +466,48 @@ export function battleContextKey(state) {
 }
 
 const deferredBattleRegionMarkup = new Map();
+const navigationCallbacks = new WeakMap();
+const initiativePresentationCleanup = new WeakMap();
+
+function clearInitiativePresentation(root) {
+  initiativePresentationCleanup.get(root)?.();
+  initiativePresentationCleanup.delete(root);
+}
+
+function activateInitiativePresentation(root, input) {
+  clearInitiativePresentation(root);
+  const form = input.closest("form");
+  const viewport = globalThis.visualViewport;
+  if (!form || !viewport) return;
+  form.dataset.initiativePresentation = "true";
+  const update = () => {
+    form.style.position = "fixed";
+    form.style.top = `${viewport.offsetTop}px`;
+    form.style.left = "0";
+    form.style.right = "0";
+    form.style.height = `${viewport.height}px`;
+    form.style.zIndex = "1100";
+  };
+  update();
+  viewport.addEventListener("resize", update);
+  viewport.addEventListener("scroll", update);
+  const observer = globalThis.MutationObserver
+    ? new globalThis.MutationObserver(() => {
+      if (!root.isConnected || !root.contains(form)) clearInitiativePresentation(root);
+    })
+    : null;
+  observer?.observe(root, { childList: true, subtree: true });
+  if (root.parentElement) observer?.observe(root.parentElement, { childList: true });
+  initiativePresentationCleanup.set(root, () => {
+    observer?.disconnect();
+    viewport.removeEventListener("resize", update);
+    viewport.removeEventListener("scroll", update);
+    delete form.dataset.initiativePresentation;
+    for (const property of ["position", "top", "left", "right", "height", "z-index"]) {
+      form.style.removeProperty(property);
+    }
+  });
+}
 
 function flushDeferredBattleRegions(root) {
   for (const [region, markup] of deferredBattleRegionMarkup) {
@@ -463,10 +544,36 @@ function renderIncomingEvents(commands) {
   </section>`;
 }
 
-export function bindBattleConsole(root = document) {
+export function bindBattleConsole(root = document, { onNavigate } = {}) {
+  if (typeof onNavigate === "function") navigationCallbacks.set(root, onNavigate);
+  const sessionContext = getSessionContext();
+  const currentState = getState();
+  const shell = root.querySelector(".sara-combat-shell");
+  if (shell) {
+    shell.dataset.battleOwner = JSON.stringify([
+      sessionContext.characterId ?? null,
+      sessionContext.sessionGeneration ?? null,
+    ]);
+    shell.dataset.battleRenderContext = battleContextKey(currentState);
+  }
   if (root.dataset.battleConsoleBound === "true") return;
-  const rerender = () => {
-    updateBattleConsole(root, getState());
+  const context = () => {
+    const current = getSessionContext();
+    return {
+      owner: { characterId: current.characterId, sessionGeneration: current.sessionGeneration },
+      sceneKey: battleContextKey(getState()),
+    };
+  };
+  const rerender = (forceUi = false) => {
+    updateBattleConsole(root, getState(), { forceUi });
+  };
+  const changePanel = (panel) => {
+    if (!["initiative-start", "initiative-correct"].includes(panel)) {
+      clearInitiativePresentation(root);
+    }
+    const { owner, sceneKey } = context();
+    dispatchSceneUi(root, owner, sceneKey, { type: "set-panel", panel });
+    rerender(true);
   };
   const reportFailure = (message) => {
     const status = root.querySelector("[data-battle-status]");
@@ -478,21 +585,46 @@ export function bindBattleConsole(root = document) {
       reportFailure(`Действие не выполнено: ${result.reason ?? "ошибка сохранения"}.`);
       return false;
     }
-    incomingEventsOpen = false;
     rerender();
     return true;
   };
   root.addEventListener("click", (event) => {
     if (!(event.target instanceof Element)) return;
-    const menuButton = event.target.closest("[data-battle-menu]");
-    if (menuButton && root.contains(menuButton)) {
-      selectedMenu = menuButton.dataset.battleMenu;
+    if (!root.contains(event.target)) return;
+    const shell = root.querySelector(".sara-combat-shell");
+    const liveContext = context();
+    const liveOwnerKey = JSON.stringify([
+      liveContext.owner.characterId ?? null,
+      liveContext.owner.sessionGeneration ?? null,
+    ]);
+    if (shell && (shell.dataset.battleOwner !== liveOwnerKey ||
+        shell.dataset.battleRenderContext !== liveContext.sceneKey)) {
       rerender();
       return;
     }
-    if (event.target.closest("[data-battle-menu-close]")) {
-      selectedMenu = null;
-      rerender();
+    const menuButton = event.target.closest("[data-battle-menu]");
+    if (menuButton && root.contains(menuButton) && !menuButton.disabled) {
+      changePanel(menuButton.dataset.battleMenu);
+      return;
+    }
+    const sceneAction = event.target.closest("[data-battle-scene-action]");
+    if (sceneAction && root.contains(sceneAction) && !sceneAction.disabled) {
+      const { owner, sceneKey } = context();
+      const battle = getState().battleConsole?.current;
+      const action = sceneAction.dataset.battleSceneAction;
+      if (action === "tools" || action === "initiative-info") {
+        dispatchSceneUi(root, owner, sceneKey, { type: "set-panel", panel: "tools" });
+      } else if (action === "initiative") {
+        dispatchSceneUi(root, owner, sceneKey, {
+          type: "open-initiative", mode: "start", rawD20: "", battleId: null,
+        });
+      } else if (action === "correct-initiative" && battle?.id && battle.initiative) {
+        dispatchSceneUi(root, owner, sceneKey, {
+          type: "open-initiative", mode: "correct",
+          rawD20: String(battle.initiative.rawD20), battleId: battle.id,
+        });
+      }
+      rerender(true);
       return;
     }
     const discardButton = event.target.closest("[data-workspace-discard]");
@@ -505,14 +637,32 @@ export function bindBattleConsole(root = document) {
       }
       return;
     }
-    if (event.target.closest("[data-battle-incoming-events]")) {
-      incomingEventsOpen = true;
-      rerender();
+    const navigationButton = event.target.closest("[data-battle-navigate]");
+    if (navigationButton && root.contains(navigationButton) && !navigationButton.disabled) {
+      const tabId = navigationButton.dataset.battleNavigate;
+      if (!["inventory", "techniques"].includes(tabId)) {
+        reportFailure("Недопустимый раздел навигации.");
+        return;
+      }
+      const navigate = navigationCallbacks.get(root);
+      if (!navigate) {
+        reportFailure("Навигация недоступна: callback вкладок не подключён.");
+        return;
+      }
+      try {
+        navigate(tabId);
+      } catch (error) {
+        reportFailure(`Не удалось открыть раздел: ${error instanceof Error ? error.message : String(error)}.`);
+      }
       return;
     }
-    if (event.target.closest("[data-battle-incoming-close]")) {
-      incomingEventsOpen = false;
-      rerender();
+    const rollPresetButton = event.target.closest("[data-roll-preset]");
+    if (rollPresetButton && root.contains(rollPresetButton) && !rollPresetButton.disabled) {
+      const kind = rollPresetButton.dataset.rollPreset;
+      const result = openSaraBattleCommand("character-roll", rollPresetButton, {
+        rollPreset: { kind, id: "strength" },
+      });
+      if (!result.ok) reportFailure(result.reason);
       return;
     }
     if (event.target.closest("[data-battle-end-turn]")) {
@@ -575,14 +725,27 @@ export function bindBattleConsole(root = document) {
       return;
     }
     const button = event.target.closest("[data-battle-command]");
-    if (button && root.contains(button)) {
+    if (button && root.contains(button) && !button.disabled) {
       runBattleCommand(button.dataset.battleCommand);
     }
   });
   root.addEventListener("focusout", () => queueMicrotask(() => flushDeferredBattleRegions(root)));
+  root.addEventListener("focusin", (event) => {
+    const input = event.target?.closest?.("[data-initiative-entry]");
+    if (input && root.contains(input)) activateInitiativePresentation(root, input);
+  });
+  root.addEventListener("focusout", (event) => {
+    if (!event.target?.matches?.("[data-initiative-entry]")) return;
+    queueMicrotask(() => {
+      const active = document.activeElement;
+      if (!active?.closest?.("[data-battle-form]")) clearInitiativePresentation(root);
+    });
+  });
   root.addEventListener("input", (event) => {
     const input = event.target.closest("[data-initiative-entry]");
     if (!input || !root.contains(input)) return;
+    const { owner, sceneKey } = context();
+    dispatchSceneUi(root, owner, sceneKey, { type: "set-draft", rawD20: input.value });
     const die = Number(input.value);
     const modifier = Number(input.dataset.modifier);
     const total = root.querySelector("[data-initiative-total]");
@@ -591,21 +754,54 @@ export function bindBattleConsole(root = document) {
   });
   root.addEventListener("submit", (event) => {
     const form = event.target;
-    if (!(form instanceof HTMLFormElement) ||
+    if (!(form instanceof HTMLFormElement) || !root.contains(form) ||
         !["start", "correct-initiative"].includes(form.dataset.battleForm)) return;
     event.preventDefault();
     const command = form.dataset.battleForm === "start"
       ? "start-battle"
       : "correct-initiative";
+    const currentContext = context();
+    const battle = getState().battleConsole?.current;
+    const uiState = getSceneUiState(root, currentContext.owner, currentContext.sceneKey);
+    const rawD20 = form.elements.rawD20.value;
+    const validDie = /^\d+$/.test(rawD20) && Number(rawD20) >= 1 && Number(rawD20) <= 20;
+    const stale = form.dataset.owner !== JSON.stringify([
+      currentContext.owner.characterId ?? null,
+      currentContext.owner.sessionGeneration ?? null,
+    ]) || form.dataset.scene !== currentContext.sceneKey ||
+      (command === "correct-initiative" &&
+        (form.dataset.battleId !== battle?.id || uiState.initiativeDraft.battleId !== battle?.id));
+    if (stale || !validDie) {
+      const error = stale
+        ? "Форма устарела. Откройте её заново в текущей сцене."
+        : "Введите целое число от 1 до 20.";
+      dispatchSceneUi(root, currentContext.owner, currentContext.sceneKey, {
+        type: "set-error", error,
+      });
+      rerender(true);
+      return;
+    }
     const result = executeBattleCommand(command, {
-      rawD20: form.elements.rawD20.value,
+      rawD20,
     });
     const status = root.querySelector("[data-battle-status]");
     if (status && result.status !== "applied") {
-      status.textContent = `${command === "start-battle" ? "Сцену не удалось начать" : "Инициативу не удалось исправить"}: ${result.reason ?? "ошибка сохранения"}.`;
+      const reason = result.reason ?? "ошибка сохранения";
+      dispatchSceneUi(root, currentContext.owner, currentContext.sceneKey, {
+        type: "set-error", error: reason,
+      });
+      status.textContent = `${command === "start-battle" ? "Сцену не удалось начать" : "Инициативу не удалось исправить"}: ${reason}.`;
     } else {
-      incomingEventsOpen = false;
-      rerender();
+      const updated = getState();
+      const updatedContext = getSessionContext();
+      const updatedOwner = {
+        characterId: updatedContext.characterId,
+        sessionGeneration: updatedContext.sessionGeneration,
+      };
+      dispatchSceneUi(root, updatedOwner, battleContextKey(updated), {
+        type: "set-panel", panel: "home",
+      });
+      rerender(true);
     }
   });
   root.dataset.battleConsoleBound = "true";

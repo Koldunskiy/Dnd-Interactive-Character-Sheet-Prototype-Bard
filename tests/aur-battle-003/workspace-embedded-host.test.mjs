@@ -26,11 +26,15 @@ import {
 } from "./workspace-fixture.mjs";
 
 test("Sara combat tasks use the embedded host without dialog or body-lock behavior", () => {
-  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const { dialog, taskHud, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const stateBefore = JSON.stringify(getState());
   const bodyStyles = { ...globalThis.document.body.style };
 
   const opened = openNormalAttack();
   assert.equal(opened.ok, true);
+  assert.match(taskHud.innerHTML, /class="sara-hud"/);
+  assert.match(taskHud.innerHTML, /ХП <strong>/);
+  assert.equal(JSON.stringify(getState()), stateBefore);
   assert.equal(workspaceHostIsEmbedded(), true);
   assert.equal(getWorkspaceHost(), dialog);
   assert.equal(dialog.showModalCount, 0);

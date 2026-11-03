@@ -17,6 +17,8 @@ import { getDerivedStats } from "./calculations.js";
 import { renderPortraitMedia, initPortraitControls, resetPortraitForCharacter } from "./media.js";
 
 import { renderHeader } from "./render/render-header.js";
+import { getSaraHudModel, updateSaraHudRegion } from "./render/sara-hud.js";
+import { resetSceneUi } from "./battle/scene-ui-state.js";
 import {
   clearCharacterRollDraft,
   hasChangedCharacterRollDraft,
@@ -785,7 +787,13 @@ function renderSaraTab(tabId, state, derived) {
   } else if (tabId === "melee") {
     const meleePanel = document.getElementById("meleePanel");
     renderMeleePanel(state, derived);
-    bindBattleConsole(meleePanel ?? document);
+    bindBattleConsole(meleePanel ?? document, {
+      onNavigate: (tabId) => {
+        if (!activeTabsController?.(tabId, true)) {
+          throw new Error("Выбранная вкладка недоступна.");
+        }
+      },
+    });
   } else if (tabId === "techniques") {
     renderTechniquesPanel(state);
   } else if (tabId === "inventory") {
@@ -815,6 +823,10 @@ function renderApp() {
   renderSidebarSummary(state);
 
   if (state.profile?.id === "sara-velaris") {
+    updateSaraHudRegion(
+      document.querySelector("[data-sara-task-dock] [data-sara-task-hud]"),
+      getSaraHudModel(state, derived),
+    );
     if (!page?.hasAttribute("data-task-open")) {
       renderSaraTab(page?.dataset.activeTab ?? "profile", state, derived);
     }
@@ -1038,6 +1050,7 @@ function configureTabs(characterId) {
 }
 
 function showPicker(message = "", isError = false) {
+  resetSceneUi(document.getElementById("meleePanel"));
   const page = document.querySelector(".page");
   const picker = document.getElementById("characterPicker");
   const status = document.getElementById("characterPickerStatus");
@@ -1246,6 +1259,7 @@ function configureSaraPresentation(characterId) {
 }
 
 function completeCharacterOpen(characterId, warning = "") {
+  resetSceneUi(document.getElementById("meleePanel"));
   const context = getSessionContext();
   presentationOwner = {
     characterId: context.characterId,

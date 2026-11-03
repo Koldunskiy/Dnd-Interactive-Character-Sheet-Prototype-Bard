@@ -37,6 +37,9 @@ class FixtureElement {
   closest(selector) {
     if (selector === "[data-battle-command]" && this.dataset.battleCommand) return this;
     if (selector === "[data-battle-end-turn]" && this.dataset.battleEndTurn === "true") return this;
+    if (selector === "[data-battle-scene-action]" && this.dataset.battleSceneAction) return this;
+    if (selector === "[data-battle-menu]" && this.dataset.battleMenu) return this;
+    if (selector === "[data-battle-navigate]" && this.dataset.battleNavigate) return this;
     return null;
   }
   focus() { globalThis.document.activeElement = this; }
@@ -66,6 +69,8 @@ class FixtureShell extends FixtureElement {
     this.regions = new Map([
       [".sara-combat-shell", this],
       ["[data-sara-hud]", new FixtureRegion()],
+      ["[data-sara-hud-heading]", new FixtureRegion()],
+      ["[data-sara-home-hud]", new FixtureRegion()],
       ["[data-sara-budget]", new FixtureRegion()],
       ["[data-sara-navigation]", new FixtureRegion()],
       ["[data-sara-pending-work]", new FixtureRegion()],
@@ -98,9 +103,11 @@ class FixtureRoot extends FixtureElement {
 }
 
 class FixtureForm extends FixtureElement {
-  constructor(region, value) {
+  constructor(region, value, owner, sceneKey) {
     super(region);
     this.dataset.battleForm = "start";
+    this.dataset.owner = JSON.stringify([owner.characterId, owner.sessionGeneration]);
+    this.dataset.scene = sceneKey;
     this.elements = { rawD20: { value } };
   }
 }
@@ -142,12 +149,77 @@ function fireCommand(root, command, regionSelector) {
   return element;
 }
 
+function openInitiativeForm(root, phase, value) {
+  const action = new FixtureElement(phase);
+  action.dataset.battleSceneAction = "initiative";
+  root.fire("click", { target: action });
+  const context = getSessionContext();
+  const owner = {
+    characterId: context.characterId,
+    sessionGeneration: context.sessionGeneration,
+  };
+  return new FixtureForm(phase, value, owner, battleContextKey(getState()));
+}
+
+test("initiative preparation and cancel leave game state unchanged", () => {
+  openSara();
+  const root = createConsole();
+  const before = JSON.stringify(getState());
+  const openButton = new FixtureElement(root.shell.querySelector("[data-sara-turn-controls]"));
+  openButton.dataset.battleSceneAction = "initiative";
+  document.activeElement = openButton;
+  root.fire("click", { target: openButton });
+  assert.match(root.shell.querySelector("[data-sara-phase-content]").innerHTML,
+    /data-battle-form="start"/);
+  assert.equal(JSON.stringify(getState()), before);
+
+  const cancel = new FixtureElement(root.shell.querySelector("[data-sara-phase-content]"));
+  cancel.dataset.battleMenu = "home";
+  root.fire("click", { target: cancel });
+  assert.doesNotMatch(root.shell.querySelector("[data-sara-phase-content]").innerHTML,
+    /data-battle-form="start"/);
+  assert.equal(JSON.stringify(getState()), before);
+});
+
+test("empty, fractional, and out-of-range initiative inputs never start a battle", () => {
+  for (const rawD20 of ["", "12.5", "0", "21"]) {
+    openSara();
+    const root = createConsole();
+    const before = JSON.stringify(getState());
+    const form = openInitiativeForm(root, root.shell.querySelector("[data-sara-phase-content]"), rawD20);
+    root.fire("submit", { target: form, preventDefault() {} });
+    assert.equal(getState().battleConsole.current, null);
+    assert.equal(JSON.stringify(getState()), before);
+    assert.match(root.shell.querySelector("[data-sara-phase-content]").innerHTML,
+      /Введите целое число от 1 до 20/);
+  }
+});
+
+test("repeated bind replaces navigation callback without duplicating listeners", () => {
+  openSara();
+  const root = createConsole();
+  let oldCalls = 0;
+  let newCalls = 0;
+  bindBattleConsole(root, { onNavigate: () => { oldCalls += 1; } });
+  bindBattleConsole(root, { onNavigate: () => { newCalls += 1; } });
+  const button = new FixtureElement(root.shell.querySelector("[data-sara-phase-content]"));
+  button.dataset.battleNavigate = "inventory";
+  root.fire("click", { target: button });
+  assert.equal(oldCalls, 0);
+  assert.equal(newCalls, 1);
+  const techniques = new FixtureElement(root.shell.querySelector("[data-sara-phase-content]"));
+  techniques.dataset.battleNavigate = "techniques";
+  root.fire("click", { target: techniques });
+  assert.equal(oldCalls, 0);
+  assert.equal(newCalls, 2);
+});
+
 test("focused initiative submit immediately replaces outside controls through the whole battle cycle", () => {
   openSara();
   const root = createConsole();
   const phase = root.shell.querySelector("[data-sara-phase-content]");
+  const form = openInitiativeForm(root, phase, "14");
   const input = new FixtureElement(phase);
-  const form = new FixtureForm(phase, "14");
   document.activeElement = input;
   root.fire("submit", { target: form, preventDefault() {} });
 
@@ -155,27 +227,24 @@ test("focused initiative submit immediately replaces outside controls through th
   assert.doesNotMatch(phase.innerHTML, /data-battle-form="start"/);
   assert.match(root.shell.querySelector("[data-sara-turn-controls]").innerHTML,
     /data-battle-command="begin-own-turn"/);
-  assert.match(root.shell.querySelector("[data-sara-turn-controls]").innerHTML,
+  assert.match(root.shell.querySelector("[data-sara-hud-heading]").innerHTML,
     /data-battle-command="end-battle"/);
 
   fireCommand(root, "begin-own-turn", "[data-sara-turn-controls]");
   assert.equal(getState().battleConsole.current.phase, "own-turn");
   assert.match(root.shell.querySelector("[data-sara-turn-controls]").innerHTML,
-    /data-battle-end-turn/);
-  assert.match(root.shell.querySelector("[data-sara-turn-controls]").innerHTML,
-    /data-battle-command="end-battle"/);
+    /data-battle-command="end-own-turn"/);
 
-  const endTurn = new FixtureElement(root.shell.querySelector("[data-sara-turn-controls]"));
-  endTurn.dataset.battleEndTurn = "true";
-  document.activeElement = endTurn;
-  root.fire("click", { target: endTurn });
+  fireCommand(root, "end-own-turn", "[data-sara-turn-controls]");
   assert.equal(getState().battleConsole.current.phase, "waiting");
   assert.match(root.shell.querySelector("[data-sara-turn-controls]").innerHTML,
     /data-battle-command="begin-own-turn"/);
 
   fireCommand(root, "end-battle", "[data-sara-turn-controls]");
   assert.equal(getState().battleConsole.current, null);
-  assert.match(phase.innerHTML, /data-battle-form="start"/);
+  assert.doesNotMatch(phase.innerHTML, /data-battle-form="start"/);
+  assert.match(root.shell.querySelector("[data-sara-turn-controls]").innerHTML,
+    /data-battle-scene-action="initiative"/);
 });
 
 test("focused submit button and direct end-battle during own turn transition immediately", () => {
@@ -185,7 +254,7 @@ test("focused submit button and direct end-battle during own turn transition imm
   const submitButton = new FixtureElement(phase);
   document.activeElement = submitButton;
   root.fire("submit", {
-    target: new FixtureForm(phase, "12"),
+    target: openInitiativeForm(root, phase, "12"),
     preventDefault() {},
   });
   assert.equal(getState().battleConsole.current.phase, "waiting");
@@ -202,7 +271,7 @@ test("focused submit button and direct end-battle during own turn transition imm
   assert.equal(getState().battleConsole.current, null);
   assert.equal(getState().monk.combatAssistant.activeSequences[0]
     .resolvedAttacks[0].damageStatus, "awaiting-damage");
-  assert.match(phase.innerHTML, /data-battle-form="start"/);
+  assert.doesNotMatch(phase.innerHTML, /data-battle-form="start"/);
 });
 
 test("Warrior's Spirit recovery is one per eligible new turn and uses the derived cap", () => {
@@ -391,14 +460,14 @@ test("same-context focused update defers, then phase change discards stale queue
 
   startBattle(getState(), { rawD20: "10" }, { id: "context-battle" });
   updateBattleConsole(root, getState());
-  assert.match(phase.innerHTML, /Инициатива:/);
+  assert.match(phase.innerHTML, /По мне атакуют/);
   assert.notEqual(document.activeElement, activeInput);
   const battleInput = new FixtureElement(phase);
   battleInput.value = "11";
   document.activeElement = battleInput;
   getState().battleConsole.current.initiative.rawD20 = 11;
   updateBattleConsole(root, getState());
-  assert.match(phase.innerHTML, /10/);
+  assert.match(phase.innerHTML, /По мне атакуют/);
   assert.equal(document.activeElement, battleInput);
   assert.equal(battleInput.value, "11");
 
@@ -408,7 +477,8 @@ test("same-context focused update defers, then phase change discards stale queue
   document.activeElement = null;
   root.fire("focusout", { target: start });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.match(phase.innerHTML, /battle-menu-panel/);
+  assert.match(phase.innerHTML, /Атаковать/);
+  assert.doesNotMatch(phase.innerHTML, /battle-menu-panel/);
   assert.doesNotMatch(phase.innerHTML, /Инициатива:/);
   assert.equal(root.shell.dataset.playerScenePhase, "own-turn");
 });

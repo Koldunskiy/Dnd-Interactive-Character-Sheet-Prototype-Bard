@@ -25,13 +25,14 @@ import { getSessionContext, getState, updateSessionState } from "../../scripts/s
 import { beginOwnTurn, startBattle } from "../../scripts/battle/transitions.js";
 import { executeBattleCommand } from "../../scripts/battle/commands.js";
 
-test("outside Battle hub presents the unified phase and frequent player checks", () => {
+test("exploration home presents the agreed entry actions and closed initiative", () => {
   const markup = renderBattleConsole(structuredClone(sara));
   assert.match(markup, /data-player-scene-phase="outside"/);
-  assert.match(markup, /Вне боя/);
-  assert.match(markup, /Убеждение/);
-  assert.match(markup, /Атлетика/);
-  assert.match(markup, /Восприятие/);
+  assert.match(markup, /Исследование/);
+  assert.match(markup, /Проверка/);
+  assert.match(markup, /Спасбросок/);
+  assert.match(markup, /Инвентарь/);
+  assert.doesNotMatch(markup, /data-battle-form="start"/);
 });
 
 test("declining a caught projectile is distinct from opening its paid return", () => {

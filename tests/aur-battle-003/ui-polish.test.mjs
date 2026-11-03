@@ -29,9 +29,15 @@ import { renderBattleConsole } from "../../scripts/render/render-battle-console.
 import { renderCommandWorkspace } from "../../scripts/render/render-command-workspace.js";
 import { renderAttackWorkspace } from "../../scripts/render/render-attack-workspace.js";
 import { getSaraInitiativeSnapshot } from "../../scripts/battle/providers/sara.js";
+import { dispatchSceneUi } from "../../scripts/battle/scene-ui-state.js";
+import { startBattle } from "../../scripts/battle/transitions.js";
 
 test("battle cards use compact reference composition and keep full spell details accessible", () => {
-  const markup = renderBattleConsole(structuredClone(sara));
+  const character = structuredClone(sara);
+  const abilities = dispatchSceneUi({}, { characterId: "sara-velaris", sessionGeneration: 1 }, "outside", {
+    type: "set-panel", panel: "abilities",
+  });
+  const markup = renderBattleConsole(character, abilities);
   assert.match(markup, /battle-command-card__chips/);
   assert.match(markup, /Ядовитые брызги[\s\S]*?Без лимита/);
   assert.match(markup, /Мистическая регенерация/);
@@ -55,20 +61,42 @@ test("battle cards use compact reference composition and keep full spell details
   assert.doesNotMatch(ownTurnMarkup, /<strong>1<\/strong>|<strong>0<\/strong>/);
 });
 
-test("Sara combat home exposes compact resources and pre-combat initiative sources", () => {
+test("Sara exploration home keeps initiative closed until explicitly opened", () => {
   const character = structuredClone(sara);
   const markup = renderBattleConsole(character);
   assert.match(markup, /data-sara-hud/);
   assert.doesNotMatch(markup, /sara-resources/);
   assert.doesNotMatch(markup, /battle-console-resource__track/);
-  assert.match(markup, /data-initiative-entry/);
-  assert.match(markup, /data-initiative-total/);
   assert.match(markup, /Начать бой/);
+  assert.doesNotMatch(markup, /data-battle-form="start"/);
   assert.doesNotMatch(markup, /Начинается бой\?/);
   const initiative = getSaraInitiativeSnapshot(character);
   assert.equal(initiative.ok, true);
   const modifier = initiative.sources.reduce((total, source) => total + source.value, 0);
-  assert.ok(markup.includes(`data-modifier="${modifier}"`));
+  const ui = dispatchSceneUi({}, { characterId: "sara-velaris", sessionGeneration: 1 }, "outside", {
+    type: "open-initiative", mode: "start", rawD20: "", battleId: null,
+  });
+  const formMarkup = renderBattleConsole(character, ui);
+  assert.match(formMarkup, /data-battle-form="start"/);
+  assert.ok(formMarkup.includes(`data-modifier="${modifier}"`));
+});
+
+test("initiative correction preview uses the sources recorded in the active battle", () => {
+  const character = structuredClone(sara);
+  assert.equal(startBattle(character, { rawD20: "12" }, { id: "stored-source-battle" }).ok, true);
+  const storedSources = structuredClone(character.battleConsole.current.initiative.sources);
+  character.abilities.dexterity = Math.max(1, Number(character.abilities.dexterity) - 2);
+  const storedModifier = storedSources.reduce((sum, source) => sum + source.value, 0);
+  const ui = dispatchSceneUi({}, { characterId: "sara-velaris", sessionGeneration: 1 }, "battle", {
+    type: "open-initiative",
+    mode: "correct",
+    rawD20: "12",
+    battleId: "stored-source-battle",
+  });
+  const markup = renderBattleConsole(character, ui);
+  assert.ok(markup.includes(`data-modifier="${storedModifier}"`));
+  assert.ok(markup.includes(`data-initiative-total aria-live="polite">${12 + storedModifier}</output>`));
+  assert.match(markup, /data-battle-form="correct-initiative"/);
 });
 
 test("battle cards and global surfaces have wrapping and theme-token safeguards", async () => {

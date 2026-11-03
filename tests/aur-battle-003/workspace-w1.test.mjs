@@ -174,6 +174,8 @@ test("W1 real Sara renderer updates preserve the connected focused workspace inp
   const shell = new FixtureNode();
   const regions = new Map([
     ["[data-sara-hud]", new FixtureNode()],
+    ["[data-sara-hud-heading]", new FixtureNode()],
+    ["[data-sara-home-hud]", new FixtureNode()],
     ["[data-sara-budget]", new FixtureNode()],
     ["[data-sara-navigation]", new FixtureNode()],
     ["[data-sara-phase-content]", new FixtureNode()],
@@ -270,6 +272,8 @@ test("W1 phase changes replace focused combat controls immediately and discard q
   const phase = new FixtureNode();
   const regions = new Map([
     ["[data-sara-hud]", new FixtureNode()],
+    ["[data-sara-hud-heading]", new FixtureNode()],
+    ["[data-sara-home-hud]", new FixtureNode()],
     ["[data-sara-budget]", new FixtureNode()],
     ["[data-sara-navigation]", new FixtureNode()],
     ["[data-sara-phase-content]", phase],
@@ -305,7 +309,7 @@ test("W1 phase changes replace focused combat controls immediately and discard q
   updateBattleConsole(panel, getState());
   const waitingMarkup = phase.innerHTML;
   assert.notEqual(waitingMarkup, before);
-  assert.match(waitingMarkup, /Следи за событиями/);
+  assert.match(waitingMarkup, /По мне атакуют/);
   assert.equal(phase.contains(focusedButton), false);
   updateState((state) => {
     state.battleConsole.current.phase = "paused";
@@ -320,7 +324,7 @@ test("W1 phase changes replace focused combat controls immediately and discard q
   panel.fire("focusout", {});
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(phase.innerHTML, pausedMarkup);
-  assert.doesNotMatch(phase.innerHTML, /Следи за событиями/);
+  assert.doesNotMatch(phase.innerHTML, /По мне атакуют/);
   unsubscribe();
 });
 
