@@ -5,6 +5,7 @@ import { getSessionContext, getState, isCurrentSession, updateSessionState } fro
 import { calculateCharacterRoll } from "./calculations.js";
 import { calculateRollConsequencePreview } from "./consequences.js";
 import { getSaraRollBreakdown } from "./providers/sara.js";
+import { closeRestWindow } from "../sara-functional.js";
 
 const HISTORY_LIMIT = 50;
 const PENDING_CONSEQUENCE_LIMIT = 20;
@@ -290,6 +291,7 @@ function applyLegacyConsequence(record, draft, resolution) {
     if (!pools.ok) return pools;
     hp.current = pools.hpAfter;
     hp.temp = pools.tempHpAfter;
+    closeRestWindow(draft, "incoming-damage-consequence");
     hpSnapshot = {
       hpBefore: pools.hpBefore,
       hpAfter: pools.hpAfter,

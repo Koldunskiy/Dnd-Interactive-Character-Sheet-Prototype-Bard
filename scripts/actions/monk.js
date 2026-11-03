@@ -393,6 +393,7 @@ export function castSaraRacialSpell(context, spellId, input = {}) {
       record.uses.current -= 1;
     }
     if (spell.concentration) draft.combat.concentration = spell.id;
+    closeRestWindow(draft, `racial-spell:${spellId}`);
     outcome = {
       spellId,
       mode: spell.mode,

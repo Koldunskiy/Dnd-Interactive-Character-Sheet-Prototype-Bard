@@ -13,6 +13,7 @@ import {
   getSaraBattleCommandRegistry,
 } from "../battle/command-registry.js";
 import { getDerivedStats } from "../calculations.js";
+import { buildRestHitDieCommandId, buildRestReplacementCommandId } from "../workspace/rest-command.js";
 import { getState } from "../state.js";
 import {
   getPlayerHubViewModel,
@@ -280,9 +281,9 @@ function buildBattleConsole(state) {
   </div>`;
   const savedRest = state.monk?.functionalRuntime?.rest;
   const restResumeId = savedRest?.kind === "short" && savedRest.phase === "hit-dice"
-    ? `rest-hit-die:${savedRest.id}`
+    ? buildRestHitDieCommandId(savedRest.id)
     : savedRest?.kind === "long" && ["replacement-offer", "replacement-edit"].includes(savedRest.phase)
-      ? `rest-replacement:${savedRest.phase === "replacement-edit" ? "edit" : "offer"}:${savedRest.id}`
+      ? buildRestReplacementCommandId(savedRest.phase === "replacement-edit" ? "edit" : "offer", savedRest.id)
       : null;
   const restTasks = `<section class="battle-secondary-tools" aria-label="Отдых">
     <button type="button" class="btn btn--utility" data-battle-command-open="completed-rest">

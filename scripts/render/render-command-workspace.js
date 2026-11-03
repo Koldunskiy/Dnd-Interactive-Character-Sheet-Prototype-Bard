@@ -70,9 +70,20 @@ function renderCommandForm(session, state) {
       ])}`;
   }
   if (session.command?.restStage === "hit-die") {
+    const derived = getDerivedStats(state);
+    const constitution = derived.abilityModifiers.constitution;
+    const roll = Number(draft.roll);
+    const validRoll = Number.isInteger(roll) && roll >= 1 && roll <= Number(state.combat.hitDie);
+    const hp = Number(state.combat.hp.current);
+    const healing = validRoll ? Math.max(0, roll + constitution) : null;
     return `<p>Текущий запас: ${state.combat.hitDice.remaining} кость хитов к${state.combat.hitDie}. Следующая кость вводится отдельно.</p>
       ${number("roll", `Физический результат к${state.combat.hitDie}`, 1, state.combat.hitDie)}
-      <p>Текущее Телосложение и Амулет учитываются при применении. Предыдущий бросок не повторяется.</p>`;
+      <section class="workspace-entry-result workspace-damage-result" aria-live="polite">
+        <span>Телосложение ${constitution >= 0 ? "+" : ""}${constitution}</span>
+        <span>Лечение ${healing ?? "—"}</span>
+        <span>HP ${hp} → ${healing == null ? "—" : Math.min(derived.maxHitPoints, hp + healing)}</span>
+      </section>
+      <p>Предпросмотр не тратит кость. Предыдущий бросок не повторяется.</p>`;
   }
   if (session.command?.restStage === "offer") {
     return `<p>Заменить одну обычную технику? Право относится только к этому завершённому отдыху.</p>`;
@@ -81,22 +92,27 @@ function renderCommandForm(session, state) {
     const level = Number(state.profile?.level ?? 1);
     const selected = new Set(state.monk?.ordinaryTechniqueIds ?? []);
     const additions = MONK_TECHNIQUES.filter((entry) =>
-      entry.category !== "passive" && entry.minimumMonkLevel <= level &&
+      entry.minimumMonkLevel <= level &&
       !selected.has(entry.id) &&
       !Object.values(state.monk?.signatureTechniqueSlots ?? {}).includes(entry.id));
+    const selectedAdd = MONK_TECHNIQUES.find((entry) => entry.id === draft.add);
+    const choices = selectedAdd?.id === "ll-monk:warrior-adept"
+      ? select("styleId", "Стиль для «Воинского адепта»", [
+        ...WARRIOR_ADEPT_STYLES.map((style) => [style.id, style.name]),
+      ])
+      : selectedAdd?.id === "ll-monk:divine-light"
+        ? `${select("cantrip1", "Заговор «Сияния божества» 1", [
+          ...CLERIC_CANTRIPS.map((spell) => [spell.id, spell.name]),
+        ])}${select("cantrip2", "Заговор «Сияния божества» 2", [
+          ...CLERIC_CANTRIPS.filter((spell) => spell.id !== draft.cantrip1)
+            .map((spell) => [spell.id, spell.name]),
+        ])}`
+        : "";
     return `<p>Выберите ровно одну обычную технику для удаления и одну для добавления.</p>
       ${select("remove", "Заменить обычную технику", (state.monk?.ordinaryTechniqueIds ?? [])
         .map((techniqueId) => [techniqueId, MONK_TECHNIQUES.find((entry) => entry.id === techniqueId)?.nameRu ?? techniqueId]))}
       ${select("add", "Новая обычная техника", additions.map((entry) => [entry.id, entry.nameRu]))}
-      ${select("styleId", "Стиль для «Воинского адепта» (если выбран)", [
-        ...WARRIOR_ADEPT_STYLES.map((style) => [style.id, style.name]),
-      ])}
-      ${select("cantrip1", "Заговор «Сияния божества» 1 (если выбрано)", [
-        ...CLERIC_CANTRIPS.map((spell) => [spell.id, spell.name]),
-      ])}
-      ${select("cantrip2", "Заговор «Сияния божества» 2 (если выбрано)", [
-        ...CLERIC_CANTRIPS.map((spell) => [spell.id, spell.name]),
-      ])}`;
+      ${choices}`;
   }
   if (id.startsWith("monk-technique:")) {
     return `<p>${escapeHtml(session.command?.trigger ?? "")}</p>
@@ -390,11 +406,17 @@ export function renderWorkspacePotionPreview(session, state) {
   const output = root.querySelector("[data-potion-healing]");
   const summary = root.querySelector("[data-potion-summary]");
   if (!output || !summary) return;
+  if (!Object.prototype.hasOwnProperty.call(draft, "target") || !draft.target) {
+    output.textContent = "—";
+    summary.textContent = "Выберите цель зелья.";
+    summary.dataset.state = "invalid";
+    return;
+  }
   try {
     const result = previewSaraPotion(state, {
       potionId: session.command.potionId,
       itemId: session.command.itemId,
-      target: draft.target ?? "self",
+      target: draft.target,
       sum: draft.sum,
       intentionalWaste: draft.intentionalWaste === true,
     });
@@ -521,14 +543,18 @@ export function renderCommandWorkspace(session, state) {
     ? `<button type="button" class="btn btn--primary" data-workspace-action="apply-command"
         ${session.submitting || session.appliedUnsaved || unavailableReason ? "disabled" : ""}>Применить · ${escapeHtml(session.command?.resourceCost ?? "по правилу")}</button>`
     : session.currentStep === "command-input" && session.command?.restStage === "offer"
-      ? `<button type="button" class="btn btn--utility" data-workspace-action="decline-rest-replacement">Нет, завершить отдых</button>
-        <button type="button" class="btn btn--primary" data-workspace-action="edit-rest-replacement">Да, выбрать технику</button>`
+      ? `<button type="button" class="btn btn--utility" data-workspace-action="decline-rest-replacement"
+          ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Нет, завершить отдых</button>
+        <button type="button" class="btn btn--primary" data-workspace-action="edit-rest-replacement"
+          ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Да, выбрать технику</button>`
     : session.currentStep === "command-input" && session.command?.restStage === "hit-die"
-      ? `<button type="button" class="btn btn--utility" data-workspace-action="finish-short-rest">Закончить лечение</button>
+      ? `<button type="button" class="btn btn--utility" data-workspace-action="finish-short-rest"
+          ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Закончить лечение</button>
         <button type="button" class="btn btn--primary" data-workspace-action="apply-command"
-          ${session.submitting || session.appliedUnsaved || unavailableReason ? "disabled" : ""}>Потратить кость хитов</button>`
+          ${session.submitting || session.appliedUnsaved || !session.command?.canSpend ? "disabled" : ""}>Потратить кость хитов</button>`
     : session.currentStep === "command-input" && session.command?.restStage === "edit"
-      ? `<button type="button" class="btn btn--utility" data-workspace-action="cancel-rest-replacement">Назад к предложению</button>
+      ? `<button type="button" class="btn btn--utility" data-workspace-action="cancel-rest-replacement"
+          ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Назад к предложению</button>
         <button type="button" class="btn btn--primary" data-workspace-action="apply-command"
           ${session.submitting || session.appliedUnsaved || unavailableReason ? "disabled" : ""}>Применить замену</button>`
     : session.currentStep === "command-input" && session.scenarioId === "character-roll"

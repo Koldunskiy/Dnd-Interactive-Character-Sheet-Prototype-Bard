@@ -209,7 +209,6 @@ export function startAttackSequence(context, input, operationId) {
       }
       sequence.resourcePaymentApplied = resourcePaymentApplied;
       sequence.actionFlagApplied ||= actionFlagApplied;
-      closeRestWindow(draft, "attack-sequence-started");
       assistant.activeSequences.push(sequence);
       return draft;
     },

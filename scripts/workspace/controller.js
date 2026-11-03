@@ -1,5 +1,9 @@
 import { getDerivedStats } from "../calculations.js";
 import {
+  buildRestReplacementCommandId,
+  parseRestCommandId,
+} from "./rest-command.js";
+import {
   getWorkspaceAttackSequence,
   getCurrentWorkspaceStrikeParent,
   findAwaitingWorkspaceDamage,
@@ -176,11 +180,10 @@ function getCommandDescriptor(state, commandId) {
       availability: { enabled: true, reasonCode: null, reasonRu: "" },
     };
   }
-  if (/^rest-hit-die:/.test(commandId) ||
-      /^rest-replacement-(offer|edit):/.test(commandId)) {
-    const [kind, second, ...restParts] = commandId.split(":");
-    const stage = kind === "rest-hit-die" ? "hit-die" : second;
-    const restId = kind === "rest-hit-die" ? [second, ...restParts].join(":") : restParts.join(":");
+  const restCommand = parseRestCommandId(commandId);
+  if (restCommand) {
+    const { stage, restId } = restCommand;
+    const kind = stage === "hit-die" ? "rest-hit-die" : "rest-replacement";
     const runtime = state.monk?.functionalRuntime?.rest;
     const valid = runtime?.id === restId &&
       (kind === "rest-hit-die" && runtime.kind === "short" &&
@@ -206,7 +209,8 @@ function getCommandDescriptor(state, commandId) {
         ? `Кость хитов к${state.combat?.hitDie ?? "?"} + текущий модификатор Телосложения.`
         : "Можно заменить ровно одну обычную технику; Signature Strike не изменяется.",
       availability: {
-        enabled: Boolean(valid && (kind !== "rest-hit-die" || diceAvailable)),
+        enabled: Boolean(valid),
+        canSpend: Boolean(diceAvailable),
         reasonCode: !valid ? "rest-window-unavailable" : !diceAvailable ? "hit-die-unavailable" : null,
         reasonRu: !valid ? "Окно отдыха уже закрыто или заменено."
           : kind === "rest-hit-die" && !diceAvailable
@@ -527,6 +531,12 @@ function updateInput(field) {
   } else if (session.workspaceType === "command" &&
       session.scenarioId?.startsWith("potion-use:")) {
     renderWorkspacePotionPreview(session, getState());
+  } else if (session.workspaceType === "command" &&
+      session.command?.restStage === "edit" && field.name === "add") {
+    render();
+  } else if (session.workspaceType === "command" &&
+      session.command?.restStage === "hit-die" && field.name === "roll") {
+    render();
   }
 }
 
@@ -840,6 +850,9 @@ export function openSaraBattleCommand(commandId, invoker = null, options = {}) {
   if (commandId === "completed-rest" &&
       ["short", "long"].includes(options.restKind)) {
     session.rawInputsByStep[session.currentStepKey] = { kind: options.restKind };
+  }
+  if (commandId.startsWith("potion-use:")) {
+    session.rawInputsByStep[session.currentStepKey] = { target: "self" };
   }
   if (invoker) {
     invoker.dataset.workspaceInvoker = `battle-command-${commandId}`;
@@ -1740,7 +1753,7 @@ function submitCommand() {
     session.resultMessage = `Короткий отдых завершён. Ци восстановлена до ${result.outcome.ki}; лечение костями хитов необязательно.`;
     session.rawInputsByStep[stepKey("command-input", session.scenarioId)] = {};
   } else if (id === "completed-rest" && result.outcome?.phase === "replacement-offer") {
-    session.scenarioId = `rest-replacement:offer:${result.outcome.restId}`;
+    session.scenarioId = buildRestReplacementCommandId("offer", result.outcome.restId);
     session.command = getCommandDescriptor(getState(), session.scenarioId);
     session.currentStep = "command-input";
     session.resultMessage = "Продолжительный отдых завершён. Доступно одно право замены обычной техники.";
@@ -2222,7 +2235,7 @@ function handleAction(action, button = null) {
     submitCommand();
   } else if (action === "edit-rest-replacement" &&
       session.command?.restStage === "offer") {
-    session.scenarioId = `rest-replacement:edit:${session.command.restId}`;
+    session.scenarioId = buildRestReplacementCommandId("edit", session.command.restId);
     session.command = getCommandDescriptor(getState(), session.scenarioId);
     session.currentStepKey = stepKey("command-input", session.scenarioId);
     session.rawInputsByStep[session.currentStepKey] = {};
@@ -2230,13 +2243,14 @@ function handleAction(action, button = null) {
     render();
   } else if (action === "cancel-rest-replacement" &&
       session.command?.restStage === "edit") {
-    session.scenarioId = `rest-replacement:offer:${session.command.restId}`;
+    session.scenarioId = buildRestReplacementCommandId("offer", session.command.restId);
     session.command = getCommandDescriptor(getState(), session.scenarioId);
     session.currentStepKey = stepKey("command-input", session.scenarioId);
     session.error = "";
     render();
   } else if (action === "decline-rest-replacement" &&
-      session.command?.restStage === "offer" && requireOwner()) {
+      session.command?.restStage === "offer" && !session.submitting &&
+      !session.appliedUnsaved && requireOwner()) {
     const restId = session.command.restId;
     session.submitting = true;
     const result = declineSaraRestReplacement(session.owner, {
@@ -2251,10 +2265,13 @@ function handleAction(action, button = null) {
       session.currentStep = "command-result";
       session.currentStepKey = stepKey("command-result", restId);
     }
-    session.appliedUnsaved = result.status === "applied" && result.persistence?.ok === false;
+    if (result.status === "applied") {
+      session.appliedUnsaved = result.persistence?.ok === false;
+    }
     render();
   } else if (action === "finish-short-rest" &&
-      session.command?.restStage === "hit-die" && requireOwner()) {
+      session.command?.restStage === "hit-die" && !session.submitting &&
+      !session.appliedUnsaved && requireOwner()) {
     const restId = session.command.restId;
     session.submitting = true;
     const result = finishSaraShortRest(session.owner, {
@@ -2269,7 +2286,9 @@ function handleAction(action, button = null) {
       session.currentStep = "command-result";
       session.currentStepKey = stepKey("command-result", restId);
     }
-    session.appliedUnsaved = result.status === "applied" && result.persistence?.ok === false;
+    if (result.status === "applied") {
+      session.appliedUnsaved = result.persistence?.ok === false;
+    }
     render();
   } else if (action === "return-missile") {
     openMissileReturnForm();
