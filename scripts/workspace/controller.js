@@ -2150,34 +2150,39 @@ function beginSeekingStrikeRoute(button = null) {
   session.owner = { ...session.owner, stateRevision: currentOwner.stateRevision };
   session.submitting = true;
   let result;
+  let caughtUnexpectedError = false;
   try {
     result = beginSeekingStrike(session.owner, session.sequenceId, attack.id,
       beginIntent.operationId);
   } catch (error) {
+    caughtUnexpectedError = true;
     console.error("Seeking Strike begin failed unexpectedly", error);
     if (session === taskSession) {
       const currentAttack = getSequence()?.resolvedAttacks?.find((entry) =>
         entry.id === attack.id);
-      let committed = false;
+      let verification = "not-applied";
       try {
-        committed = Boolean(currentAttack && readSeekingHistory(currentAttack, {
+        verification = currentAttack && readSeekingHistory(currentAttack, {
           actionId: taskSession.sequenceId, attackId: attack.id,
-        }).some((entry) => entry.paidOperationId === beginIntent.operationId));
+        }).some((entry) => entry.paidOperationId === beginIntent.operationId)
+          ? "applied" : "not-applied";
       } catch (verificationError) {
         console.error("Could not verify Seeking payment after handler failure", verificationError);
-        committed = true;
+        verification = "unknown";
       }
-      session.appliedUnsaved = Boolean(committed);
-      setError(committed
+      session.appliedUnsaved = verification !== "not-applied";
+      setError(verification === "applied"
         ? "Seeking Strike применён, но обработка завершилась с ошибкой. Сохраните запись; повторная оплата заблокирована."
-        : "Не удалось выполнить Seeking Strike. Состояние не подтверждено; операция не повторялась.");
-      render();
+        : verification === "unknown"
+          ? "Исход Seeking Strike не подтверждён из-за ошибки проверки. Повторная оплата заблокирована; проверьте запись и сохраните состояние."
+          : "Не удалось выполнить Seeking Strike. Оплата не обнаружена; операция не повторялась.");
     }
     return;
   } finally {
     if (session === taskSession &&
         `${taskSession.sequenceId}:${taskSession.attackId}:${taskSession.seekingBeginIntent?.operationId}` === taskIdentity) {
       session.submitting = false;
+      if (caughtUnexpectedError) render();
     }
   }
   if (session !== taskSession) return;
@@ -2266,36 +2271,40 @@ function submitSeekingStrike() {
   const taskIdentity = `${task.actionId}:${task.attackId}:${task.amendmentId}`;
   session.submitting = true;
   let result;
+  let caughtUnexpectedError = false;
   try {
     result = resolveSeekingStrike(session.owner, session.sequenceId, session.attackId,
       { ...values, amendmentId: task.amendmentId },
       `seeking-result:${task.amendmentId}`);
   } catch (error) {
+    caughtUnexpectedError = true;
     console.error("Seeking Strike submit failed unexpectedly", error);
     if (session === taskSession) {
       const currentAttack = getWorkspaceAttackSequence(getState(), task.actionId)
         ?.resolvedAttacks?.find((entry) => entry.id === task.attackId);
-      let resolved = false;
+      let verification = "not-applied";
       try {
-        resolved = Boolean(currentAttack && readSeekingHistory(currentAttack, {
+        verification = currentAttack && readSeekingHistory(currentAttack, {
           actionId: task.actionId, attackId: task.attackId,
         }).find((entry) => entry.paidOperationId === task.amendmentId)
-          ?.status === "resolved");
+          ?.status === "resolved" ? "applied" : "not-applied";
       } catch (verificationError) {
         console.error("Could not verify Seeking result after handler failure", verificationError);
-        resolved = true;
+        verification = "unknown";
       }
-      session.appliedUnsaved = resolved;
-      setError(resolved
+      session.appliedUnsaved = verification !== "not-applied";
+      setError(verification === "applied"
         ? "Замена записана, но обработка завершилась с ошибкой. Сохраните результат."
-        : "Не удалось выполнить замену; исходная оплаченная задача сохранена.");
-      render();
+        : verification === "unknown"
+          ? "Исход замены не подтверждён из-за ошибки проверки. Повтор заблокирован; проверьте запись и сохраните состояние."
+          : "Не удалось выполнить замену; исходная оплаченная задача сохранена.");
     }
     return;
   } finally {
     if (session === taskSession &&
         `${taskSession.seekingTask?.actionId}:${taskSession.seekingTask?.attackId}:${taskSession.seekingTask?.amendmentId}` === taskIdentity) {
       session.submitting = false;
+      if (caughtUnexpectedError) render();
     }
   }
   if (session !== taskSession) return;
@@ -2350,25 +2359,36 @@ function beginGentlingTouchRoute() {
     session.owner = { ...session.owner, stateRevision: currentOwner.stateRevision };
     session.submitting = true;
     let started;
+    let caughtUnexpectedError = false;
     try {
       started = startAttackSequence(session.owner, {
         kind: "attack-action",
         sequenceId: session.sequenceId,
       }, operationId(`gentling-sequence:${session.sequenceId}`));
     } catch (error) {
+      caughtUnexpectedError = true;
       console.error("Gentling sequence creation failed unexpectedly", error);
       if (session === taskSession) {
-        const created = getWorkspaceAttackSequence(getState(), taskIdentity);
-        session.appliedUnsaved = Boolean(created);
-        setError(created
+        let verification = "not-applied";
+        try {
+          verification = getWorkspaceAttackSequence(getState(), taskIdentity)
+            ? "applied" : "not-applied";
+        } catch (verificationError) {
+          console.error("Could not verify Gentling sequence after handler failure", verificationError);
+          verification = "unknown";
+        }
+        session.appliedUnsaved = verification !== "not-applied";
+        setError(verification === "applied"
           ? "Последовательность создана, но обработка завершилась с ошибкой. Сохраните состояние."
-          : "Не удалось создать последовательность Gentling Touch.");
-        render();
+          : verification === "unknown"
+            ? "Создание последовательности не подтверждено из-за ошибки проверки. Повтор заблокирован; проверьте состояние."
+            : "Не удалось создать последовательность Gentling Touch; создание не обнаружено.");
       }
       return;
     } finally {
       if (session === taskSession && session.sequenceId === taskIdentity) {
         session.submitting = false;
+        if (caughtUnexpectedError) render();
       }
     }
     if (session !== taskSession) return;
@@ -2445,25 +2465,37 @@ function submitGentlingTouch() {
   const taskIdentity = `${intent.actionId}:${intent.slotNumber}:${intent.operationId}`;
   session.submitting = true;
   let result;
+  let caughtUnexpectedError = false;
   try {
     result = applyGentlingTouchToAttackSlot(session.owner, session.sequenceId,
       values, intent.operationId);
   } catch (error) {
+    caughtUnexpectedError = true;
     console.error("Gentling Touch submit failed unexpectedly", error);
     if (session === taskSession) {
-      const recorded = getWorkspaceAttackSequence(getState(), intent.actionId)
-        ?.replacementResults?.find((entry) => entry.operationId === intent.operationId);
-      session.appliedUnsaved = Boolean(recorded);
-      setError(recorded
+      let verification = "not-applied";
+      try {
+        verification = getWorkspaceAttackSequence(getState(), intent.actionId)
+          ?.replacementResults?.some((entry) =>
+            entry.operationId === intent.operationId)
+          ? "applied" : "not-applied";
+      } catch (verificationError) {
+        console.error("Could not verify Gentling result after handler failure", verificationError);
+        verification = "unknown";
+      }
+      session.appliedUnsaved = verification !== "not-applied";
+      setError(verification === "applied"
         ? "Gentling Touch применён, но обработка завершилась с ошибкой. Сохраните результат."
-        : "Не удалось завершить Gentling Touch; операция не повторялась.");
-      render();
+        : verification === "unknown"
+          ? "Исход Gentling Touch не подтверждён из-за ошибки проверки. Повтор заблокирован; проверьте запись и сохраните состояние."
+          : "Не удалось завершить Gentling Touch; результат не обнаружен и операция не повторялась.");
     }
     return;
   } finally {
     if (session === taskSession &&
         `${taskSession.gentlingIntent?.actionId}:${taskSession.gentlingIntent?.slotNumber}:${taskSession.gentlingIntent?.operationId}` === taskIdentity) {
       session.submitting = false;
+        if (caughtUnexpectedError) render();
     }
   }
   if (session !== taskSession) return;

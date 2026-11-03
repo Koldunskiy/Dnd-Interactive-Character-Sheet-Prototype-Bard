@@ -462,6 +462,11 @@ test("Seeking Strike is paid from a recorded miss and replaces the same attack w
   assert.equal(duplicatePaid.status, "applied");
   assert.equal(duplicatePaid.replayed, true);
   assert.equal(getState().combat.ki.current, beforeKi - 1);
+  const replayedAttack = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === "seeking-sequence").resolvedAttacks[0];
+  assert.equal(replayedAttack.seekingAmendments.length, 1);
+  assert.equal(replayedAttack.seekingAmendments[0].paidOperationId,
+    replayedAttack.seekingAmendment.paidOperationId);
   const savedAttack = getState().monk.combatAssistant.activeSequences
     .find((entry) => entry.id === "seeking-sequence").resolvedAttacks[0];
   const savedBonus = savedAttack.attackBonusSnapshot;
@@ -495,6 +500,62 @@ test("Seeking Strike is paid from a recorded miss and replaces the same attack w
     getState(), "seeking-sequence", "recorded-miss",
   ), null);
   assert.equal(getState().combat.ki.current, beforeKi - 1);
+});
+
+test("Seeking operation-ID collision in another valid parent rejects without mutation or persistence", () => {
+  let context = openFreshSession();
+  updateSessionState(context, (draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+    return draft;
+  }, { operationId: "seeking-collision-setup", metadata: { kind: "test-setup" } });
+  assert.equal(combatActions.startAttackSequence(getSessionContext(), {
+    sequenceId: "selected-collision-sequence", kind: "attack-action",
+  }, "selected-collision-start").status, "applied");
+  assert.equal(recordAttack("selected-collision-sequence", "selected-collision-attack", {
+    firstD20: "2", targetArmorClass: "30",
+  }, "selected-collision-miss").status, "applied");
+  updateSessionState(getSessionContext(), (draft) => {
+    const selected = draft.monk.combatAssistant.activeSequences
+      .find((entry) => entry.id === "selected-collision-sequence")
+      .resolvedAttacks[0];
+    const parent = { actionId: "foreign-sequence", attackId: "foreign-attack" };
+    const invocation = {
+      id: "shared-operation-id",
+      paidOperationId: "shared-operation-id",
+      parent,
+      status: "resolved",
+      kiPaid: 1,
+      original: {
+        rawD20Rolls: [2],
+        rollMode: "normal",
+        chosenD20: 2,
+        attackTotal: selected.attackTotal,
+        hitResult: "miss",
+        critical: false,
+      },
+    };
+    draft.monk.combatAssistant.activeSequences.push({
+      id: parent.actionId,
+      kind: "attack-action",
+      status: "complete",
+      resolvedAttacks: [{
+        ...structuredClone(selected),
+        id: parent.attackId,
+        seekingAmendments: [invocation],
+        seekingAmendment: structuredClone(invocation),
+      }],
+    });
+    return draft;
+  }, { operationId: "insert-valid-collision", metadata: { kind: "test-setup" } });
+  const before = structuredClone(getState());
+  const persistedBefore = new Map(persisted);
+  const result = beginSeekingStrike(getSessionContext(),
+    "selected-collision-sequence", "selected-collision-attack",
+    "shared-operation-id");
+  assert.equal(result.status, "rejected");
+  assert.match(result.reason, /другого родителя/i);
+  assert.deepEqual(getState(), before);
+  assert.deepEqual(persisted, persistedBefore);
 });
 
 test("Seeking Strike enforces parent battle/turn windows but allows a matching reaction parent", () => {

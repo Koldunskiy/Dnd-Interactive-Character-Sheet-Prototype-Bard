@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getState, openCharacterSession, updateState } from "../../scripts/state.js";
+import { getState, openCharacterSession, subscribe, updateState } from "../../scripts/state.js";
 import { getDerivedStats } from "../../scripts/calculations.js";
 import {
   disposeWorkspaceOwner,
@@ -382,7 +382,8 @@ test("Seeking begin ignores unrelated malformed history but rejects a contradict
   assert.equal(getState().combat.ki.current, before);
   assert.equal(getWorkspaceSessionForTests().submitting, false);
   assert.equal(getWorkspaceSessionForTests().currentStep, "checkpoint");
-  assert.match(second.dialog.body.innerHTML, /история Seeking Strike противоречива/i);
+  assert.match(second.dialog.body.innerHTML, /конфликт идентификатора Seeking Strike/i);
+  assert.match(second.dialog.body.innerHTML, /запись другого удара противоречива/i);
   second.unsubscribe();
 });
 
@@ -459,6 +460,202 @@ test("A paid Seeking operation survives storage failure and retry saves without 
   unsubscribe();
 });
 
+test("Seeking exception before mutation rerenders after releasing submitting", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  updateState((draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+    return draft;
+  });
+  assert.equal(openNormalAttack().ok, true);
+  dialog.forms.attack = new FixtureForm("attack", {
+    profileId: "unarmed", rollMode: "normal", firstD20: "2",
+    targetArmorClass: "30",
+  }, { firstD20: { required: true, min: 1, max: 20, type: "number" } });
+  fireWorkspaceAction(dialog, "attack-miss");
+  const kiBefore = getState().combat.ki.current;
+  const originalClone = globalThis.structuredClone;
+  let failOnce = true;
+  globalThis.structuredClone = (value) => {
+    if (failOnce) {
+      failOnce = false;
+      throw new Error("pre-mutation test failure");
+    }
+    return originalClone(value);
+  };
+  try {
+    fireWorkspaceAction(dialog, "begin-seeking");
+  } finally {
+    globalThis.structuredClone = originalClone;
+  }
+  const task = getWorkspaceSessionForTests();
+  assert.equal(task.submitting, false);
+  assert.equal(task.appliedUnsaved, false);
+  assert.equal(getState().combat.ki.current, kiBefore);
+  assert.match(dialog.body.innerHTML, /Оплата не обнаружена/i);
+  assert.match(dialog.footer.innerHTML, /begin-seeking/);
+  assert.doesNotMatch(dialog.footer.innerHTML, /begin-seeking[^>]*disabled/);
+  unsubscribe();
+});
+
+test("Seeking post-commit exception is recovered; failed verification stays explicitly unknown", () => {
+  const setup = () => {
+    const fixture = installWorkspaceFixture({ embeddedHost: true });
+    updateState((draft) => {
+      draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+      return draft;
+    });
+    assert.equal(openNormalAttack().ok, true);
+    fixture.dialog.forms.attack = new FixtureForm("attack", {
+      profileId: "unarmed", rollMode: "normal", firstD20: "2",
+      targetArmorClass: "30",
+    }, { firstD20: { required: true, min: 1, max: 20, type: "number" } });
+    fireWorkspaceAction(fixture.dialog, "attack-miss");
+    return fixture;
+  };
+
+  const applied = setup();
+  const failAfterCommit = subscribe(() => {
+    throw new Error("post-commit test failure");
+  });
+  const kiBefore = getState().combat.ki.current;
+  fireWorkspaceAction(applied.dialog, "begin-seeking");
+  failAfterCommit();
+  const recordedTask = getWorkspaceSessionForTests();
+  assert.equal(recordedTask.submitting, false);
+  assert.equal(recordedTask.appliedUnsaved, true);
+  assert.equal(getState().combat.ki.current, kiBefore - 1);
+  assert.match(applied.dialog.body.innerHTML, /применён, но обработка завершилась с ошибкой/i);
+  assert.match(applied.dialog.footer.innerHTML, /retry-save/);
+  applied.unsubscribe();
+
+  const unknown = setup();
+  const originalClone = globalThis.structuredClone;
+  let inspectionFailed = false;
+  let postCommitCallbackRan = false;
+  const failVerification = subscribe(() => {
+    postCommitCallbackRan = true;
+    globalThis.structuredClone = (value) => {
+      if (!inspectionFailed && value && !Array.isArray(value) &&
+          Object.hasOwn(value, "paidOperationId")) {
+        inspectionFailed = true;
+        throw new Error("verification unavailable");
+      }
+      return originalClone(value);
+    };
+    throw new Error("post-commit verification test failure");
+  });
+  const secondKi = getState().combat.ki.current;
+  try {
+    fireWorkspaceAction(unknown.dialog, "begin-seeking");
+  } finally {
+    globalThis.structuredClone = originalClone;
+    failVerification();
+  }
+  const uncertainTask = getWorkspaceSessionForTests();
+  assert.equal(postCommitCallbackRan, true);
+  assert.equal(inspectionFailed, true);
+  assert.equal(uncertainTask.submitting, false);
+  assert.equal(uncertainTask.appliedUnsaved, true);
+  assert.equal(getState().combat.ki.current, secondKi - 1);
+  assert.match(unknown.dialog.body.innerHTML, /не подтверждён/i);
+  assert.doesNotMatch(unknown.dialog.body.innerHTML, /применён/i);
+  assert.match(unknown.dialog.footer.innerHTML, /retry-save/);
+  unknown.unsubscribe();
+});
+
+test("A replaced workspace task is untouched by the old Begin handler finally", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  updateState((draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+    return draft;
+  });
+  assert.equal(openNormalAttack().ok, true);
+  dialog.forms.attack = new FixtureForm("attack", {
+    profileId: "unarmed", rollMode: "normal", firstD20: "2",
+    targetArmorClass: "30",
+  }, { firstD20: { required: true, min: 1, max: 20, type: "number" } });
+  fireWorkspaceAction(dialog, "attack-miss");
+  const oldTask = getWorkspaceSessionForTests();
+  let replacementId = null;
+  const replaceDuringFailure = subscribe(() => {
+    disposeWorkspaceOwner(oldTask.owner, "session-changed");
+    const opened = openNormalAttack();
+    assert.equal(opened.ok, true);
+    replacementId = getWorkspaceSessionForTests().workspaceSessionId;
+    throw new Error("replace task after commit");
+  });
+  fireWorkspaceAction(dialog, "begin-seeking");
+  replaceDuringFailure();
+  const replacement = getWorkspaceSessionForTests();
+  assert.notEqual(replacement.workspaceSessionId, oldTask.workspaceSessionId);
+  assert.equal(replacement.workspaceSessionId, replacementId);
+  assert.equal(replacement.submitting, false);
+  assert.equal(replacement.error, "");
+  unsubscribe();
+});
+
+test("Gentling sequence-create and submit exceptions rerender after releasing submitting", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  updateState((draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:gentling-touch";
+    return draft;
+  });
+  assert.equal(openNormalAttack().ok, true);
+  const originalClone = globalThis.structuredClone;
+  let failCreateOnce = true;
+  globalThis.structuredClone = (value) => {
+    if (failCreateOnce) {
+      failCreateOnce = false;
+      throw new Error("Gentling pre-mutation test failure");
+    }
+    return originalClone(value);
+  };
+  try {
+    fireWorkspaceAction(dialog, "begin-gentling");
+  } finally {
+    globalThis.structuredClone = originalClone;
+  }
+  assert.equal(getWorkspaceSessionForTests().submitting, false);
+  assert.equal(getWorkspaceSessionForTests().currentStep, "attack-input");
+  assert.match(dialog.footer.innerHTML, /begin-gentling/);
+  assert.doesNotMatch(dialog.footer.innerHTML, /begin-gentling[^>]*disabled/);
+  assert.equal(getState().monk.combatAssistant.activeSequences.length, 0);
+
+  fireWorkspaceAction(dialog, "begin-gentling");
+  const task = getWorkspaceSessionForTests();
+  assert.equal(task.currentStep, "gentling-input");
+  const kiBefore = getState().combat.ki.current;
+  dialog.forms.gentling = new FixtureForm("gentling", {
+    extraKi: "0", targetHp: "7", sum: "20",
+  }, {
+    extraKi: { required: true, min: 0, max: 30, type: "number" },
+    targetHp: { required: true, min: 0, max: 9999, type: "number" },
+    sum: { required: true, min: 1, max: 9999, type: "number" },
+  });
+  let failSubmitOnce = true;
+  globalThis.structuredClone = (value) => {
+    if (failSubmitOnce) {
+      failSubmitOnce = false;
+      throw new Error("Gentling submit pre-mutation test failure");
+    }
+    return originalClone(value);
+  };
+  try {
+    fireWorkspaceAction(dialog, "submit-gentling");
+  } finally {
+    globalThis.structuredClone = originalClone;
+  }
+  const recovered = getWorkspaceSessionForTests();
+  assert.equal(recovered.submitting, false);
+  assert.equal(recovered.appliedUnsaved, false);
+  assert.equal(recovered.currentStep, "gentling-input");
+  assert.equal(getState().combat.ki.current, kiBefore);
+  assert.match(dialog.body.innerHTML, /результат не обнаружен/i);
+  assert.match(dialog.footer.innerHTML, /submit-gentling/);
+  assert.doesNotMatch(dialog.footer.innerHTML, /submit-gentling[^>]*disabled/);
+  unsubscribe();
+});
+
 test("Gentling Touch occupies the first real Attack slot, spends action once, and leaves no third slot", () => {
   const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
   updateState((draft) => {
@@ -495,6 +692,12 @@ test("Gentling Touch occupies the first real Attack slot, spends action once, an
   assert.equal(sequence.replacementResults[0].slotNumber, 1);
   assert.equal(sequence.actionFlagApplied, true);
   assert.equal(getWorkspaceSessionForTests().currentStep, "attack-input");
+  const firstOwner = getWorkspaceSessionForTests().owner;
+  const sequenceId = sequence.id;
+  disposeWorkspaceOwner(firstOwner, "session-changed");
+  assert.equal(openCharacterSession("sara-velaris").status, "loaded");
+  assert.equal(openNormalAttack({ sequenceId }).ok, true);
+  assert.equal(getWorkspaceSessionForTests().currentStep, "attack-input");
   fireWorkspaceAction(dialog, "begin-gentling");
   assert.equal(getWorkspaceSessionForTests().currentStep, "gentling-input");
   const secondSession = getWorkspaceSessionForTests();
@@ -517,6 +720,7 @@ test("Gentling Touch occupies the first real Attack slot, spends action once, an
   assert.equal(completed.status, "complete");
   assert.equal(completed.replacementResults[1].slotNumber, 2);
   assert.equal(completed.resolvedAttacks.length + completed.replacementResults.length, 2);
+  assert.equal(getState().combat.ki.current, kiBefore - 2);
   assert.equal(getWorkspaceSessionForTests().capabilities.canContinueSequence, false);
   unsubscribe();
 });

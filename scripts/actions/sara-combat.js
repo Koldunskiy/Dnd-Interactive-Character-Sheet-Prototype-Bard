@@ -460,9 +460,26 @@ export function beginSeekingStrike(context, actionId, attackId, operationId) {
   if (!operationId) return reject("Для операции требуется стабильный идентификатор.");
   if (!isCurrentSession(context)) return reject("stale-session");
   const state = getState();
-  const candidates = new Map();
-  for (const sequence of state.monk?.combatAssistant?.activeSequences ?? []) {
+  const sequences = state.monk?.combatAssistant?.activeSequences ?? [];
+  const selectedSequence = sequences.find((sequence) => sequence.id === actionId);
+  const selectedAttack = selectedSequence?.resolvedAttacks?.find((attack) =>
+    attack.id === attackId);
+  if (!selectedAttack) {
+    return reject("Записанный удар для Seeking Strike не найден.");
+  }
+  let selectedHistory;
+  try {
+    selectedHistory = readSeekingHistory(selectedAttack, { actionId, attackId });
+  } catch (error) {
+    return reject(`История Seeking Strike противоречива; применение заблокировано. ${error.message}`);
+  }
+  const selectedInvocation = selectedHistory.find((entry) =>
+    entry.id === operationId || entry.paidOperationId === operationId);
+
+  const candidateParents = new Map();
+  for (const sequence of sequences) {
     for (const attack of sequence.resolvedAttacks ?? []) {
+      if (sequence.id === actionId && attack.id === attackId) continue;
       const entries = [
         ...(Array.isArray(attack.seekingAmendments)
           ? attack.seekingAmendments : []),
@@ -470,40 +487,27 @@ export function beginSeekingStrike(context, actionId, attackId, operationId) {
       ];
       if (entries.some((entry) =>
         entry?.paidOperationId === operationId || entry?.id === operationId)) {
-        candidates.set(`${sequence.id}:${attack.id}`, {
-          sequenceId: sequence.id,
-          attackId: attack.id,
-        });
+        const key = JSON.stringify([sequence.id, attack.id]);
+        candidateParents.set(key, { sequence, attack });
       }
     }
   }
-  candidates.set(`${actionId}:${attackId}`, { sequenceId: actionId, attackId });
-  const matchingEntries = [];
-  for (const candidate of candidates.values()) {
-    const candidateAttack = state.monk?.combatAssistant?.activeSequences
-      ?.find((sequence) => sequence.id === candidate.sequenceId)
-      ?.resolvedAttacks?.find((attack) => attack.id === candidate.attackId);
+  for (const { sequence, attack } of candidateParents.values()) {
     try {
-      const history = candidateAttack
-        ? readSeekingHistory(candidateAttack, {
-          actionId: candidate.sequenceId,
-          attackId: candidate.attackId,
-        })
-        : [];
-      matchingEntries.push(...history.filter((entry) =>
-        entry.paidOperationId === operationId));
+      const history = readSeekingHistory(attack, {
+        actionId: sequence.id,
+        attackId: attack.id,
+      });
+      if (history.some((entry) =>
+        entry.id === operationId || entry.paidOperationId === operationId)) {
+        return reject("Идентификатор Seeking Strike уже использован для другого родителя.");
+      }
     } catch (error) {
-      return reject(`История Seeking Strike противоречива; применение заблокировано. ${error.message}`);
+      return reject(`Конфликт идентификатора Seeking Strike: совпадающая запись другого удара противоречива. ${error.message}`);
     }
   }
-  if (matchingEntries.length > 1) {
-    return reject("Конфликт Seeking Strike: несколько записей используют один идентификатор.");
-  }
-  const oldInvocation = matchingEntries[0] ?? null;
-  if (oldInvocation) {
-    return oldInvocation.parent?.actionId === actionId && oldInvocation.parent?.attackId === attackId
-      ? { status: "applied", replayed: true, result: structuredClone(oldInvocation) }
-      : reject("Идентификатор Seeking Strike уже использован для другого родителя.");
+  if (selectedInvocation) {
+    return { status: "applied", replayed: true, result: structuredClone(selectedInvocation) };
   }
   return commit(context, operationId, {
     kind: "sara-seeking-strike-begin", actionId, attackId, paidKi: 1,
