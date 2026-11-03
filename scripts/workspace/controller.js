@@ -2138,10 +2138,49 @@ function beginSeekingStrikeRoute(button = null) {
       attackId: attack.id,
       basisKey,
     });
+  const taskSession = session;
+  const taskIdentity = `${session.sequenceId}:${attack.id}:${beginIntent.operationId}`;
+  const currentOwner = getSessionContext();
+  if (currentOwner.characterId !== session.owner.characterId ||
+      currentOwner.sessionGeneration !== session.owner.sessionGeneration) {
+    setError("Сеанс персонажа изменился. Операция не отправлена.");
+    render();
+    return;
+  }
+  session.owner = { ...session.owner, stateRevision: currentOwner.stateRevision };
   session.submitting = true;
-  const result = beginSeekingStrike(session.owner, session.sequenceId, attack.id,
-    beginIntent.operationId);
-  session.submitting = false;
+  let result;
+  try {
+    result = beginSeekingStrike(session.owner, session.sequenceId, attack.id,
+      beginIntent.operationId);
+  } catch (error) {
+    console.error("Seeking Strike begin failed unexpectedly", error);
+    if (session === taskSession) {
+      const currentAttack = getSequence()?.resolvedAttacks?.find((entry) =>
+        entry.id === attack.id);
+      let committed = false;
+      try {
+        committed = Boolean(currentAttack && readSeekingHistory(currentAttack, {
+          actionId: taskSession.sequenceId, attackId: attack.id,
+        }).some((entry) => entry.paidOperationId === beginIntent.operationId));
+      } catch (verificationError) {
+        console.error("Could not verify Seeking payment after handler failure", verificationError);
+        committed = true;
+      }
+      session.appliedUnsaved = Boolean(committed);
+      setError(committed
+        ? "Seeking Strike применён, но обработка завершилась с ошибкой. Сохраните запись; повторная оплата заблокирована."
+        : "Не удалось выполнить Seeking Strike. Состояние не подтверждено; операция не повторялась.");
+      render();
+    }
+    return;
+  } finally {
+    if (session === taskSession &&
+        `${taskSession.sequenceId}:${taskSession.attackId}:${taskSession.seekingBeginIntent?.operationId}` === taskIdentity) {
+      session.submitting = false;
+    }
+  }
+  if (session !== taskSession) return;
   if (result.status !== "applied") {
     setError(result.reason);
     render();
@@ -2223,11 +2262,43 @@ function submitSeekingStrike() {
     return;
   }
   session.owner = { ...session.owner, stateRevision: currentOwner.stateRevision };
+  const taskSession = session;
+  const taskIdentity = `${task.actionId}:${task.attackId}:${task.amendmentId}`;
   session.submitting = true;
-  const result = resolveSeekingStrike(session.owner, session.sequenceId, session.attackId,
-    { ...values, amendmentId: task.amendmentId },
-    `seeking-result:${task.amendmentId}`);
-  session.submitting = false;
+  let result;
+  try {
+    result = resolveSeekingStrike(session.owner, session.sequenceId, session.attackId,
+      { ...values, amendmentId: task.amendmentId },
+      `seeking-result:${task.amendmentId}`);
+  } catch (error) {
+    console.error("Seeking Strike submit failed unexpectedly", error);
+    if (session === taskSession) {
+      const currentAttack = getWorkspaceAttackSequence(getState(), task.actionId)
+        ?.resolvedAttacks?.find((entry) => entry.id === task.attackId);
+      let resolved = false;
+      try {
+        resolved = Boolean(currentAttack && readSeekingHistory(currentAttack, {
+          actionId: task.actionId, attackId: task.attackId,
+        }).find((entry) => entry.paidOperationId === task.amendmentId)
+          ?.status === "resolved");
+      } catch (verificationError) {
+        console.error("Could not verify Seeking result after handler failure", verificationError);
+        resolved = true;
+      }
+      session.appliedUnsaved = resolved;
+      setError(resolved
+        ? "Замена записана, но обработка завершилась с ошибкой. Сохраните результат."
+        : "Не удалось выполнить замену; исходная оплаченная задача сохранена.");
+      render();
+    }
+    return;
+  } finally {
+    if (session === taskSession &&
+        `${taskSession.seekingTask?.actionId}:${taskSession.seekingTask?.attackId}:${taskSession.seekingTask?.amendmentId}` === taskIdentity) {
+      session.submitting = false;
+    }
+  }
+  if (session !== taskSession) return;
   if (result.status !== "applied") {
     setError(result.reason);
     render();
@@ -2267,10 +2338,40 @@ function beginGentlingTouchRoute() {
       !getEffectiveSelectedTechniqueIds(getState()).has("ll-monk:gentling-touch")) return;
   let sequence = getWorkspaceAttackSequence(getState(), session.sequenceId);
   if (!sequence) {
-    const started = startAttackSequence(session.owner, {
-      kind: "attack-action",
-      sequenceId: session.sequenceId,
-    }, operationId(`gentling-sequence:${session.sequenceId}`));
+    const taskSession = session;
+    const taskIdentity = session.sequenceId;
+    const currentOwner = getSessionContext();
+    if (currentOwner.characterId !== session.owner.characterId ||
+        currentOwner.sessionGeneration !== session.owner.sessionGeneration) {
+      setError("Сеанс персонажа изменился. Операция не отправлена.");
+      render();
+      return;
+    }
+    session.owner = { ...session.owner, stateRevision: currentOwner.stateRevision };
+    session.submitting = true;
+    let started;
+    try {
+      started = startAttackSequence(session.owner, {
+        kind: "attack-action",
+        sequenceId: session.sequenceId,
+      }, operationId(`gentling-sequence:${session.sequenceId}`));
+    } catch (error) {
+      console.error("Gentling sequence creation failed unexpectedly", error);
+      if (session === taskSession) {
+        const created = getWorkspaceAttackSequence(getState(), taskIdentity);
+        session.appliedUnsaved = Boolean(created);
+        setError(created
+          ? "Последовательность создана, но обработка завершилась с ошибкой. Сохраните состояние."
+          : "Не удалось создать последовательность Gentling Touch.");
+        render();
+      }
+      return;
+    } finally {
+      if (session === taskSession && session.sequenceId === taskIdentity) {
+        session.submitting = false;
+      }
+    }
+    if (session !== taskSession) return;
     if (started.status !== "applied") {
       setError(started.reason);
       render();
@@ -2322,13 +2423,11 @@ function submitGentlingTouch() {
   const values = parseForm(form);
   session.rawInputsByStep[session.currentStepKey] = values;
   session.dirty = true;
-  session.submitting = true;
   const intent = session.gentlingIntent;
   const sequence = getWorkspaceAttackSequence(getState(), intent?.actionId);
   const slot = getUsedAttackSlots(sequence) + 1;
   if (!intent || sequence?.id !== session.sequenceId ||
       intent.slotNumber !== slot || sequence.status !== "open") {
-    session.submitting = false;
     session.readOnly = true;
     setError("Слот Gentling Touch изменился. Ввод сохранён; повторное применение заблокировано.");
     render();
@@ -2337,15 +2436,37 @@ function submitGentlingTouch() {
   const currentOwner = getSessionContext();
   if (currentOwner.characterId !== session.owner.characterId ||
       currentOwner.sessionGeneration !== session.owner.sessionGeneration) {
-    session.submitting = false;
     setError("Сеанс персонажа изменился. Операция не отправлена.");
     render();
     return;
   }
   session.owner = { ...session.owner, stateRevision: currentOwner.stateRevision };
-  const result = applyGentlingTouchToAttackSlot(session.owner, session.sequenceId,
-    values, intent.operationId);
-  session.submitting = false;
+  const taskSession = session;
+  const taskIdentity = `${intent.actionId}:${intent.slotNumber}:${intent.operationId}`;
+  session.submitting = true;
+  let result;
+  try {
+    result = applyGentlingTouchToAttackSlot(session.owner, session.sequenceId,
+      values, intent.operationId);
+  } catch (error) {
+    console.error("Gentling Touch submit failed unexpectedly", error);
+    if (session === taskSession) {
+      const recorded = getWorkspaceAttackSequence(getState(), intent.actionId)
+        ?.replacementResults?.find((entry) => entry.operationId === intent.operationId);
+      session.appliedUnsaved = Boolean(recorded);
+      setError(recorded
+        ? "Gentling Touch применён, но обработка завершилась с ошибкой. Сохраните результат."
+        : "Не удалось завершить Gentling Touch; операция не повторялась.");
+      render();
+    }
+    return;
+  } finally {
+    if (session === taskSession &&
+        `${taskSession.gentlingIntent?.actionId}:${taskSession.gentlingIntent?.slotNumber}:${taskSession.gentlingIntent?.operationId}` === taskIdentity) {
+      session.submitting = false;
+    }
+  }
+  if (session !== taskSession) return;
   if (result.status !== "applied") {
     setError(result.reason);
     render();

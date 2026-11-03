@@ -225,6 +225,11 @@ test("Seeking Strike is paid from the miss checkpoint and its physical replaceme
   const sequenceId = getWorkspaceSessionForTests().sequenceId;
   const attackId = getWorkspaceSessionForTests().attackId;
   const kiBefore = getState().combat.ki.current;
+  updateState((draft) => {
+    const item = draft.inventory.items.find((entry) => entry.id === "darts");
+    if (item) item.quantity += 1;
+    return draft;
+  });
   fireWorkspaceAction(dialog, "begin-seeking");
   assert.equal(getWorkspaceSessionForTests().currentStep, "seeking-input");
   assert.equal(getState().combat.ki.current, kiBefore - 1);
@@ -243,6 +248,7 @@ test("Seeking Strike is paid from the miss checkpoint and its physical replaceme
     firstD20: { required: true, min: 1, max: 20, type: "number" },
     targetArmorClass: { min: 1, max: 99, type: "number" },
   });
+
   fireWorkspaceAction(dialog, "submit-seeking");
   const attack = getState().monk.combatAssistant.activeSequences
     .find((entry) => entry.id === sequenceId).resolvedAttacks[0];
@@ -286,6 +292,173 @@ test("Seeking Strike is paid from the miss checkpoint and its physical replaceme
   unsubscribe();
 });
 
+test("Seeking begin ignores unrelated malformed history but rejects a contradictory ID collision", () => {
+  const first = installWorkspaceFixture({ embeddedHost: true });
+  updateState((draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+    return draft;
+  });
+  assert.equal(openNormalAttack().ok, true);
+  first.dialog.forms.attack = new FixtureForm("attack", {
+    profileId: "unarmed", rollMode: "normal", firstD20: "2",
+    targetArmorClass: "30",
+  }, { firstD20: { required: true, min: 1, max: 20, type: "number" } });
+  fireWorkspaceAction(first.dialog, "attack-miss");
+  const firstTask = getWorkspaceSessionForTests();
+  const firstAttack = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === firstTask.sequenceId).resolvedAttacks[0];
+  updateState((draft) => {
+    const invalid = {
+      id: "unrelated-invalid",
+      paidOperationId: "unrelated-invalid",
+      parent: { actionId: "wrong", attackId: "wrong" },
+      status: "resolved", kiPaid: 1, original: {},
+    };
+    draft.monk.combatAssistant.activeSequences.push({
+      id: "unrelated-sequence", kind: "attack-action", status: "complete",
+      resolvedAttacks: [{
+        ...structuredClone(firstAttack),
+        id: "unrelated-attack",
+        seekingAmendments: [invalid, structuredClone(invalid)],
+        seekingAmendment: null,
+      }],
+    });
+    return draft;
+  });
+  const firstKi = getState().combat.ki.current;
+  fireWorkspaceAction(first.dialog, "begin-seeking");
+  assert.equal(getWorkspaceSessionForTests().currentStep, "seeking-input");
+  assert.equal(getWorkspaceSessionForTests().submitting, false);
+  assert.equal(getState().combat.ki.current, firstKi - 1);
+  first.unsubscribe();
+
+  const second = installWorkspaceFixture({ embeddedHost: true });
+  updateState((draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+    return draft;
+  });
+  assert.equal(openNormalAttack().ok, true);
+  second.dialog.forms.attack = new FixtureForm("attack", {
+    profileId: "unarmed", rollMode: "normal", firstD20: "2",
+    targetArmorClass: "30",
+  }, { firstD20: { required: true, min: 1, max: 20, type: "number" } });
+  fireWorkspaceAction(second.dialog, "attack-miss");
+  const task = getWorkspaceSessionForTests();
+  const parent = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === task.sequenceId);
+  const attack = parent.resolvedAttacks[0];
+  updateState((draft) => {
+    const bad = {
+      id: "ambiguous-payment-id",
+      paidOperationId: "ambiguous-payment-id",
+      parent: { actionId: "wrong", attackId: "wrong" },
+      status: "resolved", kiPaid: 1, original: {},
+    };
+    draft.monk.combatAssistant.activeSequences.push({
+      id: "collision-sequence", kind: "attack-action", status: "complete",
+      resolvedAttacks: [{
+        ...structuredClone(attack),
+        id: "collision-attack",
+        seekingAmendments: [bad],
+        seekingAmendment: null,
+      }],
+    });
+    return draft;
+  });
+  const before = getState().combat.ki.current;
+  const previousCrypto = globalThis.crypto;
+  Object.defineProperty(globalThis, "crypto", {
+    configurable: true,
+    value: { randomUUID: () => "ambiguous-payment-id" },
+  });
+  try {
+    fireWorkspaceAction(second.dialog, "begin-seeking");
+  } finally {
+    Object.defineProperty(globalThis, "crypto", {
+      configurable: true,
+      value: previousCrypto,
+    });
+  }
+  assert.equal(getState().combat.ki.current, before);
+  assert.equal(getWorkspaceSessionForTests().submitting, false);
+  assert.equal(getWorkspaceSessionForTests().currentStep, "checkpoint");
+  assert.match(second.dialog.body.innerHTML, /история Seeking Strike противоречива/i);
+  second.unsubscribe();
+});
+
+test("Seeking selected-parent conflict is a local rejection with retained evidence", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  updateState((draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+    return draft;
+  });
+  assert.equal(openNormalAttack().ok, true);
+  dialog.forms.attack = new FixtureForm("attack", {
+    profileId: "unarmed", rollMode: "normal", firstD20: "2",
+    targetArmorClass: "30",
+  }, { firstD20: { required: true, min: 1, max: 20, type: "number" } });
+  fireWorkspaceAction(dialog, "attack-miss");
+  const task = getWorkspaceSessionForTests();
+  const attackId = task.attackId;
+  const duplicate = {
+    id: "selected-conflict", paidOperationId: "selected-conflict",
+    parent: { actionId: task.sequenceId, attackId },
+    status: "resolved", kiPaid: 1, original: {},
+  };
+  updateState((draft) => {
+    const attack = draft.monk.combatAssistant.activeSequences
+      .find((entry) => entry.id === task.sequenceId).resolvedAttacks[0];
+    attack.seekingAmendments = [duplicate, structuredClone(duplicate)];
+    return draft;
+  });
+  const kiBefore = getState().combat.ki.current;
+  fireWorkspaceAction(dialog, "begin-seeking");
+  assert.equal(getState().combat.ki.current, kiBefore);
+  assert.equal(getWorkspaceSessionForTests().submitting, false);
+  assert.match(dialog.body.innerHTML, /история Seeking Strike противоречива/i);
+  assert.equal(getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === task.sequenceId).resolvedAttacks[0]
+    .seekingAmendments.length, 2);
+  unsubscribe();
+});
+
+test("A paid Seeking operation survives storage failure and retry saves without replaying payment", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  updateState((draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+    return draft;
+  });
+  assert.equal(openNormalAttack().ok, true);
+  dialog.forms.attack = new FixtureForm("attack", {
+    profileId: "unarmed", rollMode: "normal", firstD20: "2",
+    targetArmorClass: "30",
+  }, { firstD20: { required: true, min: 1, max: 20, type: "number" } });
+  fireWorkspaceAction(dialog, "attack-miss");
+  const storage = globalThis.window.localStorage;
+  const savedSetItem = storage.setItem;
+  storage.setItem = () => { throw new Error("test storage outage"); };
+  const kiBefore = getState().combat.ki.current;
+  fireWorkspaceAction(dialog, "begin-seeking");
+  const task = getWorkspaceSessionForTests();
+  assert.equal(task.currentStep, "seeking-input");
+  assert.equal(task.appliedUnsaved, true);
+  assert.equal(getState().combat.ki.current, kiBefore - 1);
+  const operationId = task.seekingTask.amendmentId;
+  fireWorkspaceAction(dialog, "begin-seeking");
+  assert.equal(getState().combat.ki.current, kiBefore - 1);
+  assert.equal(getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === task.sequenceId).resolvedAttacks[0]
+    .seekingAmendments.length, 1);
+  storage.setItem = savedSetItem;
+  fireWorkspaceAction(dialog, "retry-save");
+  assert.equal(getWorkspaceSessionForTests().appliedUnsaved, false);
+  assert.equal(getState().combat.ki.current, kiBefore - 1);
+  assert.equal(getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === task.sequenceId).resolvedAttacks[0]
+    .seekingAmendments[0].paidOperationId, operationId);
+  unsubscribe();
+});
+
 test("Gentling Touch occupies the first real Attack slot, spends action once, and leaves no third slot", () => {
   const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
   updateState((draft) => {
@@ -294,9 +467,15 @@ test("Gentling Touch occupies the first real Attack slot, spends action once, an
   });
   assert.equal(openNormalAttack().ok, true);
   assert.match(dialog.footer.innerHTML, /begin-gentling/);
+  updateState((draft) => {
+    const item = draft.inventory.items.find((entry) => entry.id === "darts");
+    if (item) item.quantity += 1;
+    return draft;
+  });
   const kiBefore = getState().combat.ki.current;
   fireWorkspaceAction(dialog, "begin-gentling");
   assert.equal(getWorkspaceSessionForTests().currentStep, "gentling-input");
+  const firstIntent = getWorkspaceSessionForTests().gentlingIntent;
   const dieCount = 5;
   const sides = getDerivedStats(getState()).monk.martialDieSides;
   dialog.forms.gentling = new FixtureForm("gentling", {
@@ -316,21 +495,27 @@ test("Gentling Touch occupies the first real Attack slot, spends action once, an
   assert.equal(sequence.replacementResults[0].slotNumber, 1);
   assert.equal(sequence.actionFlagApplied, true);
   assert.equal(getWorkspaceSessionForTests().currentStep, "attack-input");
-
-  dialog.forms.attack = new FixtureForm("attack", {
-    profileId: "unarmed",
-    rollMode: "normal",
-    firstD20: "15",
-    targetArmorClass: "30",
+  fireWorkspaceAction(dialog, "begin-gentling");
+  assert.equal(getWorkspaceSessionForTests().currentStep, "gentling-input");
+  const secondSession = getWorkspaceSessionForTests();
+  const secondIntent = secondSession.gentlingIntent;
+  assert.notEqual(secondIntent.operationId, firstIntent.operationId);
+  assert.notEqual(secondIntent.draftKey, firstIntent.draftKey);
+  assert.equal(secondSession.rawInputsByStep[secondIntent.draftKey].sum, "");
+  dialog.forms.gentling = new FixtureForm("gentling", {
+    extraKi: "0",
+    targetHp: "7",
+    sum: String(dieCount * sides - 1),
   }, {
-    firstD20: { required: true, min: 1, max: 20, type: "number" },
-    targetArmorClass: { min: 1, max: 99, type: "number" },
+    extraKi: { required: true, min: 0, max: 30, type: "number" },
+    targetHp: { required: true, min: 0, max: 9999, type: "number" },
+    sum: { required: true, min: 1, max: 9999, type: "number" },
   });
-  fireWorkspaceAction(dialog, "attack-miss");
+  fireWorkspaceAction(dialog, "submit-gentling");
   const completed = getState().monk.combatAssistant.activeSequences
     .find((entry) => entry.id === sequence.id);
   assert.equal(completed.status, "complete");
-  assert.equal(completed.resolvedAttacks[0].slotNumber, 2);
+  assert.equal(completed.replacementResults[1].slotNumber, 2);
   assert.equal(completed.resolvedAttacks.length + completed.replacementResults.length, 2);
   assert.equal(getWorkspaceSessionForTests().capabilities.canContinueSequence, false);
   unsubscribe();

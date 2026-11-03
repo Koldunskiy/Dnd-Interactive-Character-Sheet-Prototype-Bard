@@ -460,10 +460,46 @@ export function beginSeekingStrike(context, actionId, attackId, operationId) {
   if (!operationId) return reject("Для операции требуется стабильный идентификатор.");
   if (!isCurrentSession(context)) return reject("stale-session");
   const state = getState();
-  const oldInvocation = (state.monk?.combatAssistant?.activeSequences ?? [])
-    .flatMap((sequence) => (sequence.resolvedAttacks ?? []).flatMap((attack) =>
-      readSeekingHistory(attack, { actionId: sequence.id, attackId: attack.id })))
-    .find((entry) => entry.paidOperationId === operationId);
+  const candidates = new Map();
+  for (const sequence of state.monk?.combatAssistant?.activeSequences ?? []) {
+    for (const attack of sequence.resolvedAttacks ?? []) {
+      const entries = [
+        ...(Array.isArray(attack.seekingAmendments)
+          ? attack.seekingAmendments : []),
+        ...(attack.seekingAmendment ? [attack.seekingAmendment] : []),
+      ];
+      if (entries.some((entry) =>
+        entry?.paidOperationId === operationId || entry?.id === operationId)) {
+        candidates.set(`${sequence.id}:${attack.id}`, {
+          sequenceId: sequence.id,
+          attackId: attack.id,
+        });
+      }
+    }
+  }
+  candidates.set(`${actionId}:${attackId}`, { sequenceId: actionId, attackId });
+  const matchingEntries = [];
+  for (const candidate of candidates.values()) {
+    const candidateAttack = state.monk?.combatAssistant?.activeSequences
+      ?.find((sequence) => sequence.id === candidate.sequenceId)
+      ?.resolvedAttacks?.find((attack) => attack.id === candidate.attackId);
+    try {
+      const history = candidateAttack
+        ? readSeekingHistory(candidateAttack, {
+          actionId: candidate.sequenceId,
+          attackId: candidate.attackId,
+        })
+        : [];
+      matchingEntries.push(...history.filter((entry) =>
+        entry.paidOperationId === operationId));
+    } catch (error) {
+      return reject(`История Seeking Strike противоречива; применение заблокировано. ${error.message}`);
+    }
+  }
+  if (matchingEntries.length > 1) {
+    return reject("Конфликт Seeking Strike: несколько записей используют один идентификатор.");
+  }
+  const oldInvocation = matchingEntries[0] ?? null;
   if (oldInvocation) {
     return oldInvocation.parent?.actionId === actionId && oldInvocation.parent?.attackId === attackId
       ? { status: "applied", replayed: true, result: structuredClone(oldInvocation) }
