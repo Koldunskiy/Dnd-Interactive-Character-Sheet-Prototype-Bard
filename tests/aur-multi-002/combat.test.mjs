@@ -465,6 +465,7 @@ test("Seeking Strike is paid from a recorded miss and replaces the same attack w
   const savedAttack = getState().monk.combatAssistant.activeSequences
     .find((entry) => entry.id === "seeking-sequence").resolvedAttacks[0];
   const savedBonus = savedAttack.attackBonusSnapshot;
+  const amendmentId = savedAttack.seekingAmendments[0].paidOperationId;
   assert.equal(openCharacterSession("sara-velaris").status, "loaded");
   updateSessionState(getSessionContext(), (draft) => {
     draft.abilities.dexterity = 8;
@@ -474,12 +475,12 @@ test("Seeking Strike is paid from a recorded miss and replaces the same attack w
   }, { operationId: "seeking-expire-and-change-stats", metadata: { kind: "test-setup" } });
   context = getSessionContext();
   const missingPhysical = resolveSeekingStrike(context, "seeking-sequence",
-    "recorded-miss", { firstD20: "", targetArmorClass: "30" }, "seeking-result-empty");
+    "recorded-miss", { amendmentId, firstD20: "", targetArmorClass: "30" }, "seeking-result-empty");
   assert.equal(missingPhysical.status, "rejected");
   assert.equal(getState().combat.ki.current, beforeKi - 1);
   context = getSessionContext();
   const replacement = resolveSeekingStrike(context, "seeking-sequence",
-    "recorded-miss", { firstD20: "19", targetArmorClass: "10" }, "seeking-result-op");
+    "recorded-miss", { amendmentId, firstD20: "19", targetArmorClass: "10" }, "seeking-result-op");
   assert.equal(replacement.status, "applied", replacement.reason);
   const attack = getState().monk.combatAssistant.activeSequences
     .find((entry) => entry.id === "seeking-sequence").resolvedAttacks[0];
@@ -592,6 +593,7 @@ test("a resolved Seeking miss may start a new paid invocation without replaying 
   assert.equal(paidKi, startingKi - 1);
   const resolved = resolveSeekingStrike(getSessionContext(), "seeking-repeat-sequence",
     "seeking-repeat-attack", {
+      amendmentId: "seeking-invocation-one",
       firstD20: "3", targetArmorClass: "30",
     }, "seeking-invocation-one-result");
   assert.equal(resolved.status, "applied", resolved.reason);

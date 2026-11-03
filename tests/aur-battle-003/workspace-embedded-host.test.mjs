@@ -236,8 +236,8 @@ test("Seeking Strike is paid from the miss checkpoint and its physical replaceme
   assert.equal(getWorkspaceSessionForTests().currentStep, "seeking-input");
   dialog.forms.seeking = new FixtureForm("seeking", {
     rollMode: "normal",
-    firstD20: "19",
-    targetArmorClass: "10",
+    firstD20: "3",
+    targetArmorClass: "30",
     dmHitResult: "",
   }, {
     firstD20: { required: true, min: 1, max: 20, type: "number" },
@@ -247,9 +247,41 @@ test("Seeking Strike is paid from the miss checkpoint and its physical replaceme
   const attack = getState().monk.combatAssistant.activeSequences
     .find((entry) => entry.id === sequenceId).resolvedAttacks[0];
   assert.equal(attack.id, attackId);
-  assert.equal(attack.hitResult, "hit");
-  assert.equal(attack.damageStatus, "awaiting-damage");
-  assert.equal(attack.historicalResolution, false);
+  assert.equal(attack.seekingAmendments.length, 1);
+  assert.equal(attack.seekingAmendments[0].status, "resolved");
+  assert.equal(attack.seekingAmendment.status, "resolved");
+  const firstAmendmentId = attack.seekingAmendments[0].paidOperationId;
+  assert.equal(attack.hitResult, "miss");
+  const firstKey = getWorkspaceSessionForTests().currentStepKey;
+  const kiAfterFirstPayment = getState().combat.ki.current;
+  fireWorkspaceAction(dialog, "begin-seeking");
+  assert.equal(getWorkspaceSessionForTests().currentStep, "seeking-input");
+  assert.notEqual(getWorkspaceSessionForTests().currentStepKey, firstKey);
+  const afterSecondBegin = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === sequenceId).resolvedAttacks[0];
+  assert.equal(afterSecondBegin.seekingAmendments.length, 2);
+  assert.notEqual(afterSecondBegin.seekingAmendments[1].paidOperationId, firstAmendmentId);
+  assert.equal(afterSecondBegin.seekingAmendments[1].status, "awaiting-replacement");
+  assert.equal(getState().combat.ki.current, kiAfterFirstPayment - 1);
+  dialog.forms.seeking = new FixtureForm("seeking", {
+    rollMode: "normal",
+    firstD20: "19",
+    targetArmorClass: "10",
+    dmHitResult: "",
+  }, {
+    firstD20: { required: true, min: 1, max: 20, type: "number" },
+    targetArmorClass: { min: 1, max: 99, type: "number" },
+  });
+  fireWorkspaceAction(dialog, "submit-seeking");
+  const resolvedAttack = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === sequenceId).resolvedAttacks[0];
+  assert.equal(resolvedAttack.seekingAmendments.length, 2);
+  assert.deepEqual(resolvedAttack.seekingAmendments.map((entry) => entry.status),
+    ["resolved", "resolved"]);
+  assert.equal(resolvedAttack.seekingAmendment.status, "resolved");
+  assert.equal(resolvedAttack.hitResult, "hit");
+  assert.equal(resolvedAttack.damageStatus, "awaiting-damage");
+  assert.equal(resolvedAttack.historicalResolution, false);
   assert.equal(getWorkspaceSessionForTests().currentStep, "damage-input");
   unsubscribe();
 });

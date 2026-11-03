@@ -14,6 +14,12 @@ import { applyMonkTechnique } from "./monk.js";
 import { closeRestWindow, spendBoundDart } from "../sara-functional.js";
 import { isAttackProfileEligible } from "../combat/attack-profile-eligibility.js";
 import { gentlingPreview } from "../sara-functional.js";
+import { integer } from "../sara-functional.js";
+import {
+  pendingSeeking,
+  readSeekingHistory,
+  writeSeekingHistory,
+} from "../combat/seeking-history.js";
 
 const SAVE_ABILITIES = Object.freeze({
   "ll-monk:empowered-strike": "strength",
@@ -53,8 +59,18 @@ function countUnresolvedCombatTasks(assistant) {
   const pendingSaves = assistant.pendingApplications.filter((entry) =>
     !["success", "failure"].includes(entry.targetOutcome)).length;
   const pendingDamage = assistant.activeSequences.reduce((count, sequence) =>
-    count + (sequence.resolvedAttacks ?? []).filter((attack) =>
-      attack.damageStatus === "awaiting-damage").length, 0);
+    count + (sequence.resolvedAttacks ?? []).filter((attack) => {
+      try {
+      return attack.damageStatus === "awaiting-damage" ||
+        Boolean((attack.seekingAmendments !== undefined ||
+          attack.seekingAmendment != null) && pendingSeeking(readSeekingHistory(attack, {
+          actionId: sequence.id, attackId: attack.id,
+        })));
+      } catch {
+      return attack.seekingAmendments !== undefined ||
+        attack.seekingAmendment != null;
+      }
+    }).length, 0);
   return pendingSaves + pendingDamage;
 }
 
@@ -66,8 +82,19 @@ function pruneCombatHistory(assistant) {
   const completedSequences = [];
   for (const sequence of assistant.activeSequences) {
     const unresolved = sequence.status === "open" ||
-      sequence.resolvedAttacks?.some((attack) =>
-        attack.damageStatus === "awaiting-damage" || unresolvedApplicationIds.has(attack.id));
+      sequence.resolvedAttacks?.some((attack) => {
+        try {
+          return attack.damageStatus === "awaiting-damage" ||
+            unresolvedApplicationIds.has(attack.id) ||
+            Boolean((attack.seekingAmendments !== undefined ||
+              attack.seekingAmendment != null) && pendingSeeking(readSeekingHistory(attack, {
+              actionId: sequence.id, attackId: attack.id,
+            })));
+        } catch {
+          return attack.seekingAmendments !== undefined ||
+            attack.seekingAmendment != null;
+        }
+      });
     (unresolved ? unresolvedSequences : completedSequences).push(sequence);
   }
   assistant.activeSequences = [
@@ -435,7 +462,7 @@ export function beginSeekingStrike(context, actionId, attackId, operationId) {
   const state = getState();
   const oldInvocation = (state.monk?.combatAssistant?.activeSequences ?? [])
     .flatMap((sequence) => (sequence.resolvedAttacks ?? []).flatMap((attack) =>
-      attack.seekingAmendments ?? (attack.seekingAmendment ? [attack.seekingAmendment] : [])))
+      readSeekingHistory(attack, { actionId: sequence.id, attackId: attack.id })))
     .find((entry) => entry.paidOperationId === operationId);
   if (oldInvocation) {
     return oldInvocation.parent?.actionId === actionId && oldInvocation.parent?.attackId === attackId
@@ -447,22 +474,26 @@ export function beginSeekingStrike(context, actionId, attackId, operationId) {
   }, (draft) => {
     const sequence = draft.monk?.combatAssistant?.activeSequences?.find((entry) => entry.id === actionId);
     const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
-    const history = attack?.seekingAmendments ??
-      (attack?.seekingAmendment ? [attack.seekingAmendment] : []);
+    const history = attack
+      ? readSeekingHistory(attack, { actionId, attackId })
+      : [];
     if (!isSara(draft) || !sequence || !attack || attack.hitResult !== "miss" ||
         !seekingParentWindowIsCurrent(draft, sequence) ||
         !(attack.profileId === "unarmed" || attack.profileSnapshot?.martialArtsEligible === true) ||
         !attack.profileSnapshot || !Number.isFinite(Number(attack.attackBonusSnapshot)) ||
-        history.some((entry) => entry.status === "awaiting-replacement") ||
+        pendingSeeking(history) ||
         !getEffectiveSelectedTechniqueIds(draft).has("ll-monk:seeking-strike")) {
       throw new Error("Seeking Strike требует текущий допустимый записанный промах Martial Arts.");
     }
     const ki = Number(draft.combat?.ki?.current);
     if (!Number.isInteger(ki) || ki < 1) throw new Error("Для Seeking Strike требуется 1 ци.");
     draft.combat.ki.current = ki - 1;
-    const amendment = {
+    history.push({
       id: operationId,
+      paidOperationId: operationId,
+      parent: { actionId, attackId },
       status: "awaiting-replacement",
+      kiPaid: 1,
       original: {
         rawD20Rolls: structuredClone(attack.rawD20Rolls),
         rollMode: attack.rollMode,
@@ -471,24 +502,20 @@ export function beginSeekingStrike(context, actionId, attackId, operationId) {
         hitResult: attack.hitResult,
         critical: attack.critical,
       },
-      parent: { actionId, attackId },
-      kiPaid: 1,
-      paidOperationId: operationId,
-    };
-    attack.seekingAmendments ??= history;
-    attack.seekingAmendments.push(amendment);
-    attack.seekingAmendment = amendment;
+    });
+    writeSeekingHistory(attack, history, { actionId, attackId });
     closeRestWindow(draft, "seeking-strike-paid");
     return draft;
   }, (current) => {
     const sequence = current.monk?.combatAssistant?.activeSequences?.find((entry) => entry.id === actionId);
     const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
-    const history = attack?.seekingAmendments ??
-      (attack?.seekingAmendment ? [attack.seekingAmendment] : []);
+    const history = attack
+      ? readSeekingHistory(attack, { actionId, attackId })
+      : [];
     return isSara(current) && attack?.hitResult === "miss" &&
       seekingParentWindowIsCurrent(current, sequence) &&
       (attack.profileId === "unarmed" || attack.profileSnapshot?.martialArtsEligible === true) &&
-      !history.some((entry) => entry.status === "awaiting-replacement") &&
+      !pendingSeeking(history) &&
       getEffectiveSelectedTechniqueIds(current).has("ll-monk:seeking-strike")
       ? null : "Нет допустимого текущего промаха для Seeking Strike.";
   });
@@ -499,13 +526,18 @@ export function resolveSeekingStrike(context, actionId, attackId, input, operati
     (draft) => {
       const sequence = draft.monk?.combatAssistant?.activeSequences?.find((entry) => entry.id === actionId);
       const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === attackId);
-      const pending = attack?.seekingAmendment;
+      const history = attack
+        ? readSeekingHistory(attack, { actionId, attackId })
+        : [];
+      const index = history.findIndex((entry) =>
+        entry.paidOperationId === input.amendmentId);
+      const pending = index >= 0 ? history[index] : null;
       if (!pending || pending.status !== "awaiting-replacement" || attack.hitResult !== "miss") {
         throw new Error("Нет оплаченного Seeking Strike, ожидающего нового физического результата.");
       }
       const targetArmorClass = input.targetArmorClass == null ||
         String(input.targetArmorClass).trim() === ""
-        ? attack.targetArmorClass : input.targetArmorClass;
+        ? null : input.targetArmorClass;
       const preview = calculateAttackPreviewFromSnapshot(draft, {
         profileId: attack.profileId,
         rollMode: input.rollMode ?? attack.rollMode,
@@ -526,9 +558,22 @@ export function resolveSeekingStrike(context, actionId, attackId, input, operati
         critical: preview.critical,
         hitResolutionSource: preview.hitResolutionSource,
       };
-      pending.replacement = replacement;
-      pending.resolutionOperationId = operationId;
-      pending.status = "resolved";
+      const resolutionRequest = {
+        amendmentId: input.amendmentId,
+        rollMode: preview.rollMode,
+        firstD20: preview.rawD20Rolls[0],
+        secondD20: preview.rawD20Rolls.length > 1 ? preview.rawD20Rolls[1] : null,
+        targetArmorClass: targetArmorClass == null ? null : Number(targetArmorClass),
+        dmHitResult: input.dmHitResult || null,
+      };
+      history[index] = {
+        ...pending,
+        replacement,
+        resolutionOperationId: operationId,
+        resolutionRequest,
+        status: "resolved",
+      };
+      writeSeekingHistory(attack, history, { actionId, attackId });
       attack.rawD20Rolls = structuredClone(preview.rawD20Rolls);
       attack.rollMode = preview.rollMode;
       attack.chosenD20 = preview.chosenD20;
@@ -546,7 +591,10 @@ export function resolveSeekingStrike(context, actionId, attackId, input, operati
     }, (current) => {
       const attack = current.monk?.combatAssistant?.activeSequences?.find((entry) =>
         entry.id === actionId)?.resolvedAttacks?.find((entry) => entry.id === attackId);
-      return attack?.seekingAmendment?.status === "awaiting-replacement"
+      const history = attack
+        ? readSeekingHistory(attack, { actionId, attackId })
+        : [];
+      return pendingSeeking(history)?.paidOperationId === input.amendmentId
         ? null : "Нет оплаченного Seeking Strike, ожидающего результата.";
     });
 }
@@ -554,13 +602,15 @@ export function resolveSeekingStrike(context, actionId, attackId, input, operati
 export function applyGentlingTouchToAttackSlot(context, actionId, input, operationId) {
           if (!operationId) return reject("Для операции требуется стабильный идентификатор.");
           if (!isCurrentSession(context)) return reject("stale-session");
-          const request = {
-            extraKi: Number(input.extraKi),
-            targetHp: Number(input.targetHp),
-            sum: Number(input.sum),
-          };
-          if (Object.values(request).some((value) => !Number.isSafeInteger(value))) {
-            return reject("Gentling Touch требует целые физические значения.");
+          let request;
+          try {
+            request = {
+              extraKi: integer(input?.extraKi, 0),
+              targetHp: integer(input?.targetHp, 0),
+              sum: integer(input?.sum, 1),
+            };
+          } catch {
+            return reject("Gentling Touch требует целые значения ци, HP цели и физической суммы.");
           }
           const previousSequence = (getState().monk?.combatAssistant?.activeSequences ?? [])
             .find((entry) => entry.replacementResults?.some((result) =>

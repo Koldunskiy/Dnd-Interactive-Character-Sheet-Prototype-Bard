@@ -2,6 +2,7 @@ import { getActiveBattle, getActionBudget } from "./model.js";
 import { getSaraBattleCommandRegistry } from "./command-registry.js";
 import { isRollConsequencePending } from "../rolls/commands.js";
 import { getUsedAttackSlots } from "../actions/sara-combat.js";
+import { pendingSeeking, readSeekingHistory } from "../combat/seeking-history.js";
 
 const ATTACK_SEQUENCE_KINDS = new Set([
   "attack-action",
@@ -58,16 +59,32 @@ export function getUnfinishedPlayerWork(character, workspaceSessions = []) {
     .map((workspace) => `${workspace.sequenceId}:${workspace.attackId}`));
   for (const sequence of assistant.activeSequences ?? []) {
     for (const attack of sequence.resolvedAttacks ?? []) {
-      if (attack.seekingAmendment?.status === "awaiting-replacement" &&
+      let pendingAmendment = null;
+      if (attack.seekingAmendments !== undefined ||
+          attack.seekingAmendment != null) {
+        try {
+          pendingAmendment = pendingSeeking(readSeekingHistory(attack, {
+            actionId: sequence.id,
+            attackId: attack.id,
+          }));
+        } catch {
+          pendingAmendment = { conflict: true };
+        }
+      }
+      if (pendingAmendment &&
           !liveSeekingTasks.has(`${sequence.id}:${attack.id}`)) {
         work.push({
-          id: `seeking:${sequence.id}:${attack.id}`,
+          id: `seeking:${sequence.id}:${attack.id}:${pendingAmendment.paidOperationId ?? "conflict"}`,
           kind: "pending-seeking",
           group: "required",
-          consequenceStatus: "awaiting-replacement",
+          consequenceStatus: pendingAmendment.conflict ? "history-conflict" : "awaiting-replacement",
           label: `Seeking Strike · новый бросок · удар ${attack.slotNumber ?? sequence.resolvedAttacks.indexOf(attack) + 1}/${sequence.maximumAttacks}`,
           sequenceId: sequence.id,
           attackId: attack.id,
+          amendmentId: pendingAmendment.paidOperationId ?? null,
+          status: pendingAmendment.conflict
+            ? "История противоречива; оплаченная запись сохранена для проверки."
+            : null,
         });
       }
       if (attack.damageStatus === "awaiting-damage" &&

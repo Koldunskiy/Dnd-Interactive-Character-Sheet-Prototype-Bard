@@ -10,6 +10,7 @@ import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
 import { getWorkspaceHost } from "../workspace/host.js";
 import { getEligibleAttackProfiles } from "../combat/attack-profile-eligibility.js";
 import { getUsedAttackSlots } from "../actions/sara-combat.js";
+import { pendingSeeking, readSeekingHistory } from "../combat/seeking-history.js";
 
 const STRIKE_SAVE_ABILITIES = Object.freeze({
   "ll-monk:empowered-strike": "Сила",
@@ -215,7 +216,8 @@ function renderDamageForm(session, state) {
 
 function renderSeekingForm(session) {
   const values = currentInputs(session);
-  const mode = values.rollMode ?? session.selectedDamage?.attack?.rollMode ?? "normal";
+  const mode = values.rollMode ?? session.seekingOriginalRollMode ??
+    session.selectedDamage?.attack?.rollMode ?? "normal";
   return `<form data-workspace-form="seeking">
     <label class="workspace-field">Режим броска
       <select data-workspace-field="rollMode" name="rollMode" required>
@@ -525,14 +527,32 @@ export function renderAttackWorkspace(session, state) {
     } else {
       footer = `<button type="button" class="btn btn--primary" data-workspace-action="summary">К итогам</button>`;
     }
+    let currentSeekingHistory = [];
+    if (currentAttack) {
+      try {
+        currentSeekingHistory = readSeekingHistory(currentAttack, {
+          actionId: sequence.id,
+          attackId: currentAttack.id,
+        });
+      } catch {
+        currentSeekingHistory = [];
+      }
+    }
+    const seekingPending = pendingSeeking(currentSeekingHistory);
+    const seekingBasis = currentAttack ? encodeURIComponent(JSON.stringify([
+      sequence.id, currentAttack.id, currentAttack.hitResult, currentAttack.rollMode,
+      currentAttack.rawD20Rolls, currentAttack.chosenD20, currentAttack.attackTotal,
+      currentSeekingHistory.at(-1)?.paidOperationId ?? null,
+      currentSeekingHistory.at(-1)?.status ?? null,
+    ])) : "";
     if (session.currentStep === "checkpoint" && !session.appliedUnsaved &&
         currentAttack?.hitResult === "miss" &&
         getEffectiveSelectedTechniqueIds(state).has("ll-monk:seeking-strike") &&
         (currentAttack.profileId === "unarmed" ||
           currentAttack.profileSnapshot?.martialArtsEligible === true) &&
-        currentAttack.seekingAmendment?.status !== "awaiting-replacement" &&
+        !seekingPending &&
         !currentAttack.historicalResolution) {
-      footer += `<button type="button" class="btn btn--utility" data-workspace-action="begin-seeking">Seeking Strike · 1 ци</button>`;
+      footer += `<button type="button" class="btn btn--utility" data-workspace-action="begin-seeking" data-seeking-basis="${escapeHtml(seekingBasis)}">Seeking Strike · 1 ци</button>`;
     }
     const activeSequence = sequence?.kind === "attack-action" &&
       sequence.status === "open";

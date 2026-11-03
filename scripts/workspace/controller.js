@@ -94,6 +94,10 @@ import {
   getTechniqueAvailability,
   isTechniqueEffectivelySelected,
 } from "../selectors/techniques.js";
+import {
+  pendingSeeking,
+  readSeekingHistory,
+} from "../combat/seeking-history.js";
 
 const appInstanceId = createId("workspace-app");
 let session = null;
@@ -386,14 +390,14 @@ function sequenceCurrentForAttack(
     : battle.phase === "own-turn");
 }
 
-function setStep(step, attackId = session.attackId) {
+function setStep(step, attackId = session.attackId, customKey = null) {
   const body = getWorkspaceHost()?.querySelector("[data-workspace-body]");
   if (body && session.currentStepKey) {
     session.internalScrollByStep[session.currentStepKey] = body.scrollTop;
   }
   session.currentStep = step;
   session.attackId = attackId;
-  session.currentStepKey = stepKey(step, attackId);
+  session.currentStepKey = customKey ?? stepKey(step, attackId);
   session.stepLabel = ({
     "attack-input": "Физический бросок · проверка попадания",
     "damage-input": "Физические кости урона",
@@ -551,16 +555,29 @@ function updateInput(field) {
 }
 
 function findSequenceAndDamage(state, options = {}) {
-  const pendingSeeking = (state.monk?.combatAssistant?.activeSequences ?? [])
+  const pendingSeekingTasks = (state.monk?.combatAssistant?.activeSequences ?? [])
     .flatMap((sequence) => (sequence.resolvedAttacks ?? [])
-      .filter((attack) => attack.seekingAmendment?.status === "awaiting-replacement")
-      .map((attack) => ({ sequence, attack, seeking: true })));
+      .flatMap((attack) => {
+        if (attack.seekingAmendments === undefined &&
+            attack.seekingAmendment == null) return [];
+        try {
+          const amendment = pendingSeeking(
+            readSeekingHistory(attack, { actionId: sequence.id, attackId: attack.id }),
+          );
+          return amendment ? [{ sequence, attack, seeking: true, amendment }] : [];
+        } catch {
+          return [{ sequence, attack, seekingConflict: true }];
+        }
+      }));
   const explicitSequence = options.sequenceId
     ? getWorkspaceAttackSequence(state, options.sequenceId) : null;
   if (options.sequenceId && !explicitSequence) return { error: "Последовательность атаки не найдена." };
   if (options.attackId) {
-    const seeking = pendingSeeking.find((entry) => entry.sequence.id === options.sequenceId &&
+    const seeking = pendingSeekingTasks.find((entry) => entry.sequence.id === options.sequenceId &&
       entry.attack.id === options.attackId);
+    if (seeking?.seekingConflict) {
+      return { error: "История Seeking Strike противоречива. Запись сохранена; новое применение заблокировано." };
+    }
     if (seeking) return seeking;
     const pending = findAwaitingWorkspaceDamage(state, {
       sequenceId: options.sequenceId ?? null,
@@ -574,7 +591,10 @@ function findSequenceAndDamage(state, options = {}) {
     };
   }
   if (explicitSequence) {
-    const seeking = pendingSeeking.find((entry) => entry.sequence.id === explicitSequence.id);
+    const seeking = pendingSeekingTasks.find((entry) => entry.sequence.id === explicitSequence.id);
+    if (seeking?.seekingConflict) {
+      return { error: "История Seeking Strike противоречива. Запись сохранена; новое применение заблокировано." };
+    }
     if (seeking) return seeking;
     const pending = findAwaitingWorkspaceDamage(state, { sequenceId: explicitSequence.id });
     if (pending) {
@@ -583,7 +603,9 @@ function findSequenceAndDamage(state, options = {}) {
         historical: !sequenceCurrentForAttack(explicitSequence, state, explicitSequence.kind),
       };
     }
-    if (pendingSeeking.length) return pendingSeeking[0];
+    if (pendingSeekingTasks.length) {
+      return { error: "Укажите точную последовательность и удар для незавершённого Seeking Strike." };
+    }
     return { sequence: explicitSequence };
   }
   const openSequence = (state.monk?.combatAssistant?.activeSequences ?? []).find((entry) =>
@@ -694,6 +716,13 @@ export function openNormalAttack({ sequenceId = null, attackId = null, mode = "c
     sequenceKind,
     command: selectedSequence ? getCommandDescriptor(state, sequenceKind) : null,
     attackId: attackIdForDraft,
+    seekingTask: selected.seeking ? {
+      actionId: selectedSequence.id,
+      attackId: selectedAttack.id,
+      amendmentId: selected.amendment.paidOperationId,
+    } : null,
+    seekingOriginalRollMode: selected.seeking
+      ? selected.amendment.original.rollMode : null,
     currentStep: selected.seeking ? "seeking-input" : selectedAttack ? "damage-input"
       : !historical && (!selectedSequence || available &&
         selectedSequence.status === "open" && nextAttack < selectedSequence.maximumAttacks)
@@ -735,7 +764,9 @@ export function openNormalAttack({ sequenceId = null, attackId = null, mode = "c
       : !available ? "Ход завершён. Оставшиеся атаки нельзя продолжить; сохранённые результаты доступны для просмотра." : "",
     selectedDamage: selectedAttack ? { sequence: selectedSequence, attack: selectedAttack } : null,
   };
-  session.currentStepKey = stepKey(session.currentStep, session.attackId);
+  session.currentStepKey = selected.seeking
+    ? stepKey("seeking-input", `${selectedAttack.id}:${selected.amendment.paidOperationId}`)
+    : stepKey(session.currentStep, session.attackId);
   session.stepLabel = ({
     "attack-input": "Физический бросок · проверка попадания",
     "damage-input": "Физические кости урона",
@@ -962,6 +993,39 @@ function findInvoker(key) {
 
 function rehydrateFromState(state) {
   if (!session) return;
+  if (session.currentStep === "gentling-input") {
+    const intent = session.gentlingIntent;
+    const sequence = state.monk?.combatAssistant?.activeSequences
+      ?.find((entry) => entry.id === intent?.actionId);
+    const battle = state.battleConsole?.current ?? null;
+    const validTurn = sequence && (battle
+      ? battle.id === intent.battleContext?.battleId &&
+        battle.ownTurnId === intent.battleContext?.ownTurnId &&
+        battle.phase === "own-turn"
+      : !sequence.battleId && intent.battleContext?.battleId == null);
+    const slots = sequence ? getUsedAttackSlots(sequence) : -1;
+    const valid = intent && intent.actionId === session.sequenceId &&
+      sequence?.kind === "attack-action" && sequence.status === "open" &&
+      validTurn && Number(sequence.turnMarker) ===
+        Number(state.ui?.turn?.turnNumber ?? 1) &&
+      intent.slotNumber === slots + 1 &&
+      slots < sequence.maximumAttacks;
+    if (!valid) {
+      session.readOnly = true;
+      session.error = "Контекст Gentling Touch истёк или изменился. Ввод сохранён для проверки; применение недоступно.";
+      return;
+    }
+    session.readOnly = false;
+    session.currentStepKey = intent.draftKey;
+    session.rawInputsByStep[intent.draftKey] ??= {
+      extraKi: "0", targetHp: "", sum: "",
+    };
+    const ki = Number(state.combat?.ki?.current ?? 0);
+    session.error = ki < 1
+      ? "Недостаточно ци; ввод сохранён и станет доступен после восстановления ресурса."
+      : "";
+    return;
+  }
   if (session.currentStep === "attack-input") {
     const battle = state.battleConsole?.current ?? null;
     const contextExpired = session.turnMarker !== Number(state.ui?.turn?.turnNumber ?? 1) ||
@@ -1000,11 +1064,35 @@ function rehydrateFromState(state) {
     return;
   }
   const targetAttack = sequence.resolvedAttacks.find((entry) => entry.id === session.attackId);
-  if (targetAttack?.seekingAmendment?.status === "awaiting-replacement" &&
-      session.currentStep === "seeking-input") {
+  if (session.currentStep === "seeking-input") {
+    let amendment = null;
+    try {
+      const history = readSeekingHistory(targetAttack, {
+        actionId: sequence.id,
+        attackId: targetAttack?.id,
+      });
+      amendment = history.find((entry) =>
+        entry.paidOperationId === session.seekingTask?.amendmentId) ??
+        (!session.seekingTask ? pendingSeeking(history) : null);
+    } catch {
+      session.readOnly = true;
+      session.error = "История Seeking Strike противоречива. Запись сохранена; новое применение заблокировано.";
+      return;
+    }
+    if (amendment?.status !== "awaiting-replacement") {
+      session.readOnly = true;
+      session.error = "Оплаченная замена уже разрешена или недоступна.";
+      return;
+    }
+    session.seekingTask ??= {
+      actionId: sequence.id,
+      attackId: targetAttack.id,
+      amendmentId: amendment.paidOperationId,
+    };
     session.readOnly = false;
     session.selectedDamage = null;
-    session.currentStepKey = stepKey("seeking-input", targetAttack.id);
+    session.currentStepKey = stepKey("seeking-input",
+      `${targetAttack.id}:${amendment.paidOperationId}`);
     session.rawInputsByStep[session.currentStepKey] ??= {};
     return;
   }
@@ -1082,6 +1170,13 @@ function operationId(intent) {
 function requireOwner() {
   return Boolean(session && session.owner.appInstanceId === appInstanceId &&
     isWorkspaceOwnerCurrent(session.owner));
+}
+
+function requireCurrentOwnerSession() {
+  if (!session || session.owner.appInstanceId !== appInstanceId) return false;
+  const current = getSessionContext();
+  return current.characterId === session.owner.characterId &&
+    current.sessionGeneration === session.owner.sessionGeneration;
 }
 
 function refreshWorkspaceOwnerRevision() {
@@ -2005,15 +2100,47 @@ function handleSubmit(form) {
   if (form.dataset.workspaceForm === "missile-return") submitMissileReturn();
 }
 
-function beginSeekingStrikeRoute() {
+function beginSeekingStrikeRoute(button = null) {
   if (!session || session.workspaceType !== "attack" ||
       session.currentStep !== "checkpoint" || session.submitting ||
-      session.appliedUnsaved || session.historicalOnly || !requireOwner()) return;
+      session.appliedUnsaved || session.historicalOnly || !requireCurrentOwnerSession()) return;
   const attack = getSequence()?.resolvedAttacks?.find((entry) => entry.id === session.attackId);
   if (!attack || attack.hitResult !== "miss") return;
+  let history;
+  try {
+    history = readSeekingHistory(attack, {
+      actionId: session.sequenceId,
+      attackId: attack.id,
+    });
+  } catch (error) {
+    setError("История Seeking Strike противоречива. Запись сохранена; новое применение заблокировано.");
+    render();
+    return;
+  }
+  const basisKey = JSON.stringify([
+    session.sequenceId, attack.id, attack.hitResult, attack.rollMode,
+    attack.rawD20Rolls, attack.chosenD20, attack.attackTotal,
+    history.at(-1)?.paidOperationId ?? null, history.at(-1)?.status ?? null,
+  ]);
+  if (button?.dataset.seekingBasis &&
+      button.dataset.seekingBasis !== encodeURIComponent(basisKey)) {
+    setError("Результат атаки изменился. Обновите панель перед новым применением.");
+    render();
+    return;
+  }
+  const oldIntent = session.seekingBeginIntent;
+  const beginIntent = oldIntent?.actionId === session.sequenceId &&
+      oldIntent.attackId === attack.id && oldIntent.basisKey === basisKey
+    ? oldIntent
+    : (session.seekingBeginIntent = {
+      operationId: createId("seeking-invocation"),
+      actionId: session.sequenceId,
+      attackId: attack.id,
+      basisKey,
+    });
   session.submitting = true;
   const result = beginSeekingStrike(session.owner, session.sequenceId, attack.id,
-    operationId(`seeking-begin:${session.sequenceId}:${attack.id}`));
+    beginIntent.operationId);
   session.submitting = false;
   if (result.status !== "applied") {
     setError(result.reason);
@@ -2021,17 +2148,47 @@ function beginSeekingStrikeRoute() {
     return;
   }
   refreshWorkspaceOwnerRevision();
-  session.appliedUnsaved = result.persistence?.ok === false;
+  const canonicalAttack = getSequence()?.resolvedAttacks?.find((entry) => entry.id === attack.id);
+  let invocation;
+  try {
+    invocation = readSeekingHistory(canonicalAttack, {
+      actionId: session.sequenceId,
+      attackId: attack.id,
+    }).find((entry) => entry.paidOperationId === beginIntent.operationId);
+  } catch {
+    invocation = null;
+  }
+  if (result.replayed === true && !invocation) {
+    setError("Записанное применение не найдено; новая оплата не выполнена.");
+    render();
+    return;
+  }
+  if (!invocation || invocation.status !== "awaiting-replacement") {
+    session.appliedUnsaved = result.replayed ? session.appliedUnsaved
+      : result.persistence?.ok === false;
+    session.error = "Это применение уже разрешено; повторный ввод не открыт.";
+    render();
+    return;
+  }
+  session.appliedUnsaved = result.replayed === true
+    ? session.appliedUnsaved : result.persistence?.ok === false;
+  session.seekingTask = {
+    actionId: session.sequenceId,
+    attackId: attack.id,
+    amendmentId: invocation.paidOperationId,
+  };
+  session.seekingOriginalRollMode = invocation.original.rollMode;
   session.error = "";
-  session.rawInputsByStep[stepKey("seeking-input", attack.id)] ??= {};
-  setStep("seeking-input", attack.id);
+  const key = stepKey("seeking-input", `${attack.id}:${invocation.paidOperationId}`);
+  session.rawInputsByStep[key] ??= {};
+  setStep("seeking-input", attack.id, key);
   render();
 }
 
 function submitSeekingStrike() {
   if (!session || session.currentStep !== "seeking-input" ||
       session.submitting || session.appliedUnsaved || session.readOnly ||
-      !requireOwner()) return;
+      !requireCurrentOwnerSession()) return;
   const form = getWorkspaceHost()?.querySelector('[data-workspace-form="seeking"]');
   if (!form) return;
   if (!form.checkValidity()) {
@@ -2041,16 +2198,35 @@ function submitSeekingStrike() {
   const values = parseForm(form);
   session.rawInputsByStep[session.currentStepKey] = values;
   session.dirty = true;
-  const attack = getSequence()?.resolvedAttacks?.find((entry) => entry.id === session.attackId);
-  const paidId = attack?.seekingAmendment?.paidOperationId;
-  if (!paidId) {
+  const task = session.seekingTask;
+  const attack = getSequence()?.resolvedAttacks?.find((entry) => entry.id === task?.attackId);
+  let amendment;
+  try {
+    amendment = attack && readSeekingHistory(attack, {
+      actionId: task.actionId,
+      attackId: task.attackId,
+    }).find((entry) => entry.paidOperationId === task.amendmentId);
+  } catch {
+    amendment = null;
+  }
+  if (!amendment || amendment.status !== "awaiting-replacement" ||
+      task.actionId !== session.sequenceId || task.attackId !== session.attackId) {
     setError("Оплаченная замена не найдена в сохранённой атаке.");
     render();
     return;
   }
+  const currentOwner = getSessionContext();
+  if (currentOwner.characterId !== session.owner.characterId ||
+      currentOwner.sessionGeneration !== session.owner.sessionGeneration) {
+    setError("Сеанс персонажа изменился. Операция не отправлена.");
+    render();
+    return;
+  }
+  session.owner = { ...session.owner, stateRevision: currentOwner.stateRevision };
   session.submitting = true;
   const result = resolveSeekingStrike(session.owner, session.sequenceId, session.attackId,
-    values, `seeking-result:${paidId}`);
+    { ...values, amendmentId: task.amendmentId },
+    `seeking-result:${task.amendmentId}`);
   session.submitting = false;
   if (result.status !== "applied") {
     setError(result.reason);
@@ -2068,7 +2244,9 @@ function submitSeekingStrike() {
     return;
   }
   session.dirty = false;
-  session.appliedUnsaved = result.persistence?.ok === false;
+  if (result.replayed !== true) {
+    session.appliedUnsaved = result.persistence?.ok === false;
+  }
   session.selectedDamage = updatedAttack.damageStatus === "awaiting-damage"
     ? { sequence: updatedSequence, attack: updatedAttack } : null;
   session.currentStep = updatedAttack.damageStatus === "awaiting-damage"
@@ -2085,7 +2263,7 @@ function beginGentlingTouchRoute() {
       !["attack-input", "checkpoint"].includes(session.currentStep) ||
       session.sequenceKind !== "attack-action" ||
       session.submitting || session.appliedUnsaved || session.historicalOnly ||
-      !requireOwner() ||
+      !requireCurrentOwnerSession() ||
       !getEffectiveSelectedTechniqueIds(getState()).has("ll-monk:gentling-touch")) return;
   let sequence = getWorkspaceAttackSequence(getState(), session.sequenceId);
   if (!sequence) {
@@ -2104,15 +2282,37 @@ function beginGentlingTouchRoute() {
   }
   if (!sequence || sequence.kind !== "attack-action" ||
       getUsedAttackSlots(sequence) >= sequence.maximumAttacks) return;
+  const slotNumber = getUsedAttackSlots(sequence) + 1;
+  const returnTo = {
+    step: session.currentStep,
+    attackId: session.attackId,
+    stepKey: session.currentStepKey,
+  };
+  const intent = {
+    operationId: createId("gentling-slot"),
+    actionId: sequence.id,
+    slotNumber,
+    draftKey: stepKey("gentling-input",
+      `${sequence.id}:slot:${slotNumber}:${createId("gentling-draft")}`),
+    battleContext: {
+      battleId: sequence.battleId ?? null,
+      ownTurnId: sequence.ownTurnId ?? null,
+      turnMarker: sequence.turnMarker,
+    },
+    returnTo,
+  };
+  session.gentlingIntent = intent;
   session.error = "";
-  session.rawInputsByStep[stepKey("gentling-input", sequence.id)] ??= {};
-  setStep("gentling-input", sequence.id);
+  session.rawInputsByStep[intent.draftKey] = {
+    extraKi: "0", targetHp: "", sum: "",
+  };
+  setStep("gentling-input", session.attackId, intent.draftKey);
 }
 
 function submitGentlingTouch() {
   if (!session || session.workspaceType !== "attack" ||
       session.currentStep !== "gentling-input" ||
-      session.submitting || session.appliedUnsaved || !requireOwner()) return;
+      session.submitting || session.appliedUnsaved || !requireCurrentOwnerSession()) return;
   const form = getWorkspaceHost()?.querySelector('[data-workspace-form="gentling"]');
   if (!form) return;
   if (!form.checkValidity()) {
@@ -2123,10 +2323,28 @@ function submitGentlingTouch() {
   session.rawInputsByStep[session.currentStepKey] = values;
   session.dirty = true;
   session.submitting = true;
-  const sequence = getWorkspaceAttackSequence(getState(), session.sequenceId);
+  const intent = session.gentlingIntent;
+  const sequence = getWorkspaceAttackSequence(getState(), intent?.actionId);
   const slot = getUsedAttackSlots(sequence) + 1;
+  if (!intent || sequence?.id !== session.sequenceId ||
+      intent.slotNumber !== slot || sequence.status !== "open") {
+    session.submitting = false;
+    session.readOnly = true;
+    setError("Слот Gentling Touch изменился. Ввод сохранён; повторное применение заблокировано.");
+    render();
+    return;
+  }
+  const currentOwner = getSessionContext();
+  if (currentOwner.characterId !== session.owner.characterId ||
+      currentOwner.sessionGeneration !== session.owner.sessionGeneration) {
+    session.submitting = false;
+    setError("Сеанс персонажа изменился. Операция не отправлена.");
+    render();
+    return;
+  }
+  session.owner = { ...session.owner, stateRevision: currentOwner.stateRevision };
   const result = applyGentlingTouchToAttackSlot(session.owner, session.sequenceId,
-    values, operationId(`gentling-result:${session.sequenceId}:${slot}`));
+    values, intent.operationId);
   session.submitting = false;
   if (result.status !== "applied") {
     setError(result.reason);
@@ -2136,11 +2354,18 @@ function submitGentlingTouch() {
   refreshWorkspaceOwnerRevision();
   const sequenceAfter = getWorkspaceAttackSequence(getState(), session.sequenceId);
   session.dirty = false;
-  session.appliedUnsaved = result.persistence?.ok === false;
+  if (result.replayed !== true) {
+    session.appliedUnsaved = result.persistence?.ok === false;
+  }
+  session.gentlingIntent = null;
   session.capabilities.canContinueSequence = Boolean(sequenceAfter &&
     sequenceAfter.status === "open" &&
     getUsedAttackSlots(sequenceAfter) < sequenceAfter.maximumAttacks);
-  if (session.capabilities.canContinueSequence) {
+  if (session.appliedUnsaved) {
+    session.currentStep = "summary";
+    session.currentStepKey = stepKey("summary", session.sequenceId);
+    session.capabilities.canRecordAttack = false;
+  } else if (session.capabilities.canContinueSequence) {
     const nextId = createId("sara-attack");
     session.attackId = nextId;
     session.rawInputsByStep[stepKey("attack-input", nextId)] ??= {};
@@ -2508,7 +2733,7 @@ function handleAction(action, button = null) {
   } else if (action === "apply-strike") {
     applyStrikeToCurrentHit();
   } else if (action === "begin-seeking") {
-    beginSeekingStrikeRoute();
+    beginSeekingStrikeRoute(button);
   } else if (action === "begin-gentling") {
     beginGentlingTouchRoute();
   } else if (action === "submit-seeking") {
@@ -2519,8 +2744,13 @@ function handleAction(action, button = null) {
       session.currentStep === "gentling-input" && !session.submitting &&
       !session.appliedUnsaved) {
     session.dirty = false;
-    session.currentStep = getUsedAttackSlots(getSequence()) > 0 ? "checkpoint" : "attack-input";
-    session.currentStepKey = stepKey(session.currentStep, session.attackId);
+    const returnTo = session.gentlingIntent?.returnTo;
+    session.gentlingIntent = null;
+    session.currentStep = returnTo?.step ??
+      (getUsedAttackSlots(getSequence()) > 0 ? "checkpoint" : "attack-input");
+    session.attackId = returnTo?.attackId ?? session.attackId;
+    session.currentStepKey = returnTo?.stepKey ??
+      stepKey(session.currentStep, session.attackId);
     render();
   } else if (action === "open-strike") {
     openStrikeInput();
