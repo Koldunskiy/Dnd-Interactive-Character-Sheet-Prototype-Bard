@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { sara } from "../../data/sara.js";
 import { beginOwnTurn, endBattle, endOwnTurn, resumeBattle, startBattle } from "../../scripts/battle/transitions.js";
 import {
+  battleContextKey,
   bindBattleConsole,
   renderBattleConsole,
   updateBattleConsole,
@@ -379,18 +380,27 @@ test("same-context focused update defers, then phase change discards stale queue
   openSara();
   const root = createConsole();
   const start = new FixtureElement(root.shell.querySelector("[data-sara-phase-content]"));
-  startBattle(getState(), { rawD20: "10" }, { id: "context-battle" });
-  updateBattleConsole(root, getState());
   const phase = root.shell.querySelector("[data-sara-phase-content]");
   const oldMarkup = phase.innerHTML;
   const activeInput = new FixtureElement(phase);
   activeInput.value = "11";
   document.activeElement = activeInput;
-  getState().battleConsole.current.initiative.rawD20 = 11;
   updateBattleConsole(root, getState());
   assert.equal(phase.innerHTML, oldMarkup);
   assert.equal(document.activeElement, activeInput);
-  assert.equal(activeInput.value, "11");
+
+  startBattle(getState(), { rawD20: "10" }, { id: "context-battle" });
+  updateBattleConsole(root, getState());
+  assert.match(phase.innerHTML, /Инициатива:/);
+  assert.notEqual(document.activeElement, activeInput);
+  const battleInput = new FixtureElement(phase);
+  battleInput.value = "11";
+  document.activeElement = battleInput;
+  getState().battleConsole.current.initiative.rawD20 = 11;
+  updateBattleConsole(root, getState());
+  assert.match(phase.innerHTML, /10/);
+  assert.equal(document.activeElement, battleInput);
+  assert.equal(battleInput.value, "11");
 
   assert.equal(executeBattleCommand("begin-own-turn").status, "applied");
   updateBattleConsole(root, getState());
@@ -401,4 +411,13 @@ test("same-context focused update defers, then phase change discards stale queue
   assert.match(phase.innerHTML, /battle-menu-panel/);
   assert.doesNotMatch(phase.innerHTML, /Инициатива:/);
   assert.equal(root.shell.dataset.playerScenePhase, "own-turn");
+});
+
+test("initial battle markup records its render context before the first update", () => {
+  const initial = structuredClone(sara);
+  const markup = renderBattleConsole(initial);
+  assert.ok(markup.includes(
+    'data-battle-render-context="[null,&quot;outside&quot;,null]"',
+  ));
+  assert.equal(battleContextKey(initial), JSON.stringify([null, "outside", null]));
 });

@@ -36,6 +36,7 @@ import {
   reconcileWorkspaceAfterStateChange,
   isWorkspaceOpen,
 } from "./workspace/controller.js";
+import { changeSaraItemQuantity } from "./actions/sara-functional.js";
 import { renderSpells } from "./render/render-spells.js";
 import { renderLorePanel } from "./render/render-lore.js";
 import { renderInventoryPanel } from "./render/render-inventory.js";
@@ -82,8 +83,14 @@ const failedLoreNoteIds = new Set();
 let activeTabsController = null;
 let switchingCharacter = false;
 let isSheetVisible = false;
+let presentationOwner = null;
 let saraFocusModeBound = false;
 const boundElements = new WeakSet();
+
+function newFunctionalOperationId(prefix) {
+  return globalThis.crypto?.randomUUID?.() ??
+    `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 function updateCurrentSession(updater, metadata = null) {
   const context = getSessionContext();
@@ -254,6 +261,25 @@ function bindActionButtons(root = document) {
       const target = event.currentTarget;
       if (!isActiveSheetTarget(target)) return;
       const action = target.dataset.action;
+      if (action === "inventory-quantity-adjust" &&
+          getState().profile?.id === "sara-velaris") {
+        const delta = Number(target.dataset.quantityDelta);
+        if (!Number.isSafeInteger(delta) || delta === 0) {
+          showPersistenceWarning("Количество не изменено: некорректная поправка.");
+          return;
+        }
+        const request = {
+          id: newFunctionalOperationId("quantity"),
+          itemId: target.dataset.itemId,
+          mode: "delta",
+          value: delta,
+        };
+        const result = changeSaraItemQuantity(getSessionContext(), request);
+        if (!["applied", "replayed"].includes(result.status)) {
+          showPersistenceWarning(`Количество не изменено: ${result.reason}`);
+        }
+        return;
+      }
       const handler = actionHandlers[action];
 
       if (!handler) {
@@ -356,12 +382,31 @@ function bindInventoryFields(root = document) {
         value = target.value;
       }
       if (field === "quantity" && getState().profile?.id === "sara-velaris" &&
-          (!Number.isInteger(value) || value < 0)) {
+          (!Number.isSafeInteger(value) || value < 0)) {
         target.setCustomValidity("Количество предмета должно быть неотрицательным целым числом.");
         target.reportValidity();
         return;
       }
       target.setCustomValidity("");
+
+      if (field === "quantity" && getState().profile?.id === "sara-velaris") {
+        const quantityText = String(value);
+        if (target.dataset.lastCommittedQuantity === quantityText) return;
+        target.dataset.functionalOperationId ??= newFunctionalOperationId("quantity-set");
+        const result = changeSaraItemQuantity(getSessionContext(), {
+          id: target.dataset.functionalOperationId,
+          itemId,
+          mode: "set",
+          value,
+        });
+        if (["applied", "replayed"].includes(result.status)) {
+          target.dataset.lastCommittedQuantity = quantityText;
+          delete target.dataset.functionalOperationId;
+        } else {
+          showPersistenceWarning(`Количество не изменено: ${result.reason}`);
+        }
+        return;
+      }
 
       updateCurrentSession((draft) => {
         const inventory = ensureInventoryState(draft);
@@ -986,6 +1031,7 @@ function showPicker(message = "", isError = false) {
   const choices = document.getElementById("characterChoices");
   if (!page || !picker || !status || !choices) return;
   isSheetVisible = false;
+  presentationOwner = null;
   configureSaraPresentation(null);
   page.dataset.screen = "characters";
   picker.hidden = false;
@@ -1187,6 +1233,11 @@ function configureSaraPresentation(characterId) {
 }
 
 function completeCharacterOpen(characterId, warning = "") {
+  const context = getSessionContext();
+  presentationOwner = {
+    characterId: context.characterId,
+    sessionGeneration: context.sessionGeneration,
+  };
   const page = document.querySelector(".page");
   const picker = document.getElementById("characterPicker");
   if (picker) picker.hidden = true;
@@ -1260,15 +1311,16 @@ function selectCharacter(characterId) {
     }
     if (discardChangedDraft) clearTechniqueDrafts(activeContext.characterId);
     clearCharacterRollDraft();
-    if (characterId === "sara-velaris" && opened.status === "missing") {
-      showPicker();
-      showSaraSetup(opened.context);
-      return;
-    }
+    const shouldPersistOpenState = opened.status === "missing" ||
+      opened.migrations?.includes("sara-starter-manifest");
     let openWarning = "";
-    if (opened.status === "missing") {
+    if (shouldPersistOpenState) {
       const persisted = retryPersistedState();
-      if (!persisted.ok) openWarning = "Аурелия открыта, но defaults не сохранены. Повторите сохранение.";
+      if (!persisted.ok) {
+        openWarning = characterId === "sara-velaris"
+          ? "Сара открыта в памяти, но её начальное состояние или принятие инвентаря не сохранено. Повторите сохранение."
+          : "Аурелия открыта, но defaults не сохранены. Повторите сохранение.";
+      }
     }
     const preferences = readAppPreferences();
     const oldCharacterId = preferences.status === "loaded"
@@ -1419,6 +1471,10 @@ window.debug = {
 };
 
 subscribe((_state, metadata) => {
+  const context = getSessionContext();
+  if (!isSheetVisible || !presentationOwner ||
+      presentationOwner.characterId !== context.characterId ||
+      presentationOwner.sessionGeneration !== context.sessionGeneration) return;
   reconcileWorkspaceAfterStateChange(_state, metadata);
   if (metadata?.kind === "lore-note-edit") {
     const key = `${_state.profile?.id ?? "aurelia"}:${metadata.noteId}`;

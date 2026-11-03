@@ -12,6 +12,11 @@ import {
 } from "./characters.js";
 import { isThemeId } from "./themes.js";
 import { getDerivedStats } from "./calculations.js";
+import {
+  adoptStarter,
+  initializeNewSara,
+  recordedMutation,
+} from "./sara-functional.js";
 
 let state = normalizeCharacterState(character);
 let activeCharacterId = character.profile.id;
@@ -95,9 +100,19 @@ export function openCharacterSession(characterId, loadState = loadCharacterState
   if (!descriptor) return { status: "invalid", reason: `Unknown character ID: ${characterId}` };
   const loaded = loadState(descriptor);
   if (loaded.status === "invalid" || loaded.status === "unavailable") return loaded;
-  const nextState = loaded.status === "missing"
-    ? normalizeCharacterState(descriptor.defaults)
-    : mergeCharacterState(descriptor.defaults, loaded.state);
+  const migrations = [...(loaded.migrations ?? [])];
+  let nextState;
+  if (loaded.status === "missing") {
+    nextState = characterId === "sara-velaris"
+      ? initializeNewSara(descriptor.defaults, getDerivedStats)
+      : normalizeCharacterState(descriptor.defaults);
+  } else if (characterId === "sara-velaris") {
+    const adoption = adoptStarter(loaded.state);
+    if (adoption.changed) migrations.push("sara-starter-manifest");
+    nextState = mergeCharacterState(descriptor.defaults, adoption.state);
+  } else {
+    nextState = mergeCharacterState(descriptor.defaults, loaded.state);
+  }
   if (characterId === "sara-velaris") {
     const derived = getDerivedStats(nextState);
     nextState.combat.hp.current = Math.min(
@@ -119,7 +134,7 @@ export function openCharacterSession(characterId, loadState = loadCharacterState
   stateRevision = 0;
   completedOperations.clear();
   notify({ kind: "session-open", characterId }, { ok: true, persisted: loaded.status === "loaded" });
-  return { status: loaded.status, state, context: getSessionContext(), migrations: loaded.migrations ?? [] };
+  return { status: loaded.status, state, context: getSessionContext(), migrations };
 }
 
 export function subscribe(listener) {
@@ -177,6 +192,53 @@ export function updateSessionState(context, updater, {
     }
   }
   return { status: "applied", revision: stateRevision, persistence };
+}
+
+export function updateFunctionalSessionState(context, intent, mutate, options = {}) {
+  if (!isCurrentSession(context)) return { status: "rejected", reason: "stale-session" };
+  if (context.stateRevision !== stateRevision) return { status: "rejected", reason: "stale-revision" };
+  let mutation;
+  try {
+    mutation = recordedMutation(state, intent, mutate);
+  } catch (error) {
+    return { status: "rejected", reason: error?.message ?? "operation-validation-failed" };
+  }
+  if (mutation.replayed) {
+    return {
+      status: "replayed",
+      revision: stateRevision,
+      outcome: mutation.outcome,
+    };
+  }
+  return updateSessionState(context, () => mutation.state, {
+    ...options,
+    operationId: intent.id,
+  });
+}
+
+export function commitFunctionalSessionOperation(context, operationId, execute, options = {}) {
+  if (!isCurrentSession(context)) return { status: "rejected", reason: "stale-session" };
+  if (context.stateRevision !== stateRevision) return { status: "rejected", reason: "stale-revision" };
+  let result;
+  try {
+    result = execute(state);
+  } catch (error) {
+    return { status: "rejected", reason: error?.message ?? "operation-validation-failed" };
+  }
+  if (!result || !result.state || typeof result.replayed !== "boolean") {
+    return { status: "rejected", reason: "invalid-functional-operation-result" };
+  }
+  if (result.replayed) {
+    return {
+      status: "replayed",
+      revision: stateRevision,
+      outcome: result.outcome,
+    };
+  }
+  return updateSessionState(context, () => result.state, {
+    ...options,
+    operationId,
+  });
 }
 
 export function retryPersistedState() {

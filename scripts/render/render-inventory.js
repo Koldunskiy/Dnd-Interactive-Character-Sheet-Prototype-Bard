@@ -315,6 +315,11 @@ function renderInventoryItemCard(item, expandedItemIds = [], isSara = false) {
           </section>
 
         <div class="resource-controls inventory-item-actions">
+          <button type="button" class="btn btn--utility" data-action="inventory-quantity-adjust"
+            data-item-id="${escapeHtml(itemId)}" data-quantity-delta="-1"
+            ${Number(item.quantity ?? 0) <= 0 ? "disabled" : ""}>−1</button>
+          <button type="button" class="btn btn--utility" data-action="inventory-quantity-adjust"
+            data-item-id="${escapeHtml(itemId)}" data-quantity-delta="1">+1</button>
           <button
             type="button"
             class="btn btn--utility"

@@ -319,6 +319,11 @@ function render() {
     status: session.status ?? "",
     error: session.error ?? "",
     forceBody: session.forceWorkspaceBodyRender === true,
+    viewKey: JSON.stringify([
+      session.workspaceSessionId,
+      session.currentStepKey,
+      Boolean(session.appliedUnsaved),
+    ]),
   });
   session.forceWorkspaceBodyRender = false;
   const derived = getDerivedStats(state);

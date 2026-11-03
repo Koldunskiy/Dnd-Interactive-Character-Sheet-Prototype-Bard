@@ -222,7 +222,7 @@ function buildBattleConsole(state) {
     <details class="battle-secondary-tools"><summary>Броски и дополнительные инструменты</summary>
       <button type="button" data-battle-roll-shortcut="all">Проверка или спасбросок</button>
       <p>Скорость: ${derived.monk?.speedFeet ?? state.profile?.speedFeet ?? "—"} фт.</p>
-      <p>«Дух воина» восстанавливает 1 ци в начале вашего хода в бою.</p>
+      <p>«Дух воина» восстанавливает 1 ци в начале вашего хода в бою, если вы не недееспособны. Приложение не определяет это состояние автоматически.</p>
     </details>`;
     primaryFooter = `<button type="button" class="btn btn--primary"
       data-battle-end-turn>Закончить свой ход</button>
@@ -303,7 +303,9 @@ export function renderBattleConsole(state) {
   const hasPermanentSaraDock = typeof document !== "undefined" &&
     document.querySelector?.("[data-sara-task-dock]");
   return `<section class="sara-combat-shell combat-turn-card panel-section"
-      data-player-scene-phase="${regions.phase}" aria-labelledby="battleConsoleTitle">
+      data-player-scene-phase="${regions.phase}"
+      data-battle-render-context="${escapeHtml(battleContextKey(state))}"
+      aria-labelledby="battleConsoleTitle">
     <div data-sara-hud>${regions.hud}</div>
     <div data-sara-budget ${regions.activeWorkspace ? "hidden" : ""}>${regions.budget}</div>
     <div data-sara-navigation ${regions.activeWorkspace ? "hidden" : ""}>${regions.navigation}</div>
@@ -327,12 +329,7 @@ export function updateBattleConsole(root, state) {
   }
 
   const regions = buildBattleConsole(state);
-  const battle = state.battleConsole?.current;
-  const nextContext = JSON.stringify([
-    battle?.id ?? null,
-    battle?.phase ?? "outside",
-    battle?.ownTurnId ?? null,
-  ]);
+  const nextContext = battleContextKey(state);
   const contextChanged = shell.dataset.battleRenderContext !== nextContext;
   const phaseRegionSelectors = [
     "[data-sara-hud]",
@@ -399,6 +396,15 @@ export function updateBattleConsole(root, state) {
   if (contextChanged && focusInPhaseRegion && activeElement?.isConnected === false) {
     shell.querySelector("#battleConsoleTitle")?.focus({ preventScroll: true });
   }
+}
+
+export function battleContextKey(state) {
+  const battle = state.battleConsole?.current;
+  return JSON.stringify([
+    battle?.id ?? null,
+    battle?.phase ?? "outside",
+    battle?.ownTurnId ?? null,
+  ]);
 }
 
 const deferredBattleRegionMarkup = new Map();

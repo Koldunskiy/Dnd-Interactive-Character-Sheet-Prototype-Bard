@@ -236,7 +236,15 @@ export function openWorkspaceHost(invoker) {
   }
 }
 
-export function renderWorkspaceHost({ header, body, footer, status = "", error = "", forceBody = false }) {
+export function renderWorkspaceHost({
+  header,
+  body,
+  footer,
+  status = "",
+  error = "",
+  forceBody = false,
+  viewKey = null,
+}) {
   const host = activeHost ?? getDialog();
   if (!host) return;
   const headerNode = host.querySelector("[data-workspace-header]");
@@ -244,13 +252,16 @@ export function renderWorkspaceHost({ header, body, footer, status = "", error =
   const footerNode = host.querySelector("[data-workspace-footer]");
   const statusNode = host.querySelector("[data-workspace-status]");
   const errorNode = host.querySelector("[data-workspace-error]");
+  const viewChanged = viewKey != null && host.dataset.workspaceViewKey !== viewKey;
+  const replaceBody = forceBody || viewChanged;
+  if (viewChanged) clearDeferredHostMarkup(host);
   let keepFocusedForm = false;
-  updateHostMarkup(headerNode, header, host);
+  updateHostMarkup(headerNode, header, host, viewChanged);
   if (bodyNode && bodyNode.innerHTML !== body) {
     const activeElement = document.activeElement;
     const currentForm = bodyNode.querySelector?.("[data-workspace-form]");
     const nextFormKind = body.match(/data-workspace-form="([^"]+)"/)?.[1] ?? null;
-    keepFocusedForm = !forceBody && currentForm && nextFormKind &&
+    keepFocusedForm = !replaceBody && currentForm && nextFormKind &&
       currentForm.dataset.workspaceForm === nextFormKind &&
       currentForm.contains(activeElement);
     if (keepFocusedForm) {
@@ -262,7 +273,8 @@ export function renderWorkspaceHost({ header, body, footer, status = "", error =
   } else if (bodyNode) {
     deferredHostMarkup.delete(bodyNode);
   }
-  updateHostMarkup(footerNode, footer, host);
+  updateHostMarkup(footerNode, footer, host, viewChanged);
+  if (viewKey != null) host.dataset.workspaceViewKey = viewKey;
   if (errorNode) {
     errorNode.textContent = keepFocusedForm ? error : "";
     errorNode.hidden = !keepFocusedForm || !error;
@@ -270,14 +282,14 @@ export function renderWorkspaceHost({ header, body, footer, status = "", error =
   if (statusNode) statusNode.textContent = status;
 }
 
-function updateHostMarkup(node, markup, host) {
+function updateHostMarkup(node, markup, host, immediate = false) {
   if (!node || node.innerHTML === markup) {
     if (node) deferredHostMarkup.delete(node);
     return;
   }
   const activeElement = document.activeElement;
   const focusedTitle = activeElement?.matches?.("[data-workspace-title]");
-  if (node.contains(activeElement) && !focusedTitle) {
+  if (!immediate && node.contains(activeElement) && !focusedTitle) {
     deferredHostMarkup.set(node, markup);
     return;
   }

@@ -1,5 +1,9 @@
 import { migrateLoreNotes } from "./lore-notes.js";
 import { getCharacterDescriptor } from "./characters.js";
+import {
+  validateFunctionalRuntime,
+  validateStarterManifest,
+} from "./sara-functional.js";
 
 const STORAGE_KEY = "aurelia-character-sheet:v2";
 
@@ -164,6 +168,12 @@ function validatePersistedIdentity(parsed, descriptor) {
       return `Unsupported Aurelia ruleset: ${parsed.profile.rulesetId}.`;
     }
     return null;
+  }
+  try {
+    validateFunctionalRuntime(parsed);
+    validateStarterManifest(parsed);
+  } catch (error) {
+    return `Sara optional extension is invalid: ${error?.message ?? "unknown validation error"}`;
   }
   if (parsed.schemaVersion !== 1) return `Unsupported character schema version: ${parsed.schemaVersion ?? "missing"}.`;
   if (parsed.profile.rulesetId !== descriptor.rulesetId) {

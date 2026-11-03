@@ -88,6 +88,38 @@ test("changing workspace steps replaces the focused form instead of leaving stal
   unsubscribe();
 });
 
+test("a changed workspace view replaces a focused footer and clears stale deferred markup", async () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const focusedApply = {
+    parentElement: dialog.footer,
+    matches: () => false,
+  };
+  dialog.footer.contains = (node) => node === focusedApply;
+  dialog.footer.innerHTML = '<button data-workspace-action="apply-command">Apply</button>';
+  globalThis.document.activeElement = focusedApply;
+
+  renderWorkspaceHost({
+    header: "<h2>Результат</h2>",
+    body: "<p>Ки потрачено</p>",
+    footer: '<button data-workspace-action="done">Готово</button>',
+    viewKey: JSON.stringify(["task-1", "command-result:none", true]),
+  });
+  assert.match(dialog.footer.innerHTML, /data-workspace-action="done"/);
+  assert.doesNotMatch(dialog.footer.innerHTML, /apply-command/);
+
+  globalThis.document.activeElement = null;
+  const previousAnimationFrame = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = (callback) => {
+    callback();
+    return 1;
+  };
+  dialog.fire("focusout", { target: focusedApply });
+  globalThis.requestAnimationFrame = previousAnimationFrame;
+  assert.match(dialog.footer.innerHTML, /data-workspace-action="done"/);
+  assert.doesNotMatch(dialog.footer.innerHTML, /apply-command/);
+  unsubscribe();
+});
+
 test("changing workspace steps updates a focused task title immediately", () => {
   const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
   const focusedTitle = {
