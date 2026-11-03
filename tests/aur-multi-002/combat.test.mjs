@@ -17,6 +17,11 @@ import {
 import { getEffectiveSelectedTechniqueIds } from "../../scripts/selectors/techniques.js";
 import { completeSaraRest } from "../../scripts/actions/sara-functional.js";
 import { getEligibleAttackProfiles } from "../../scripts/combat/attack-profile-eligibility.js";
+import {
+  applyGentlingTouchToAttackSlot,
+  beginSeekingStrike,
+  resolveSeekingStrike,
+} from "../../scripts/actions/sara-combat.js";
 
 const persisted = new Map();
 let storageFails = false;
@@ -271,6 +276,166 @@ test("short-rest lifetime distinguishes unpaid preparation from paid Flurry and 
     parentId: "fabricated-parent",
     triggerConfirmed: true,
   }, "standalone-return-op").status, "rejected");
+});
+
+test("returned projectile requires an exact current continuation and pays once on recorded physical outcome", () => {
+  const setupContinuation = () => {
+    let context = openFreshSession();
+    const tokenId = "real-return-continuation";
+    const setup = updateSessionState(context, (draft) => {
+      draft.monk.techniqueRuntime.deflectContinuation = {
+        id: tokenId,
+        kind: "missile-return",
+        sourceSessionGeneration: context.sessionGeneration,
+        reactionAlreadyUsed: true,
+      };
+      return draft;
+    }, { operationId: "install-return-continuation", metadata: { kind: "test-setup" } });
+    assert.equal(setup.status, "applied");
+    context = getSessionContext();
+    return { context, tokenId };
+  };
+  const attempt = (parentId, op) => {
+    const { context } = setupContinuation();
+    return combatActions.startAttackSequence(context, {
+      sequenceId: `return-sequence-${op}`,
+      kind: "returned-projectile",
+      parentId,
+      proficiencyConfirmed: true,
+    }, `return-start-${op}`);
+  };
+  for (const [parent, op] of [
+    [undefined, "missing"],
+    ["", "empty"],
+    ["fabricated", "fabricated"],
+  ]) {
+    const rejected = attempt(parent, op);
+    assert.equal(rejected.status, "rejected");
+    assert.match(rejected.reason, /токен|продолжен/i);
+    assert.equal(getState().monk.techniqueRuntime.deflectContinuation.consumed, undefined);
+  }
+
+  const { context, tokenId } = setupContinuation();
+  const beforeKi = getState().combat.ki.current;
+  const started = combatActions.startAttackSequence(context, {
+    sequenceId: "return-sequence-valid",
+    kind: "returned-projectile",
+    parentId: tokenId,
+    proficiencyConfirmed: true,
+  }, "return-start-valid");
+  assert.equal(started.status, "applied");
+  let latest = getSessionContext();
+  const first = combatActions.recordAttackOutcome(latest, "return-sequence-valid",
+    "return-attack-one", {
+      kind: "returned-projectile",
+      profileId: "returnedProjectile",
+      rollMode: "normal",
+      firstD20: "18",
+      targetArmorClass: "10",
+    }, "return-attack-op");
+  assert.equal(first.status, "applied", first.reason);
+  assert.equal(getState().combat.ki.current, beforeKi - 1);
+  assert.equal(getState().monk.techniqueRuntime.deflectContinuation.consumed, true);
+  assert.equal(getState().inventory.items.find((item) => item.id === "darts").quantity, 20);
+  assert.equal(getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === "return-sequence-valid").resolvedAttacks[0].damageStatus,
+  "awaiting-damage");
+  latest = getSessionContext();
+  const repeated = combatActions.recordAttackOutcome(latest, "return-sequence-valid",
+    "return-attack-two", {
+      kind: "returned-projectile",
+      profileId: "returnedProjectile",
+      rollMode: "normal",
+      firstD20: "18",
+      targetArmorClass: "10",
+    }, "return-attack-repeat");
+  assert.equal(repeated.status, "rejected");
+  assert.equal(getState().combat.ki.current, beforeKi - 1);
+});
+
+test("Seeking Strike is paid from a recorded miss and replaces the same attack with mandatory physical dice", () => {
+  let context = openFreshSession();
+  const setup = updateSessionState(context, (draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:seeking-strike";
+    return draft;
+  }, { operationId: "select-seeking-strike", metadata: { kind: "test-setup" } });
+  assert.equal(setup.status, "applied");
+  context = getSessionContext();
+  assert.equal(combatActions.startAttackSequence(context, {
+    sequenceId: "seeking-sequence", kind: "attack-action",
+  }, "seeking-sequence-op").status, "applied");
+  context = getSessionContext();
+  const miss = combatActions.recordAttackOutcome(context, "seeking-sequence", "recorded-miss", {
+    kind: "attack-action", profileId: "unarmed", rollMode: "normal",
+    firstD20: "2", targetArmorClass: "30",
+  }, "seeking-miss-op");
+  assert.equal(miss.status, "applied", miss.reason);
+  context = getSessionContext();
+  const beforeKi = getState().combat.ki.current;
+  assert.equal(beginSeekingStrike(context, "seeking-sequence", "recorded-miss",
+    "seeking-paid-op").status, "applied");
+  assert.equal(getState().combat.ki.current, beforeKi - 1);
+  context = getSessionContext();
+  const missingPhysical = resolveSeekingStrike(context, "seeking-sequence",
+    "recorded-miss", { firstD20: "", targetArmorClass: "30" }, "seeking-result-empty");
+  assert.equal(missingPhysical.status, "rejected");
+  assert.equal(getState().combat.ki.current, beforeKi - 1);
+  context = getSessionContext();
+  const replacement = resolveSeekingStrike(context, "seeking-sequence",
+    "recorded-miss", { firstD20: "19", targetArmorClass: "10" }, "seeking-result-op");
+  assert.equal(replacement.status, "applied", replacement.reason);
+  const attack = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === "seeking-sequence").resolvedAttacks[0];
+  assert.equal(attack.id, "recorded-miss");
+  assert.equal(attack.hitResult, "hit");
+  assert.equal(attack.damageStatus, "awaiting-damage");
+  assert.deepEqual(attack.seekingAmendment.original.rawD20Rolls, [2]);
+  assert.equal(attack.seekingAmendment.status, "resolved");
+  assert.equal(attack.historicalResolution, true);
+  assert.equal(getState().combat.ki.current, beforeKi - 1);
+});
+
+test("Gentling Touch atomically replaces one live Attack slot by physical dice sum", () => {
+  let context = openFreshSession();
+  const setup = updateSessionState(context, (draft) => {
+    draft.monk.ordinaryTechniqueIds[0] = "ll-monk:gentling-touch";
+    return draft;
+  }, { operationId: "select-gentling-touch", metadata: { kind: "test-setup" } });
+  assert.equal(setup.status, "applied");
+  context = getSessionContext();
+  assert.equal(combatActions.startAttackSequence(context, {
+    sequenceId: "gentling-sequence", kind: "attack-action",
+  }, "gentling-sequence-op").status, "applied");
+  context = getSessionContext();
+  const firstSlot = combatActions.recordAttackOutcome(context, "gentling-sequence",
+    "gentling-first-attack", {
+      kind: "attack-action", profileId: "unarmed", rollMode: "normal",
+      firstD20: "2", targetArmorClass: "30",
+    }, "gentling-first-attack-op");
+  assert.equal(firstSlot.status, "applied", firstSlot.reason);
+  context = getSessionContext();
+  const beforeKi = getState().combat.ki.current;
+  const dieCount = 6;
+  const sides = getDerivedStats(getState()).monk.martialDieSides;
+  const applied = applyGentlingTouchToAttackSlot(context, "gentling-sequence", {
+    extraKi: "1",
+    targetHp: "7",
+    sum: String(dieCount * sides),
+  }, "gentling-slot-op");
+  assert.equal(applied.status, "applied", applied.reason);
+  const sequence = getState().monk.combatAssistant.activeSequences
+    .find((entry) => entry.id === "gentling-sequence");
+  assert.equal(sequence.resolvedAttacks.length, 1);
+  assert.equal(sequence.replacementResults.length, 1);
+  assert.equal(sequence.replacementResults[0].sum, dieCount * sides);
+  assert.equal(sequence.replacementResults[0].thresholdMet, true);
+  assert.equal(sequence.replacementResults[0].dice, dieCount);
+  assert.equal(sequence.replacementResults[0].slotNumber, 2);
+  assert.equal(getState().combat.ki.current, beforeKi - 2);
+  assert.equal(applyGentlingTouchToAttackSlot(getSessionContext(), "gentling-sequence", {
+    extraKi: "1", targetHp: "7", sum: String(dieCount * sides),
+  }, "gentling-slot-op").status, "rejected");
+  assert.equal(getState().combat.ki.current, beforeKi - 2);
 });
 
 test("melee Martial Arts weapon hit can use an eligible Strike while ranged attacks cannot", () => {

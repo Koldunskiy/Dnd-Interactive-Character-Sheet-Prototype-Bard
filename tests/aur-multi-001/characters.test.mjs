@@ -328,7 +328,7 @@ test("Mystic Regeneration validates physical die input and atomically spends Ki 
   assert.equal(state.ui.turn.actionUsed, true);
 });
 
-test("variable-cost techniques validate inputs and spend the exact Ki amount", () => {
+test("variable-cost techniques validate inputs and contextual attacks require their real parent", () => {
   const selected = (id, level = 20) => {
     const state = cloneSara();
     state.profile.level = level;
@@ -340,10 +340,9 @@ test("variable-cost techniques validate inputs and spend the exact Ki amount", (
   const gentleResult = applyMonkTechnique(gentling, "ll-monk:gentling-touch", {
     confirmed: true, extraKi: 4, targetCurrentHp: 12
   });
-  assert.equal(gentleResult.ok, true);
-  assert.equal(gentleResult.result.knockoutThreshold, 9);
-  assert.equal(gentleResult.result.damageDice, "9d12");
-  assert.equal(gentling.combat.ki.current, 11);
+  assert.equal(gentleResult.ok, false);
+  assert.match(gentleResult.reason, /контекстное продолжение/i);
+  assert.equal(gentling.combat.ki.current, 16);
 
   const noKi = selected("ll-monk:gale-rush");
   noKi.combat.ki.current = 0;

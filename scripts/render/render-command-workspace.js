@@ -306,8 +306,6 @@ function renderCommandForm(session, state) {
           <option value="miss" ${draft.dmHitResult === "miss" ? "selected" : ""}>Промах</option>
         </select>
       </label>
-      ${number("damage1", "Физический урон d1", 1)}
-      ${number("damage2", "Физический урон d2 при критическом попадании", 1)}
       ${check("proficiencyConfirmed", "Подтверждаю владение простым оружием для возврата.")}`;
   }
   return `<p>Для этого сценария ещё не подключена форма ввода.</p>`;
@@ -397,8 +395,7 @@ export function renderRestReplacementSubchoices(session, state) {
     const first = selectField("cantrip1", "Заговор «Сияния божества» 1",
       CLERIC_CANTRIPS.map((spell) => [spell.id, spell.name]), draft.cantrip1 ?? "");
     const second = selectField("cantrip2", "Заговор «Сияния божества» 2",
-      CLERIC_CANTRIPS.filter((spell) => spell.id !== draft.cantrip1)
-        .map((spell) => [spell.id, spell.name]), draft.cantrip2 ?? "");
+      CLERIC_CANTRIPS.map((spell) => [spell.id, spell.name]), draft.cantrip2 ?? "");
     return first + second;
   }
   return "";
@@ -419,6 +416,15 @@ export function updateRestReplacementSubchoices(session, state, { refreshFields 
   if (draft.cantrip2 && !legalIds.includes(draft.cantrip2)) {
     draft.cantrip2 = "";
     second.value = "";
+  }
+  const existing = new Set([...(second.options ?? [])].map((option) => option.value));
+  for (const spell of CLERIC_CANTRIPS) {
+    if (!existing.has(spell.id) && second.ownerDocument?.createElement) {
+      const option = second.ownerDocument.createElement("option");
+      option.value = spell.id;
+      option.textContent = spell.name;
+      second.append(option);
+    }
   }
   for (const option of second.options ?? []) {
     if (option.value) option.disabled = !legalIds.includes(option.value);

@@ -140,6 +140,9 @@ function applyToCharacter(character, techniqueId, input) {
   if (!isSara(character)) return { ok: false, reason: "Эта операция доступна только в листе Сары." };
   const technique = MONK_TECHNIQUE_BY_ID.get(techniqueId);
   if (!technique) return { ok: false, reason: "Неизвестный ID техники." };
+  if (techniqueId === "ll-monk:gentling-touch" || techniqueId === "ll-monk:seeking-strike") {
+    return { ok: false, reason: "Требуется контекстное продолжение последовательности атаки." };
+  }
   if (!getSelectedIds(character).includes(techniqueId)) return { ok: false, reason: "Техника не выбрана." };
   const availability = getTechniqueAvailability(character, technique);
   if (!availability.available) return { ok: false, reason: availability.reason };
@@ -581,7 +584,9 @@ export function continueDeflectMissile(
   let outcome;
   const result = updateSessionState(context, (draft) => {
     const token = draft.monk?.techniqueRuntime?.deflectContinuation;
-    if (!token || token.id !== continuationId || token.kind !== "missile-return" ||
+    if (typeof continuationId !== "string" || !continuationId.trim() ||
+        !token || token.id !== continuationId || token.kind !== "missile-return" ||
+        token.consumed === true ||
         token.sourceSessionGeneration !== context.sessionGeneration || token.reactionAlreadyUsed !== true) {
       throw new Error("Продолжение отражения снаряда устарело или недействительно.");
     }

@@ -4,6 +4,7 @@ export function isAttackProfileEligible(sequenceKind, profileId, profiles, state
     const continuation = state?.monk?.techniqueRuntime?.deflectContinuation;
     return profileId === "returnedProjectile" &&
       continuation?.kind === "missile-return" &&
+      continuation.consumed !== true &&
       typeof continuation.id === "string";
   }
   if (profileId === "returnedProjectile") return false;

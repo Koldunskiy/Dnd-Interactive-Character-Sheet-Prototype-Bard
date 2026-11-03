@@ -43,6 +43,8 @@ function formatSigned(value) {
 function strikeChoices(state, attack = null) {
   const effective = getEffectiveSelectedTechniqueIds(state);
   return MONK_TECHNIQUES.filter((entry) => entry.eligibleStrike && effective.has(entry.id) &&
+    ["ll-monk:empowered-strike", "ll-monk:stunning-strike",
+      "ll-monk:crippling-strike", "ll-monk:slowing-strike"].includes(entry.id) &&
     (!attack || entry.unarmedOnly !== true || attack.profileId === "unarmed"));
 }
 

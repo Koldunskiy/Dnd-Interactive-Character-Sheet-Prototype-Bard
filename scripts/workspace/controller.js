@@ -26,7 +26,6 @@ import {
   castSaraRacialSpell,
   executeMonkTechnique,
   getBattlePhaseReason,
-  continueDeflectMissile,
   declineDeflectMissileReturn,
   recordSaraIncomingDamage,
 } from "../actions/monk.js";
@@ -1881,13 +1880,23 @@ function submitMissileReturn() {
   session.rawInputsByStep[session.currentStepKey] = values;
   session.dirty = true;
   session.submitting = true;
-  const result = continueDeflectMissile(session.owner, session.returnContinuationId,
-    values.attackRoll, values.targetArmorClass,
-    {
-      dmHitResult: values.dmHitResult || null,
-      damageRolls: [values.damage1, ...(values.damage2 ? [values.damage2] : [])],
-      proficiencyConfirmed: values.proficiencyConfirmed === true,
-    });
+  const sequenceId = session.sequenceId;
+  const started = startAttackSequence(session.owner, {
+    kind: "returned-projectile",
+    sequenceId,
+    parentId: session.returnContinuationId,
+    proficiencyConfirmed: values.proficiencyConfirmed === true,
+  }, operationId(`returned-projectile-start:${session.returnContinuationId}`));
+  if (started.status === "applied") refreshWorkspaceOwnerRevision();
+  const result = started.status !== "applied" ? started
+    : submitWorkspaceSequenceAttack(session.owner, sequenceId,
+      `${sequenceId}:returned-attack`, "returned-projectile", {
+        profileId: "returnedProjectile",
+        rollMode: "normal",
+        firstD20: values.attackRoll,
+        targetArmorClass: values.targetArmorClass,
+        dmHitResult: values.dmHitResult || null,
+      }, operationId(`returned-projectile-attack:${session.returnContinuationId}`));
   session.submitting = false;
   if (result.status !== "applied") {
     setError(result.reason);
@@ -1895,14 +1904,33 @@ function submitMissileReturn() {
     return;
   }
   refreshWorkspaceOwnerRevision();
+  const after = getState();
+  const sequence = getWorkspaceAttackSequence(after, sequenceId);
+  const attack = sequence?.resolvedAttacks?.[0];
+  if (!attack) {
+    session.readOnly = true;
+    setError("Возвращённая атака применена, но запись последовательности не найдена.");
+    render();
+    return;
+  }
+  session.workspaceType = "attack";
+  session.sequenceKind = "returned-projectile";
+  session.isExistingSequence = true;
+  session.firstAttempt = false;
+  session.attackId = attack.id;
+  session.dirty = false;
   session.dirty = false;
   session.appliedUnsaved = result.persistence?.ok === false;
   session.canReturnMissile = false;
-  session.resultMessage = result.outcome.hits
-    ? `Снаряд возвращён: попадание${result.outcome.critical ? " (критическое)" : ""}; урон ${result.outcome.damageTotalBeforeTargetModifiers ?? "ожидает результата цели"}.`
-    : "Снаряд возвращён: промах.";
-  session.currentStep = "command-result";
-  session.currentStepKey = stepKey("command-result", session.returnContinuationId);
+  session.selectedDamage = attack.damageStatus === "awaiting-damage"
+    ? { sequence, attack } : null;
+  session.currentStep = attack.damageStatus === "awaiting-damage"
+    ? "damage-input" : "checkpoint";
+  session.currentStepKey = stepKey(session.currentStep, attack.id);
+  session.capabilities.canRecordDamage = attack.damageStatus === "awaiting-damage";
+  session.capabilities.canRecordAttack = false;
+  session.capabilities.canContinueSequence = false;
+  session.resultMessage = `Возвращённый снаряд: ${attack.hitResult === "hit" ? "попадание" : "промах"}${attack.critical ? " (критическое)" : ""}.`;
   render();
 }
 

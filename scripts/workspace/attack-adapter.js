@@ -41,6 +41,7 @@ export function getCurrentWorkspaceStrikeParent(state, sequenceId, attackId) {
         attack.profileSnapshot?.martialArtsEligible === true) ||
       !["recorded", "recorded-outside-app"].includes(attack.damageStatus) ||
       attack.techniqueApplicationId ||
+      attack.historicalResolution ||
       !["open", "complete"].includes(sequence.status) ||
       Number(sequence.turnMarker) !== Number(state.ui?.turn?.turnNumber ?? 1)) return null;
   const battle = state.battleConsole?.current;
