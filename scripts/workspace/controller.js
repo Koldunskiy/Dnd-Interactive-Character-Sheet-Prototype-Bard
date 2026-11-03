@@ -69,7 +69,11 @@ import {
 } from "../render/render-attack-workspace.js";
 import { getSessionContext, retryPersistedState, getState } from "../state.js";
 import { MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
-import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
+import {
+  getEffectiveSelectedTechniqueIds,
+  getTechniqueAvailability,
+  isTechniqueEffectivelySelected,
+} from "../selectors/techniques.js";
 
 const appInstanceId = createId("workspace-app");
 let session = null;
@@ -132,6 +136,7 @@ function parseForm(form) {
   const values = {};
   for (const control of form.elements) {
     if (!control.name) continue;
+    if (control.type === "radio" && !control.checked) continue;
     values[control.name] = control.type === "checkbox" ? control.checked : control.value;
   }
   return values;
@@ -148,6 +153,50 @@ function getRelevantFingerprint(state, sequenceId, firstAttempt) {
 }
 
 function getCommandDescriptor(state, commandId) {
+  if (commandId.startsWith("monk-technique:")) {
+    const techniqueId = commandId.slice("monk-technique:".length);
+    const technique = MONK_TECHNIQUE_BY_ID.get(techniqueId);
+    if (!technique || technique.category === "passive" || technique.eligibleStrike ||
+        ["on-miss", "after-roll"].includes(technique.activation) ||
+        ["ll-monk:mantle-of-courtesy", "ll-monk:indomitable-spirit"].includes(techniqueId)) {
+      return null;
+    }
+    const selected = isTechniqueEffectivelySelected(state, techniqueId);
+    const availability = getTechniqueAvailability(state, technique);
+    const battleRouted = ["ll-monk:step-of-the-wind", "ll-monk:patient-defense",
+      "ll-monk:mystic-regeneration", "ll-monk:deflect-strike", "ll-monk:deflect-missile"]
+      .includes(techniqueId);
+    const activation = technique.activation;
+    const turn = state.ui?.turn ?? {};
+    const budgetUsed = state.battleConsole?.current?.phase === "own-turn" &&
+      ((["action", "replace-attack"].includes(activation) && turn.actionUsed) ||
+       (activation === "bonus-action" && turn.bonusActionUsed) ||
+       (activation === "reaction" && turn.reactionUsed));
+    const enabled = !battleRouted && selected && availability.available && !budgetUsed;
+    return {
+      id: commandId,
+      scenarioId: commandId,
+      techniqueId,
+      technique,
+      titleRu: technique.nameRu,
+      navigationGroups: [],
+      activationBudget: activation,
+      resourceCost: technique.payment,
+      trigger: technique.trigger,
+      parentRequirement: null,
+      availability: {
+        enabled,
+        reasonCode: !selected ? "technique-not-selected" : budgetUsed ? "turn-budget-used" : null,
+        reasonRu: battleRouted
+          ? "Используйте существующую команду боевого пульта."
+          : !selected
+            ? "Техника не выбрана или сейчас не действует."
+            : !availability.available
+              ? availability.reason
+              : budgetUsed ? "Это действие уже использовано в текущем ходу." : "",
+      },
+    };
+  }
   if (commandId === "incoming-damage") {
     return {
       id: commandId,
@@ -686,6 +735,12 @@ export function openSaraBattleCommand(commandId, invoker = null, options = {}) {
     return { ok: false, reason: "Не удалось открыть рабочую панель." };
   }
   return { ok: true, sessionId: session.workspaceSessionId };
+}
+
+export function openSaraTechniqueApplication(techniqueId, invoker = null) {
+  const commandId = `monk-technique:${techniqueId}`;
+  if (invoker) invoker.dataset.workspaceInvoker = `technique-use:${techniqueId}`;
+  return openSaraBattleCommand(commandId, invoker);
 }
 
 export function minimizeWorkspace() {
@@ -1374,13 +1429,20 @@ function submitRollConsequence(resolution) {
 }
 
 function submitCommand() {
-  if (!session || session.workspaceType !== "command" || session.submitting ||
+  if (!session || session.workspaceType !== "command" ||
+      session.currentStep !== "command-input" || session.submitting ||
       session.appliedUnsaved || !requireOwner()) return;
   const form = getWorkspaceHost()?.querySelector('[data-workspace-form="command"]');
   if (!form) return;
   const values = parseForm(form);
   session.rawInputsByStep[session.currentStepKey] = values;
   session.dirty = true;
+  if (typeof form.checkValidity === "function" && !form.checkValidity()) {
+    setError("Заполните обязательные поля и проверьте допустимые диапазоны.");
+    form.reportValidity?.();
+    render();
+    return;
+  }
   const state = getState();
   const currentCommand = getCommandDescriptor(state, session.scenarioId);
   if (!currentCommand || !currentCommand.availability.enabled) {
@@ -1415,6 +1477,22 @@ function submitCommand() {
         mode: values.mode,
         operationId: operation,
       });
+  } else if (id.startsWith("monk-technique:")) {
+    const techniqueId = id.slice("monk-technique:".length);
+    result = executeMonkTechnique(session.owner, techniqueId, {
+      ...values,
+      confirmed: true,
+      replaceConcentration: values.replaceConcentration === true,
+      expectedConcentration: values.expectedConcentration,
+      stopOnSurface: values.stopOnSurface === true,
+      meditationConfirmed: values.meditationConfirmed === true,
+      confirmNoHealing: values.confirmNoHealing === true,
+      freeHand: values.freeHand === true,
+      physicalProjectile: values.physicalProjectile === true,
+      caught: values.caught === true,
+      applyDamageToSara: values.applyDamageToSara === "true",
+      operationId: operation,
+    });
   } else if (id === "flurry") {
     result = startCommandAttack("flurry", values);
   } else if (id === "bonus-unarmed") {
@@ -1491,7 +1569,9 @@ function submitCommand() {
   }
   session.dirty = false;
   session.appliedUnsaved = result.persistence?.ok === false;
-  session.resultMessage = commandOutcomeSummary(result);
+  session.resultMessage = id.startsWith("monk-technique:")
+    ? techniqueOutcomeSummary(result, currentCommand.titleRu, state)
+    : commandOutcomeSummary(result);
   session.error = "";
   session.status = result.persistence?.ok === false ? "Применено, но не сохранено." : "";
   session.currentStep = id === "character-roll" ? "roll-result" : "command-result";
@@ -1505,6 +1585,29 @@ function submitCommand() {
   session.returnContinuationId = operation;
   session.dirty = false;
   render();
+}
+
+function techniqueOutcomeSummary(result, title, before) {
+  const outcome = result.outcome?.result ?? {};
+  const after = getState();
+  const details = [];
+  if (before.combat?.ki?.current !== after.combat?.ki?.current) {
+    details.push(`Ци ${before.combat.ki.current} → ${after.combat.ki.current}`);
+  }
+  if (before.combat?.hp?.current !== after.combat?.hp?.current) {
+    details.push(`HP ${before.combat.hp.current} → ${after.combat.hp.current}`);
+  }
+  if (outcome.remainingDamage != null) details.push(`неучтённый остаток урона ${outcome.remainingDamage}`);
+  if (outcome.damageDice) details.push(`бросьте физически ${outcome.damageDice}`);
+  if (outcome.requiresManualSave) details.push("результат спасброска цели ожидается");
+  if (outcome.requiresManualTargetResult) details.push("результат цели нужно внести вручную");
+  if (outcome.requiresManualDamageRoll) details.push("добавочный урон нужно бросить и записать вручную");
+  if (outcome.meditationPending) details.push("завершение медитации ожидает отдельной отметки");
+  if (outcome.saveBonus != null) details.push(`бонус спасброска ${outcome.saveBonus}`);
+  if (outcome.movementFeet != null) details.push(`перемещение ${outcome.movementFeet} футов`);
+  if (outcome.knockoutThreshold != null) details.push(`порог текущих HP цели ${outcome.knockoutThreshold}`);
+  if (outcome.duration) details.push(`длительность: ${outcome.duration}`);
+  return `${title}: применено.${details.length ? ` ${details.join("; ")}.` : ""}`;
 }
 
 function openMissileReturnForm() {
@@ -2143,6 +2246,7 @@ export function getWorkspaceSessions() {
     workspaceSessionId: entry.workspaceSessionId,
     label: getWorkspaceSessionLabel(entry),
     workspaceType: entry.workspaceType,
+    scenarioId: entry.scenarioId ?? null,
     dirty: entry.dirty === true,
     draft: isUnrecordedWorkspaceDraft(entry),
     appliedUnsaved: entry.appliedUnsaved === true,
@@ -2164,6 +2268,7 @@ export function getMinimizedWorkspaceSessions() {
       workspaceSessionId: entry.workspaceSessionId,
       label: getWorkspaceSessionLabel(entry),
       workspaceType: entry.workspaceType,
+      scenarioId: entry.scenarioId ?? null,
       dirty: entry.dirty === true,
       draft: isUnrecordedWorkspaceDraft(entry),
       appliedUnsaved: entry.appliedUnsaved === true,

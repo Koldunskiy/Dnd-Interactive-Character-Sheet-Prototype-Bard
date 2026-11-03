@@ -14,8 +14,7 @@ import {
 } from "../state.js";
 import {
   completeAwakenThirdEyeMeditation,
-  endAwakenThirdEye,
-  executeMonkTechnique
+  endAwakenThirdEye
 } from "../actions/monk.js";
 import { getDerivedStats } from "../calculations.js";
 import {
@@ -27,6 +26,7 @@ import {
 } from "../presentation/ru.js";
 import { isTechniqueEffectivelySelected } from "../selectors/techniques.js";
 import { setPanelMarkup } from "./sara-dom.js";
+import { openSaraTechniqueApplication, getMinimizedWorkspaceSessions, resumeWorkspace } from "../workspace/controller.js";
 
 const pendingDrafts = new Map();
 const techniqueViews = new Map();
@@ -100,13 +100,21 @@ function renderTechniqueCard(entry, character, draft) {
     ? `<label><input type="checkbox" data-technique-draft="${escapeHtml(entry.id)}" ${ordinaryChecked ? "checked" : ""} ${disabled ? "disabled" : ""}> Обычный выбор</label>`
     : `<span class="technique-card__status">${isSelected ? isEffective ? "Выбрана · действует" : `Сохранена, но недоступна: ${escapeHtml(availability.reason ?? "проверьте требования")}` : availability.available ? "Доступна" : escapeHtml(availability.reason)}</span>`;
   const isStrikeFollowUp = Boolean(entry.eligibleStrike);
+  const isRollAmendment = ["ll-monk:mantle-of-courtesy", "ll-monk:indomitable-spirit"].includes(entry.id);
+  const isUnroutedRollContinuation = entry.activation === "on-miss" &&
+    entry.id === "ll-monk:seeking-strike";
   const useControl = !isStrikeFollowUp && !BATTLE_WORKSPACE_TECHNIQUES.has(entry.id) &&
-    isEffective && availability.available &&
+    !isRollAmendment && !isUnroutedRollContinuation && isEffective && availability.available &&
     (entry.category !== "passive" || entry.id === "ll-monk:heavenly-step") && !draft
-    ? `<button type="button" class="btn btn--utility" data-technique-use="${escapeHtml(entry.id)}">Применить</button>`
+    ? `<button type="button" class="btn btn--utility" data-technique-use="${escapeHtml(entry.id)}"
+        data-workspace-invoker="technique-use:${escapeHtml(entry.id)}">Открыть применение</button>`
     : "";
   const workspaceHint = isStrikeFollowUp
     ? `<p class="technique-card__status">Доступна как продолжение после подходящего попадания в боевом пульте.</p>`
+    : isRollAmendment
+      ? `<p class="technique-card__status">Доступна только как продолжение подходящего физического броска.</p>`
+    : isUnroutedRollContinuation
+      ? `<p class="technique-card__status">Требует записи подходящего промаха; отдельный запуск недоступен, так как продолжение промаха не подключено.</p>`
     : BATTLE_WORKSPACE_TECHNIQUES.has(entry.id)
       ? `<p class="technique-card__status">Боевой сценарий доступен через категории боевого пульта.</p>` : "";
   return `
@@ -123,99 +131,8 @@ function renderTechniqueCard(entry, character, draft) {
       ${editControl}
       ${useControl}
       ${workspaceHint}
-      ${useControl ? `<form class="sara-combat-form" data-technique-form="${escapeHtml(entry.id)}" hidden>
-        <h4>Применение: ${escapeHtml(techniqueTitle(entry))}</h4>
-        ${renderTechniqueFormFields(entry, character)}
-        ${entry.eligibleStrike ? `<label class="field-label">Оплата
-          <select class="input" name="paymentMode">
-            <option value="ki">Ци</option>
-            <option value="practiced" ${Number(character.combat?.practiced?.current) > 0 ? "" : "disabled"}>Отработанный удар</option>
-          </select>
-        </label>
-        <label class="sara-form-check"><input type="checkbox" name="practicedConditions"> Подтверждаю: сейчас мой ход и техника применяется после безоружного попадания</label>` : ""}
-        <p class="sara-form-error" data-form-error role="alert"></p>
-        <div class="sara-form-actions"><button type="button" class="btn btn--utility" data-technique-form-cancel>Отмена</button>
-          <button type="submit" class="btn">Применить</button></div>
-      </form>` : ""}
     </article>
   `;
-}
-
-function numberField(name, label, { min, max, required = true } = {}) {
-  return `<label class="field-label">${label}<input class="input" type="number" name="${name}"
-    ${min != null ? `min="${min}"` : ""} ${max != null ? `max="${max}"` : ""}
-    step="1" inputmode="numeric" ${required ? "required" : ""}></label>`;
-}
-
-function renderTechniqueFormFields(entry, character) {
-  const die = Number(getDerivedStats(character).monk.martialDieSides);
-  if (entry.id === "ll-monk:deflect-strike") {
-    return `<label class="field-label">Вид атаки<select class="input" name="mode" required>
-      <option value="">Выберите</option><option value="weapon-melee">Рукопашная атака оружием</option>
-      <option value="other-melee">Другая рукопашная атака</option></select></label>
-      ${numberField("incomingDamage", "Входящий урон", { min: 0 })}
-      ${numberField("deflectRoll", `Физический результат к${die}`, { min: 1, max: die })}
-      ${numberField("finalAdjustedDamage", "Итоговый остаток после других поправок (необязательно)", { min: 0, required: false })}
-      <fieldset><legend>Применить остаток к моим хитам?</legend>
-        <label><input type="radio" name="applyDamageToSara" value="true" required> Да</label>
-        <label><input type="radio" name="applyDamageToSara" value="false" required> Нет, хиты отслеживаются отдельно</label></fieldset>`;
-  }
-  if (entry.id === "ll-monk:deflect-missile") {
-    return `<label class="field-label">Вид атаки<select class="input" name="mode" required>
-      <option value="">Выберите</option><option value="weapon">Дальнобойная атака оружием</option>
-      <option value="other-ranged">Другая дальнобойная атака</option><option value="spell">Атака заклинанием</option></select></label>
-      ${numberField("incomingDamage", "Входящий урон", { min: 0 })}
-      ${numberField("deflectRoll", `Физический результат к${die}`, { min: 1, max: die })}
-      ${numberField("finalAdjustedDamage", "Итоговый остаток после других поправок (необязательно)", { min: 0, required: false })}
-      <label class="sara-form-check"><input type="checkbox" name="freeHand"> Свободная рука</label>
-      <label class="sara-form-check"><input type="checkbox" name="physicalProjectile"> Физический снаряд</label>
-      <label class="sara-form-check"><input type="checkbox" name="caught"> Подтверждаю, что снаряд пойман</label>
-      <fieldset><legend>Применить остаток к моим хитам?</legend>
-        <label><input type="radio" name="applyDamageToSara" value="true" required> Да</label>
-        <label><input type="radio" name="applyDamageToSara" value="false" required> Нет, хиты отслеживаются отдельно</label></fieldset>`;
-  }
-  if (entry.id === "ll-monk:mystic-regeneration") {
-    return `${numberField("dieResult", `Физический результат к${die}`, { min: 1, max: die })}
-      ${getDerivedStats(character).currentHitPoints >= getDerivedStats(character).maxHitPoints
-        ? `<label class="sara-form-check"><input type="checkbox" name="confirmNoHealing"> Подтверждаю расход 2 ци и действия без полезного лечения</label>`
-        : ""}`;
-  }
-  if (entry.id === "ll-monk:step-of-the-wind") {
-    return `<label class="field-label">Бонусное действие<select class="input" name="mode" required>
-      <option value="">Выберите</option><option value="dash">Рывок</option><option value="disengage">Отход</option>
-      </select></label>`;
-  }
-  if (entry.id === "ll-monk:mantle-of-courtesy") {
-    return numberField("otherModifiers", "Другие модификаторы проверки", { min: -99, max: 99 });
-  }
-  if (entry.id === "ll-monk:gentling-touch") {
-    return `${numberField("extraKi", "Дополнительная ци (0–модификатор Мудрости)", { min: 0, max: getDerivedStats(character).abilityModifiers.wisdom })}
-      ${numberField("targetCurrentHp", "Текущие хиты цели для сравнения с порогом", { min: 0 })}`;
-  }
-  if (["ll-monk:gale-rush", "ll-monk:tremor-strike", "ll-monk:crushing-strike"].includes(entry.id)) {
-    return numberField("kiCost", "Ци для этого режима (1–модификатор Мудрости)", {
-      min: 1,
-      max: getDerivedStats(character).abilityModifiers.wisdom
-    });
-  }
-  if (entry.id === "ll-monk:empty-body") {
-    return `<label class="field-label">Режим<select class="input" name="mode" required>
-      <option value="">Выберите</option><option value="invisibility">Невидимость · 4 ци</option>
-      <option value="astral-projection">Астральная проекция · 8 ци</option></select></label>`;
-  }
-  if (entry.id === "ll-monk:conjure-previous-life") {
-    const concentration = String(character.combat?.concentration ?? "");
-    return `${numberField("transferredKi", "Дополнительная ци призванному (от 0)", { min: 0, required: false })}
-      ${concentration ? `<label class="sara-form-check"><input type="checkbox" name="replaceConcentration"> Заменить концентрацию «${escapeHtml(concentration)}»</label>` : ""}
-      <input type="hidden" name="expectedConcentration" value="${escapeHtml(concentration)}">`;
-  }
-  if (entry.id === "ll-monk:heavenly-step") {
-    return `<label class="sara-form-check"><input type="checkbox" name="stopOnSurface" required> Подтверждаю остановку на стене, жидкости или потолке; эффект до начала следующего хода</label>`;
-  }
-  if (entry.id === "ll-monk:awaken-the-third-eye") {
-    return `<label class="sara-form-check"><input type="checkbox" name="meditationConfirmed" required> Начать минутную медитацию; 8 ци тратятся сейчас и не возвращаются при прерывании</label>`;
-  }
-  return `<p>Проверьте полный текст правила и вручную выполните требуемые броски и решения мастера.</p>`;
 }
 
 function renderSignatureSelects(character, draft) {
@@ -294,9 +211,15 @@ export function renderTechniquesPanel(character) {
   ];
   const signatureCount = Object.values(character.monk?.signatureTechniqueSlots ?? {})
     .filter(Boolean).length;
+  const deferredTechniqueTasks = getMinimizedWorkspaceSessions()
+    .filter((task) => task.workspaceType === "command" && task.scenarioId?.startsWith("monk-technique:"));
   const markup = `
     <header class="sara-tab-heading"><h2>Техники</h2></header>
     <p class="sara-technique-summary">Обычные: ${ordinaryIds.length}/${derivedTechniqueLimit(character)} · Избранные: ${signatureCount} · Ци: ${character.combat?.ki?.current ?? "—"}/${derived.monk.kiMaximum ?? "—"}</p>
+    ${deferredTechniqueTasks.length ? `<section class="sara-status" aria-label="Отложенные применения">
+      <h3>Отложенное применение</h3>${deferredTechniqueTasks.map((task) => `<button type="button" class="btn btn--utility"
+        data-technique-resume-workspace="${escapeHtml(task.workspaceSessionId)}">${escapeHtml(task.label)}</button>`).join("")}
+    </section>` : ""}
     <nav class="sara-subtabs" aria-label="Разделы техник">
       ${techniqueModes.map(([id, label]) => `<button type="button" class="btn"
         data-technique-tab="${id}" aria-selected="${view.mode === id}">${label}</button>`).join("")}
@@ -409,6 +332,16 @@ export function renderTechniquesPanel(character) {
       const currentState = getState();
       const key = getSessionKey(currentContext);
       const status = panel.querySelector("[data-technique-editor-status]");
+      if (target.matches("[data-technique-use]")) {
+        const opened = openSaraTechniqueApplication(target.dataset.techniqueUse, target);
+        if (!opened.ok && status) status.textContent = opened.reason;
+        return;
+      }
+      if (target.matches("[data-technique-resume-workspace]")) {
+        const resumed = resumeWorkspace(target.dataset.techniqueResumeWorkspace);
+        if (!resumed.ok && status) status.textContent = resumed.reason;
+        return;
+      }
       if (target.matches("[data-technique-tab]")) {
         getTechniqueView(currentState, key).mode = target.dataset.techniqueTab;
         renderTechniquesPanel(currentState);
@@ -446,23 +379,6 @@ export function renderTechniquesPanel(character) {
           draft: createTechniqueDraft(currentState, currentContext, entitlement)
         });
         renderTechniquesPanel(currentState);
-        return;
-      }
-      if (target.matches("[data-technique-form-cancel]")) {
-        const form = target.closest("[data-technique-form]");
-        if (form) form.hidden = true;
-        [...panel.querySelectorAll("[data-technique-use]")]
-          .find((button) => button.dataset.techniqueUse === form?.dataset.techniqueForm)?.focus();
-        return;
-      }
-      if (target.matches("[data-technique-use]")) {
-        const techniqueId = target.dataset.techniqueUse;
-        const form = [...panel.querySelectorAll("[data-technique-form]")]
-          .find((entry) => entry.dataset.techniqueForm === techniqueId);
-        if (form) {
-          form.hidden = false;
-          form.querySelector("input, select, button")?.focus();
-        }
         return;
       }
       if (target.matches("[data-awaken-complete]")) {
@@ -515,65 +431,6 @@ export function renderTechniquesPanel(character) {
         }
         pendingDrafts.delete(key);
         if (!applied.persistence.ok && status) status.textContent = "Выбор применён в памяти, но не сохранён. Повторите сохранение.";
-      }
-    });
-    panel.addEventListener("submit", (event) => {
-      const form = event.target.closest("[data-technique-form]");
-      if (!form || !panel.contains(form)) return;
-      event.preventDefault();
-      const techniqueId = form.dataset.techniqueForm;
-      const values = new FormData(form);
-      const input = {
-        operationId: globalThis.crypto?.randomUUID?.() ??
-          `technique-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        confirmed: true,
-        mode: values.get("mode") || undefined,
-        incomingDamage: values.get("incomingDamage"),
-        deflectRoll: values.get("deflectRoll"),
-        finalAdjustedDamage: values.get("finalAdjustedDamage"),
-        applyDamageToSara: values.get("applyDamageToSara") === "true",
-        freeHand: values.has("freeHand"),
-        physicalProjectile: values.has("physicalProjectile"),
-        caught: values.has("caught"),
-        dieResult: values.get("dieResult"),
-        confirmNoHealing: values.has("confirmNoHealing"),
-        otherModifiers: values.get("otherModifiers"),
-        extraKi: values.get("extraKi"),
-        targetCurrentHp: values.get("targetCurrentHp"),
-        kiCost: values.get("kiCost"),
-        transferredKi: values.get("transferredKi"),
-        expectedConcentration: values.get("expectedConcentration"),
-        replaceConcentration: values.has("replaceConcentration"),
-        stopOnSurface: values.has("stopOnSurface"),
-        paymentMode: values.get("paymentMode") || "ki"
-      };
-      if (input.paymentMode === "practiced") {
-        input.ownTurnConfirmed = values.has("practicedConditions");
-        input.unarmedHitConfirmed = values.has("practicedConditions");
-      }
-      const button = form.querySelector("[type='submit']");
-      if (button?.dataset.processing === "true") return;
-      if (button) {
-        button.dataset.processing = "true";
-        button.disabled = true;
-      }
-      const context = getSessionContext();
-      const status = form.querySelector("[data-form-error]");
-      const result = executeMonkTechnique(context, techniqueId, input);
-      if (button) {
-        button.dataset.processing = "false";
-        button.disabled = false;
-      }
-      if (result.status !== "applied") {
-        if (status) status.textContent = result.reason ?? "Техника не применена.";
-        return;
-      }
-      form.hidden = true;
-      const summary = result.outcome?.outcome ?? result.outcome?.result ?? result.outcome ?? {};
-      if (status) {
-        status.textContent = result.persistence?.ok === false
-          ? "Применено в памяти, но сохранение не удалось. Повторите сохранение; действие повторно применять не нужно."
-          : `Применено. ${summary.remainingDamage != null ? `Остаток урона: ${summary.remainingDamage}.` : ""}`;
       }
     });
     panel.addEventListener("change", (event) => {

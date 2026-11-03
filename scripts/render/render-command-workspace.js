@@ -5,6 +5,7 @@ import { calculateRollConsequencePreview } from "../rolls/consequences.js";
 import { calculateCharacterRoll } from "../rolls/calculations.js";
 import { getSaraRollBreakdown } from "../rolls/providers/sara.js";
 import { getWorkspaceHost } from "../workspace/host.js";
+import { renderTechniqueApplicationFields } from "./technique-application-form.js";
 
 function escapeHtml(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
@@ -37,6 +38,12 @@ function renderCommandForm(session, state) {
     numberField(name, label, min, max, draft[name] ?? "");
   const check = (name, label) => checkbox(name, label, draft[name] === true);
   const select = (name, label, options) => selectField(name, label, options, draft[name] ?? "");
+  if (id.startsWith("monk-technique:")) {
+    return `<p>${escapeHtml(session.command?.trigger ?? "")}</p>
+      ${session.command?.technique
+        ? renderTechniqueApplicationFields(session.command.technique, state, draft)
+        : `<p class="workspace-error" role="alert">Параметры техники недоступны.</p>`}`;
+  }
   if (id === "incoming-damage") {
     return `<p>Введите итоговый урон, полученный от ведущего. Реакция не требуется; временные HP учитываются автоматически.</p>
       ${number("damage", "Полученный урон", 0)}
@@ -385,8 +392,9 @@ export function renderCommandWorkspace(session, state) {
   const title = session.command?.titleRu ?? "Боевое действие";
   const unavailableReason = session.command?.availability?.enabled
     ? "" : session.command?.availability?.reasonRu ?? "Команда больше недоступна.";
+  const isTechniqueApplication = session.scenarioId?.startsWith("monk-technique:");
   const header = `<div class="workspace-nav">
-      <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
+      <button type="button" class="btn btn--utility" data-workspace-action="minimize">${isTechniqueApplication ? "Отложить" : "Свернуть"}</button>
       <button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>
       <button type="button" class="btn btn--utility" data-workspace-action="close">Закрыть</button>
     </div>
@@ -420,6 +428,9 @@ export function renderCommandWorkspace(session, state) {
     ? `<button type="button" class="btn btn--utility" data-workspace-action="stay">Остаться</button>
       <button type="button" class="btn btn--primary" data-workspace-action="confirm-close"
         ${session.appliedUnsaved ? "disabled" : ""}>${session.dirty ? "Закрыть без применения" : "Закрыть"}</button>`
+    : session.currentStep === "command-input" && isTechniqueApplication
+    ? `<button type="button" class="btn btn--primary" data-workspace-action="apply-command"
+        ${session.submitting || session.appliedUnsaved || unavailableReason ? "disabled" : ""}>Применить · ${escapeHtml(session.command?.resourceCost ?? "по правилу")}</button>`
     : session.currentStep === "command-input" && session.scenarioId === "character-roll"
     ? renderCharacterRollFooter(session)
     : session.currentStep === "command-input"
