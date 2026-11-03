@@ -15,14 +15,12 @@ import {
 import { getDerivedStats } from "../calculations.js";
 import { getState } from "../state.js";
 import {
-  getEndTurnAdvice,
   getPlayerHubViewModel,
 } from "../battle/player-hub.js";
 import { getSaraInitiativeSnapshot } from "../battle/providers/sara.js";
 
 let selectedMenu = null;
 let incomingEventsOpen = false;
-let turnReviewOpen = false;
 
 function renderInitiative(battle) {
   const initiative = battle?.initiative;
@@ -126,7 +124,6 @@ function buildBattleConsole(state) {
   };
   if (view.phase !== "own-turn") {
     selectedMenu = null;
-    turnReviewOpen = false;
   }
   const budget = view.budget ? `<section class="combat-budget" aria-label="Бюджет хода">
     ${[
@@ -211,21 +208,12 @@ function buildBattleConsole(state) {
         <button type="button" class="btn btn--utility" data-battle-roll-shortcut="all">Проверка</button>
       </div>
       ${incomingEventsOpen ? renderIncomingEvents(commands) : ""}
-      <details class="battle-secondary-tools"><summary>Управление сценой</summary>
-        <div class="battle-console-actions">
-          <button type="button" class="btn btn--utility" data-battle-command="pause-battle">Приостановить</button>
-          <button type="button" class="btn btn--utility" data-battle-command="end-battle">Завершить бой</button>
-        </div>
-      </details>
     </section>`;
     primaryFooter = `<button type="button" class="btn btn--primary"
-      data-battle-command="begin-own-turn">Начался мой ход</button>`;
+      data-battle-command="begin-own-turn">Начать свой ход</button>
+      <button type="button" class="btn btn--utility"
+        data-battle-command="end-battle">Закончить бой</button>`;
   } else if (view.phase === "own-turn") {
-    phaseBody = turnReviewOpen
-      ? `<section class="battle-player-home">${renderTurnReview(
-        getEndTurnAdvice(state, getWorkspaceSessions()),
-      )}</section>`
-      : "";
     commandContent = `<section class="battle-menu-panel" aria-label="${selectedGroup === "other"
       ? "Другое" : escapeHtml(BATTLE_CATEGORIES.find((item) => item.id === selectedGroup)?.label ?? "Команды")}">
       <div class="battle-command-grid">${menuEntries.map(renderBattleCommandCard).join("") ||
@@ -234,22 +222,26 @@ function buildBattleConsole(state) {
     <details class="battle-secondary-tools"><summary>Броски и дополнительные инструменты</summary>
       <button type="button" data-battle-roll-shortcut="all">Проверка или спасбросок</button>
       <p>Скорость: ${derived.monk?.speedFeet ?? state.profile?.speedFeet ?? "—"} фт.</p>
-      <p>Восстановление «Духа воина» отмечается вручную.</p>
+      <p>«Дух воина» восстанавливает 1 ци в начале вашего хода в бою.</p>
     </details>`;
     primaryFooter = `<button type="button" class="btn btn--primary"
-      data-battle-end-turn>Завершить мой ход</button>`;
+      data-battle-end-turn>Закончить свой ход</button>
+      <button type="button" class="btn btn--utility"
+        data-battle-command="end-battle">Закончить бой</button>`;
   } else {
+    const resumable = ["waiting", "own-turn"].includes(view.battle?.phaseBeforePause);
     phaseBody = `<section class="battle-player-home">
-      <p>Текущий контекст сохранён. Продолжение не восстанавливает ресурсы и не создаёт новый ход.</p>
+      <p>${resumable
+        ? "Текущий контекст сохранён. Продолжение не восстанавливает ресурсы и не создаёт новый ход."
+        : "Контекст приостановленной сцены повреждён. Продолжить её безопасно нельзя."}</p>
       <div class="battle-secondary-tools">
         ${renderInitiative(view.battle)}
-        <details><summary>Управление сценой</summary>
-        <button type="button" class="btn btn--utility" data-battle-command="end-battle">Завершить бой</button>
-        </details>
       </div>
     </section>`;
-    primaryFooter = `<button type="button" class="btn btn--primary"
-      data-battle-command="resume-battle">Продолжить сцену</button>`;
+    primaryFooter = `${resumable ? `<button type="button" class="btn btn--primary"
+      data-battle-command="resume-battle">Продолжить прежний ход</button>` : ""}
+      <button type="button" class="btn btn--utility"
+        data-battle-command="end-battle">Закончить бой</button>`;
   }
 
   const minimizedIds = new Set(minimized.map((entry) => entry.workspaceSessionId));
@@ -335,8 +327,30 @@ export function updateBattleConsole(root, state) {
   }
 
   const regions = buildBattleConsole(state);
-  const previousPhase = shell.dataset.playerScenePhase;
-  shell.dataset.playerScenePhase = regions.phase;
+  const battle = state.battleConsole?.current;
+  const nextContext = JSON.stringify([
+    battle?.id ?? null,
+    battle?.phase ?? "outside",
+    battle?.ownTurnId ?? null,
+  ]);
+  const contextChanged = shell.dataset.battleRenderContext !== nextContext;
+  const phaseRegionSelectors = [
+    "[data-sara-hud]",
+    "[data-sara-budget]",
+    "[data-sara-navigation]",
+    "[data-sara-pending-work]",
+    "[data-sara-turn-controls]",
+    "[data-sara-phase-content]",
+  ];
+  const activeElement = document.activeElement;
+  const focusInPhaseRegion = phaseRegionSelectors.some((selector) =>
+    shell.querySelector(selector)?.contains(activeElement));
+  if (contextChanged) {
+    for (const selector of phaseRegionSelectors) {
+      const region = shell.querySelector(selector);
+      if (region) deferredBattleRegionMarkup.delete(region);
+    }
+  }
   const updateRegion = (selector, markup) => {
     const region = shell.querySelector(selector);
     if (!region) return;
@@ -344,7 +358,7 @@ export function updateBattleConsole(root, state) {
       deferredBattleRegionMarkup.delete(region);
       return;
     }
-    if (region.contains(document.activeElement)) {
+    if (!contextChanged && region.contains(document.activeElement)) {
       deferredBattleRegionMarkup.set(region, markup);
       return;
     }
@@ -354,7 +368,7 @@ export function updateBattleConsole(root, state) {
   updateRegion("[data-sara-hud]", regions.hud);
   updateRegion("[data-sara-budget]", regions.budget);
   const navigation = shell.querySelector("[data-sara-navigation]");
-  if (previousPhase === "own-turn" && regions.phase === "own-turn" && navigation) {
+  if (!contextChanged && regions.phase === "own-turn" && navigation) {
     for (const button of navigation.querySelectorAll("[data-battle-menu]")) {
       button.setAttribute("aria-pressed", String(button.dataset.battleMenu === (selectedMenu ?? "action")));
     }
@@ -380,6 +394,11 @@ export function updateBattleConsole(root, state) {
   if (taskRegion) taskRegion.className = regions.activeWorkspace
     ? "combat-active-task" : "combat-home-task";
   if (workspace) workspace.hidden = !regions.activeWorkspace;
+  shell.dataset.playerScenePhase = regions.phase;
+  shell.dataset.battleRenderContext = nextContext;
+  if (contextChanged && focusInPhaseRegion && activeElement?.isConnected === false) {
+    shell.querySelector("#battleConsoleTitle")?.focus({ preventScroll: true });
+  }
 }
 
 const deferredBattleRegionMarkup = new Map();
@@ -419,32 +438,6 @@ function renderIncomingEvents(commands) {
   </section>`;
 }
 
-function renderTurnReview(advice) {
-  return `<section class="battle-turn-review" aria-label="Проверка завершения хода">
-    <h4>Можно закончить ход</h4>
-    <p>Но ещё есть возможности. Использовать их не обязательно.</p>
-    <div class="battle-turn-review__options">${advice.map((item) => {
-      if (item.sequenceId) {
-        return `<button type="button" class="btn btn--utility"
-          data-battle-resume-sequence="${escapeHtml(item.sequenceId)}">${escapeHtml(item.label)}</button>`;
-      }
-      if (item.menu) {
-        return `<button type="button" class="btn btn--utility"
-          data-battle-menu="${escapeHtml(item.menu)}">${escapeHtml(item.label)}</button>`;
-      }
-      if (item.workspaceSessionId) {
-        return `<button type="button" class="btn btn--utility"
-          data-workspace-resume="${escapeHtml(item.workspaceSessionId)}">${escapeHtml(item.label)}</button>`;
-      }
-      return `<p>${escapeHtml(item.label)}</p>`;
-    }).join("")}</div>
-    <div class="battle-console-actions">
-      <button type="button" class="btn btn--utility" data-battle-turn-review-close>Вернуться</button>
-      <button type="button" class="btn btn--primary" data-battle-end-turn-confirm>Завершить всё равно</button>
-    </div>
-  </section>`;
-}
-
 export function bindBattleConsole(root = document) {
   if (root.dataset.battleConsoleBound === "true") return;
   const rerender = () => {
@@ -461,7 +454,6 @@ export function bindBattleConsole(root = document) {
       return false;
     }
     incomingEventsOpen = false;
-    turnReviewOpen = false;
     rerender();
     return true;
   };
@@ -470,7 +462,6 @@ export function bindBattleConsole(root = document) {
     const menuButton = event.target.closest("[data-battle-menu]");
     if (menuButton && root.contains(menuButton)) {
       selectedMenu = menuButton.dataset.battleMenu;
-      turnReviewOpen = false;
       rerender();
       return;
     }
@@ -499,22 +490,7 @@ export function bindBattleConsole(root = document) {
       rerender();
       return;
     }
-    if (event.target.closest("[data-battle-turn-review-close]")) {
-      turnReviewOpen = false;
-      rerender();
-      return;
-    }
     if (event.target.closest("[data-battle-end-turn]")) {
-      const advice = getEndTurnAdvice(getState(), getWorkspaceSessions());
-      if (advice.length) {
-        turnReviewOpen = true;
-        rerender();
-      } else {
-        runBattleCommand("end-own-turn");
-      }
-      return;
-    }
-    if (event.target.closest("[data-battle-end-turn-confirm]")) {
       runBattleCommand("end-own-turn");
       return;
     }
@@ -594,7 +570,6 @@ export function bindBattleConsole(root = document) {
       status.textContent = `${command === "start-battle" ? "Сцену не удалось начать" : "Инициативу не удалось исправить"}: ${result.reason ?? "ошибка сохранения"}.`;
     } else {
       incomingEventsOpen = false;
-      turnReviewOpen = false;
       rerender();
     }
   });

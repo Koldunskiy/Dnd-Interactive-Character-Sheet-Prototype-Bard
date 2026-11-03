@@ -21,6 +21,7 @@ import {
   applySaraCombatAction,
   castSaraRacialSpell,
   executeMonkTechnique,
+  getBattlePhaseReason,
   continueDeflectMissile,
   declineDeflectMissileReturn,
   recordSaraIncomingDamage,
@@ -172,7 +173,9 @@ function getCommandDescriptor(state, commandId) {
       ((["action", "replace-attack"].includes(activation) && turn.actionUsed) ||
        (activation === "bonus-action" && turn.bonusActionUsed) ||
        (activation === "reaction" && turn.reactionUsed));
-    const enabled = !battleRouted && selected && availability.available && !budgetUsed;
+    const phaseReason = getBattlePhaseReason(state, activation);
+    const enabled = !battleRouted && selected && availability.available &&
+      !budgetUsed && !phaseReason;
     return {
       id: commandId,
       scenarioId: commandId,
@@ -191,6 +194,8 @@ function getCommandDescriptor(state, commandId) {
           ? "Используйте существующую команду боевого пульта."
           : !selected
             ? "Техника не выбрана или сейчас не действует."
+            : phaseReason
+              ? phaseReason
             : !availability.available
               ? availability.reason
               : budgetUsed ? "Это действие уже использовано в текущем ходу." : "",

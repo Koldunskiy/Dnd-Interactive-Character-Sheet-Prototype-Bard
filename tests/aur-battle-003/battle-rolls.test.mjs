@@ -59,7 +59,7 @@ test("battle initiative uses current Dexterity and keeps the scene in waiting", 
   assert.equal(character.ui.turn.actionUsed, false);
   assert.equal(character.ui.turn.bonusActionUsed, false);
   assert.equal(character.ui.turn.reactionUsed, false);
-  assert.equal(character.combat.ki.current, 5);
+  assert.equal(character.combat.ki.current, 6);
   assert.equal(beginOwnTurn(character).ok, false);
 });
 
@@ -80,7 +80,7 @@ test("battle pause, resume, correction, and end do not restore resources", () =>
   assert.equal(endBattle(character).ok, true);
   assert.equal(character.battleConsole.current, null);
   assert.equal(character.battleConsole.history.at(-1).endedReason, "manual");
-  assert.equal(character.combat.ki.current, 4);
+  assert.equal(character.combat.ki.current, 5);
 });
 
 test("general checks and saves use provider breakdowns and strict physical dice", () => {

@@ -5,7 +5,6 @@ import {
   closeBattleForRest,
   endBattle,
   endOwnTurn,
-  pauseBattle,
   resumeBattle,
   startBattle,
 } from "./transitions.js";
@@ -15,7 +14,6 @@ const transitions = {
   "correct-initiative": (draft, input) => correctInitiative(draft, input),
   "begin-own-turn": (draft) => beginOwnTurn(draft),
   "end-own-turn": (draft) => endOwnTurn(draft),
-  "pause-battle": (draft) => pauseBattle(draft),
   "resume-battle": (draft) => resumeBattle(draft),
   "end-battle": (draft) => endBattle(draft),
 };

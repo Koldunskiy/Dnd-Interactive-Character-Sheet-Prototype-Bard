@@ -250,7 +250,7 @@ test("W1 real Sara renderer updates preserve the connected focused workspace inp
   unsubscribe();
 });
 
-test("W1 a focused combat region applies its latest deferred update on focus leave", async () => {
+test("W1 phase changes replace focused combat controls immediately and discard queued old markup", async () => {
   const { unsubscribe } = installWorkspaceFixture();
   updateState((state) => {
     state.battleConsole ??= { current: null, history: [] };
@@ -303,20 +303,23 @@ test("W1 a focused combat region applies its latest deferred update on focus lea
     return state;
   });
   updateBattleConsole(panel, getState());
-  assert.equal(phase.innerHTML, before);
-  assert.equal(phase.contains(focusedButton), true);
+  const waitingMarkup = phase.innerHTML;
+  assert.notEqual(waitingMarkup, before);
+  assert.match(waitingMarkup, /Следи за событиями/);
+  assert.equal(phase.contains(focusedButton), false);
   updateState((state) => {
     state.battleConsole.current.phase = "paused";
     return state;
   });
   updateBattleConsole(panel, getState());
-  assert.equal(phase.innerHTML, before);
+  const pausedMarkup = phase.innerHTML;
+  assert.notEqual(pausedMarkup, waitingMarkup);
+  assert.match(pausedMarkup, /контекст приостановленной сцены повреждён/i);
 
   globalThis.document.activeElement = null;
   panel.fire("focusout", {});
   await new Promise((resolve) => setImmediate(resolve));
-  assert.notEqual(phase.innerHTML, before);
-  assert.match(phase.innerHTML, /Текущий контекст сохранён/);
+  assert.equal(phase.innerHTML, pausedMarkup);
   assert.doesNotMatch(phase.innerHTML, /Следи за событиями/);
   unsubscribe();
 });

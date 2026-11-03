@@ -1,6 +1,8 @@
 import { parsePhysicalInteger } from "../combat/physical-input.js";
 import { BATTLE_HISTORY_LIMIT, getBattleConsole } from "./model.js";
 import { getSaraInitiativeSnapshot } from "./providers/sara.js";
+import { getDerivedStats } from "../calculations.js";
+import { getEffectiveTechniqueIds } from "../selectors/techniques.js";
 
 let battleSequence = 0;
 let ownTurnSequence = 0;
@@ -128,6 +130,14 @@ export function beginOwnTurn(character, { now = new Date().toISOString(), id = n
   if (character.monk?.techniqueRuntime) {
     delete character.monk.techniqueRuntime.practicedUsedThisTurn;
     character.monk.techniqueRuntime.deflectContinuation = null;
+  }
+  const derived = getDerivedStats(character);
+  if (getEffectiveTechniqueIds(character).includes("base:warriors-spirit")) {
+    const maximum = derived.monk.kiMaximum;
+    const current = Number(character.combat?.ki?.current);
+    if (Number.isFinite(current) && current < maximum) {
+      character.combat.ki.current = current + 1;
+    }
   }
   return { ok: true, ownTurnId, ownTurnNumber: battle.ownTurnNumber };
 }

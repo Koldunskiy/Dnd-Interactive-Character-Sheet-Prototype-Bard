@@ -18,7 +18,7 @@ function isSara(character) {
     character.profile?.rulesetId === ALTERNATE_MONK_RULESET_ID;
 }
 
-function getBattlePhaseReason(character, activation) {
+export function getBattlePhaseReason(character, activation) {
   const phase = character.battleConsole?.current?.phase;
   if (!phase) return null;
   if (["action", "bonus-action", "replace-attack", "hit", "after-roll", "start-of-turn"]

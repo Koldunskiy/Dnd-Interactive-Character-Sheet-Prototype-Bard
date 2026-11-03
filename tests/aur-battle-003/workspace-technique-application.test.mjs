@@ -2,11 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { getState, getSessionContext, updateSessionState } from "../../scripts/state.js";
 import {
+  disposeWorkspaceOwner,
   getWorkspaceSessionForTests,
+  openSaraBattleCommand,
   openSaraTechniqueApplication,
   getMinimizedWorkspaceSessions,
   resumeWorkspace,
 } from "../../scripts/workspace/controller.js";
+import { beginOwnTurn, startBattle } from "../../scripts/battle/transitions.js";
 import {
   fireWorkspaceAction,
   fireWorkspaceInput,
@@ -121,5 +124,31 @@ test("technique task rejects insufficient resources and standalone contextual te
   assert.equal(openSaraTechniqueApplication("ll-monk:crushing-strike", invoker).ok, false);
   assert.equal(openSaraTechniqueApplication("ll-monk:indomitable-spirit", invoker).ok, false);
   assert.equal(openSaraTechniqueApplication("ll-monk:seeking-strike", invoker).ok, false);
+  unsubscribe();
+});
+
+test("generic technique task availability matches own-turn execution restrictions", () => {
+  const { invoker, unsubscribe } = installWorkspaceFixture();
+  chooseTechnique("ll-monk:gale-rush");
+  updateSessionState(getSessionContext(), (draft) => {
+    const started = startBattle(draft, { rawD20: "10" }, { id: "technique-phase-battle" });
+    if (!started.ok) throw new Error(started.reason);
+    return draft;
+  });
+
+  const waiting = openSaraBattleCommand("monk-technique:ll-monk:gale-rush", invoker);
+  assert.equal(waiting.ok, false);
+  assert.match(waiting.reason, /только в свой ход/i);
+
+  updateSessionState(getSessionContext(), (draft) => {
+    const turn = beginOwnTurn(draft, { id: "technique-phase-turn" });
+    if (!turn.ok) throw new Error(turn.reason);
+    return draft;
+  });
+  const ownTurn = openSaraBattleCommand("monk-technique:ll-monk:gale-rush", invoker);
+  assert.equal(ownTurn.ok, true);
+
+  const workspace = getWorkspaceSessionForTests();
+  if (workspace) disposeWorkspaceOwner(workspace.owner, "test-cleanup");
   unsubscribe();
 });
