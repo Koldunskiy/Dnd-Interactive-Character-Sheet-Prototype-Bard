@@ -60,6 +60,7 @@ import {
   renderIncomingReplyHitControls,
   renderIncomingPreview,
   renderIncomingWorkspace,
+  renderIncomingSaveFooter,
 } from "../render/render-incoming-workspace.js";
 import {
   commitIncomingEvent,
@@ -91,6 +92,7 @@ import {
   openWorkspaceHost,
   renderWorkspaceHost,
   updateWorkspaceResources,
+  updateWorkspaceFooter,
   workspaceHostIsOpen,
   workspaceHostIsEmbedded,
 } from "./host.js";
@@ -638,7 +640,9 @@ function render() {
       Boolean(session.appliedUnsaved),
       session.workspaceType === "incoming" ? session.incomingDraft.stage : null,
       session.workspaceType === "incoming" && session.incomingDraft.stage === "save-input"
-        ? [session.incomingDraft.saveDraft.source, session.incomingDraft.saveDraft.rollMode] : null,
+        ? [session.incomingDraft.saveDraft.source, session.incomingDraft.saveDraft.rollMode,
+          session.incomingDraft.saveDraft.baseOutcomeMode,
+          session.incomingDraft.saveDraft.baseManualOutcome] : null,
       session.workspaceType === "incoming" && session.incomingDraft.stage === "save-consequence"
         ? [session.incomingDraft.saveDraft.amendment, session.incomingDraft.saveDraft.baseOutcomeMode,
           session.incomingDraft.saveDraft.baseManualOutcome, session.incomingDraft.saveDraft.finalOutcomeMode,
@@ -1595,6 +1599,12 @@ function updateInput(field) {
     draft.error = "";
     const preview = getWorkspaceHost()?.querySelector("[data-incoming-preview]");
     if (preview) preview.innerHTML = renderIncomingPreview(session, getState());
+    if (["firstD20", "secondD20", "dc", "saveDamage"].includes(field.name) &&
+        ["save-input", "save-consequence"].includes(draft.stage)) {
+      updateWorkspaceFooter(
+        `<div class="incoming-workspace__actions">${renderIncomingSaveFooter(session, getState())}</div>`,
+      );
+    }
     syncIncomingPreviewFingerprint(draft, getState());
     const catchControls = getWorkspaceHost()?.querySelector("[data-incoming-catch-controls]");
     if (catchControls) catchControls.innerHTML = renderIncomingCatchControls(session, getState());

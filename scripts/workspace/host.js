@@ -282,6 +282,14 @@ export function renderWorkspaceHost({
   if (statusNode) statusNode.textContent = status;
 }
 
+export function updateWorkspaceFooter(markup) {
+  const host = activeHost ?? getDialog();
+  const footerNode = host?.querySelector("[data-workspace-footer]");
+  if (!footerNode) return false;
+  updateHostMarkup(footerNode, markup, host, true);
+  return true;
+}
+
 function updateHostMarkup(node, markup, host, immediate = false) {
   if (!node || node.innerHTML === markup) {
     if (node) deferredHostMarkup.delete(node);

@@ -25,6 +25,36 @@ function button(action, label, attrs = "") {
   return `<button type="button" data-workspace-action="${action}" ${attrs}>${label}</button>`;
 }
 
+export function renderIncomingSaveFooter(session, state) {
+  const draft = session.incomingDraft;
+  const save = draft.saveDraft;
+  if (draft.stage === "save-input") {
+    const projection = projectSavingThrow(state, { ...save, amendment: null });
+    const autoReady = projection.ok && projection.baseOutcome != null;
+    return `${save.baseOutcomeMode === "manual" ? `${button("incoming-save-success", "Успех")}
+      ${button("incoming-save-failure", "Провал")}${button("incoming-save-unknown", "Пока неизвестно")}
+      ${button("incoming-save-auto", "Вернуться к расчёту по СЛ")}` :
+      `${autoReady ? button("incoming-save-continue", "К последствиям", 'class="btn btn--primary"') :
+        `${button("incoming-save-success", "Успех")}${button("incoming-save-failure", "Провал")}${button("incoming-save-unknown", "Исход пока неизвестен")}`}
+      ${button("incoming-save-override", "Указать исход по решению ведущего")}`}
+      ${button("incoming-back", "Назад")}${button("incoming-cancel", "Отмена")}`;
+  }
+  if (draft.stage === "save-consequence") {
+    const projection = projectSavingThrow(state, save);
+    const decisionProjection = projectSavingThrow(state, { ...save, hasDamage: false });
+    const amendmentSelected = Boolean(save.amendment);
+    const needsFinalOutcome = decisionProjection.ok && decisionProjection.needsOutcome;
+    const amendmentUnavailable = amendmentSelected &&
+      (!decisionProjection.ok || !decisionProjection.amendmentPreview?.ok);
+    return `${button("incoming-apply-save",
+      amendmentSelected ? "Применить результат · 1 ци"
+        : projection.ok && projection.finalOutcome === "unknown" ? "Записать без исхода" : "Применить результат",
+      `class="btn btn--primary"${!projection.ok || projection.canCommit !== true || needsFinalOutcome || amendmentUnavailable ? " disabled" : ""}`)}
+      ${button("incoming-back", "Назад")}${button("incoming-cancel", "Отмена")}`;
+  }
+  return "";
+}
+
 function field(name, label, value, attrs = "") {
   return `<label>${escapeHtml(label)}<input data-workspace-field name="${escapeHtml(name)}" value="${escapeHtml(value)}" ${attrs}></label>`;
 }
@@ -227,14 +257,7 @@ export function renderIncomingWorkspace(session, state) {
         ${field("dc", "Сложность (если известна)", save.dc ?? "", 'type="number" min="1" max="99" step="1"')}
         ${save.source === "spell" ? "<small>Спасбросок от заклинания использует текущее правило: преимущество «Сопротивления магии» Юань-ти.</small>" : ""}
         <div data-incoming-preview>${renderIncomingPreview(session, state)}</div>`;
-      const autoReady = projection.ok && projection.baseOutcome != null;
-      footer = `${save.baseOutcomeMode === "manual" ? `${button("incoming-save-success", "Успех")}
-        ${button("incoming-save-failure", "Провал")}${button("incoming-save-unknown", "Пока неизвестно")}
-        ${button("incoming-save-auto", "Вернуться к расчёту по СЛ")}` :
-        `${autoReady ? button("incoming-save-continue", "К последствиям", 'class="btn btn--primary"') :
-          `${button("incoming-save-success", "Успех")}${button("incoming-save-failure", "Провал")}${button("incoming-save-unknown", "Исход пока неизвестен")}`}
-        ${button("incoming-save-override", "Указать исход по решению ведущего")}`}
-        ${button("incoming-back", "Назад")}${button("incoming-cancel", "Отмена")}`;
+      footer = renderIncomingSaveFooter(session, state);
       break;
       }
     case "save-consequence":
@@ -262,6 +285,10 @@ export function renderIncomingWorkspace(session, state) {
             : button("incoming-save-override", "Указать исход по решению ведущего")}` : ""}
         ${!amendmentSelected && save.baseOutcomeMode === "auto"
           ? button("incoming-save-override", "Указать исход по решению ведущего") : ""}
+        ${!amendmentSelected && save.baseOutcomeMode === "manual"
+          ? `${button("incoming-save-success", "Успех")}${button("incoming-save-failure", "Провал")}
+          ${button("incoming-save-unknown", "Пока неизвестно")}
+          ${button("incoming-save-auto", "Вернуться к расчёту по СЛ")}` : ""}
         ${decisionProjection.ok && decisionProjection.finalOutcome !== "unknown" ? `${button("incoming-set-no-damage", "Без урона")}
           ${button("incoming-set-has-damage", "Есть урон")}` : ""}
         ${save.hasDamage === true && decisionProjection.ok && decisionProjection.finalOutcome !== "unknown" ? `
@@ -274,11 +301,7 @@ export function renderIncomingWorkspace(session, state) {
           <option value="failure-full" ${save.effectProfile === "failure-full" ? "selected" : ""}>Полный урон при провале</option>
           <option value="save-half" ${save.effectProfile === "save-half" ? "selected" : ""}>Половина при успехе</option></select></label>` : ""}` : ""}`;
       body += `<div data-incoming-preview>${renderIncomingPreview(session, state)}</div>`;
-      footer = `${button("incoming-apply-save",
-        amendmentSelected ? "Применить результат · 1 ци"
-          : projection.ok && projection.finalOutcome === "unknown" ? "Записать без исхода" : "Применить результат",
-        `class="btn btn--primary"${!projection.ok || projection.canCommit !== true || needsFinalOutcome || amendmentUnavailable ? " disabled" : ""}`)}
-        ${button("incoming-back", "Назад")}${button("incoming-cancel", "Отмена")}`;
+      footer = renderIncomingSaveFooter(session, state);
       break;
       }
     case "result":
