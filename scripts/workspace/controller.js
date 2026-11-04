@@ -77,6 +77,7 @@ import {
   resolveCharacterRollConsequence,
 } from "../rolls/commands.js";
 import { getSaraRollBreakdown } from "../rolls/providers/sara.js";
+import { createSavingThrowDraft } from "../rolls/saving-throw-flow.js";
 import {
   closeWorkspaceHost,
   focusWorkspaceHeading,
@@ -1225,6 +1226,10 @@ function handleIncomingAction(action) {
       draft.stage = "save-consequence";
     }
   } else if (action === "incoming-save-amendment") {
+    if (draft.rollDraft.amendment === "base:spirit-of-tranquility") {
+      render();
+      return true;
+    }
     const previewRequest = {
       ...incomingRequestForDraft(draft),
       outcome: "failure",
@@ -1886,6 +1891,12 @@ export function openIncomingAttack(invoker = null, options = {}) {
   const allowed = {
     source: ["melee", "projectile", "spell"].includes(options.source) ? options.source : null,
     mode: options.mode === "direct-damage" ? "direct-damage" : null,
+    saveContext: options.saveContext ? {
+      ability: options.saveContext.ability,
+      source: options.saveContext.source,
+      rollMode: options.saveContext.rollMode,
+      entryKind: options.saveContext.entryKind,
+    } : null,
   };
   if (session?.appliedUnsaved) {
     return { ok: false, reason: "Сначала повторите сохранение уже применённого результата." };
@@ -1898,7 +1909,11 @@ export function openIncomingAttack(invoker = null, options = {}) {
     return { ok: false, reason: "Рабочая панель не смонтирована." };
   }
   const draft = createIncomingEventDraft(state, owner, allowed);
-  if (allowed.source) draft.stage = "damage";
+  if (allowed.saveContext) {
+    draft.source = allowed.saveContext.source === "spell" ? "spell" : null;
+    draft.stage = "save-input";
+    draft.rollDraft = { ...draft.rollDraft, ...draft.saveDraft, kind: "saving-throw" };
+  } else if (allowed.source) draft.stage = "damage";
   session = {
     workspaceSessionId: createId("incoming-event"),
     workspaceType: "incoming",
@@ -1924,12 +1939,38 @@ export function openIncomingAttack(invoker = null, options = {}) {
   return { ok: true, sessionId: session.workspaceSessionId };
 }
 
+export function openSaraSavingThrow(invoker = null, options = {}) {
+  const ability = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+    .includes(options.ability) ? options.ability : "strength";
+  const source = ["spell", "other", "unknown"].includes(options.source) ? options.source : "unknown";
+  return openIncomingAttack(invoker, {
+    saveContext: {
+      ability, source,
+      rollMode: source === "spell" ? "advantage" : "normal",
+      entryKind: options.entryKind === "incoming-spell-save"
+        ? "incoming-spell-save" : "standalone-save",
+    },
+  });
+}
+
 export function openSaraBattleCommand(commandId, invoker = null, options = {}) {
+  if (commandId === "character-roll" && options.rollPreset?.kind === "saving-throw" &&
+      getState().profile?.id === "sara-velaris") {
+    if (!getSaraRollBreakdown(
+      getState(), "saving-throw", options.rollPreset.id ?? "strength",
+    ).ok) return { ok: false, reason: "Выбранный шаблон проверки недоступен." };
+    return openSaraSavingThrow(invoker, {
+      ability: options.rollPreset.id,
+      source: "unknown",
+      entryKind: "standalone-save",
+    });
+  }
   if (commandId === "deflect-strike" || commandId === "deflect-missile") {
     return openIncomingAttack(invoker, {
       source: commandId === "deflect-missile" ? "projectile" : "melee",
     });
   }
+
   if (commandId === "incoming-damage") {
     return openIncomingAttack(invoker, { mode: "direct-damage" });
   }

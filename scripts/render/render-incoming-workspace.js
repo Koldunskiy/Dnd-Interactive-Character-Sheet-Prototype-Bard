@@ -133,7 +133,8 @@ export function renderIncomingPreview(session, state) {
 
 function incomingSavePreviewRequest(session, { eligibilityOnly = false } = {}) {
   const draft = session.incomingDraft;
-  const amendmentSelected = !eligibilityOnly && Boolean(draft.rollDraft.amendment);
+  const amendmentSelected = !eligibilityOnly && draft.stage === "save-consequence" &&
+    Boolean(draft.rollDraft.amendment);
   const outcome = eligibilityOnly ? "failure"
     : draft.stage === "save-input" ? "unknown"
       : amendmentSelected && !draft.rollDraft.amendedOutcome ? null
@@ -290,7 +291,8 @@ export function renderIncomingWorkspace(session, state) {
           <option value="dm-final" ${draft.rollDraft.damageBasis !== "full-effect" ? "selected" : ""}>Итоговый урон от ведущего</option>
           <option value="full-effect" ${draft.rollDraft.damageBasis === "full-effect" ? "selected" : ""}>Полный урон эффекта</option></select></label>
         ${draft.rollDraft.damageBasis === "full-effect" ? `<label>Профиль эффекта<select data-workspace-field name="effectProfile">
-          <option value="failure-full" ${draft.rollDraft.effectProfile !== "save-half" ? "selected" : ""}>Полный урон при провале</option>
+          <option value="" ${draft.rollDraft.effectProfile == null ? "selected" : ""} disabled>Выберите профиль эффекта</option>
+          <option value="failure-full" ${draft.rollDraft.effectProfile === "failure-full" ? "selected" : ""}>Полный урон при провале</option>
           <option value="save-half" ${draft.rollDraft.effectProfile === "save-half" ? "selected" : ""}>Половина при успехе</option></select></label>` : ""}` : ""}`;
       body += `<div data-incoming-preview>${renderIncomingPreview(session, state)}</div>`;
       footer = `${button("incoming-apply-save",

@@ -83,11 +83,11 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
         baseOutcome: "failure",
       };
     }
-    if (request.outcome !== "unknown" && request.hasDamage === true &&
-        !["dm-final", "full-effect"].includes(request.damageBasis)) {
+    const activeConsequence = request.outcome !== "unknown" && request.hasDamage === true;
+    if (activeConsequence && !["dm-final", "full-effect"].includes(request.damageBasis)) {
       return { ok: false, reason: "Уточните основу урона спасброска." };
     }
-    if (request.damageBasis === "full-effect" &&
+    if (activeConsequence && request.damageBasis === "full-effect" &&
         !["failure-full", "save-half"].includes(request.effectProfile)) {
       return { ok: false, reason: "Выберите профиль полного урона эффекта." };
     }
@@ -119,8 +119,9 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
         amendment,
         hasDamage: request.hasDamage === true,
         damage: damage.value,
-        damageBasis: request.damageBasis ?? null,
-        effectProfile: request.effectProfile ?? null,
+        damageBasis: activeConsequence ? request.damageBasis : null,
+        effectProfile: activeConsequence && request.damageBasis === "full-effect"
+          ? request.effectProfile : null,
         roll: {
           id: roll.id,
           firstD20: String(roll.firstD20),

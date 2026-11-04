@@ -1,3 +1,5 @@
+import { createSavingThrowDraft } from "../rolls/saving-throw-flow.js";
+
 function createOperationId(prefix) {
   return globalThis.crypto?.randomUUID?.() ??
     `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -30,6 +32,9 @@ export function createIncomingEventDraft(state, owner, options = {}) {
       baseOutcome: null,
       amendedOutcome: null,
     },
+    saveDraft: options.saveContext ? createSavingThrowDraft(options.saveContext) : null,
+    entryKind: options.saveContext?.entryKind === "standalone-save"
+      ? "standalone-save" : options.saveContext ? "incoming-spell-save" : null,
     replyDraft: {},
     operationIds: {
       apply: createOperationId("incoming-apply"),
