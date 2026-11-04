@@ -46,6 +46,12 @@ export function projectSavingThrow(state, saveDraft) {
       saveDraft.source === "spell" && saveDraft.rollMode !== "advantage") {
     return { ok: false, reason: "Источник или режим спасброска недопустим." };
   }
+  if (!["auto", "manual"].includes(saveDraft.baseOutcomeMode) ||
+      !["auto", "manual"].includes(saveDraft.finalOutcomeMode) ||
+      saveDraft.baseManualOutcome != null && !OUTCOMES.includes(saveDraft.baseManualOutcome) ||
+      saveDraft.finalManualOutcome != null && !OUTCOMES.includes(saveDraft.finalManualOutcome)) {
+    return { ok: false, reason: "Режим или ручной исход спасброска недопустим." };
+  }
   const breakdown = getSaraRollBreakdown(state, "saving-throw", saveDraft.ability);
   if (!breakdown.ok) return breakdown;
   const base = calculateCharacterRoll({
@@ -107,24 +113,41 @@ export function projectSavingThrow(state, saveDraft) {
     baseOutcomeSource: baseResolved.source, amendmentAvailability, amendmentPreview,
     finalRecord, finalOutcome: finalResolved.outcome, finalOutcomeSource: finalResolved.source,
     needsOutcome, needsConsequenceChoice, consequencePreview,
-    canCommit: !needsOutcome && !needsConsequenceChoice && (saveDraft.hasDamage !== true || Boolean(consequencePreview)),
+    canCommit: !needsOutcome && !needsConsequenceChoice &&
+      !(saveDraft.amendment && finalResolved.outcome === "unknown") &&
+      (saveDraft.hasDamage !== true || Boolean(consequencePreview)),
   };
 }
 
 export function buildCompletedSaveRequest(identity, projection, saveDraft) {
-  if (!projection?.ok) return null;
-  const outcome = projection.finalOutcome ?? "unknown";
+  if (!projection?.ok || projection.canCommit !== true ||
+      projection.finalOutcome == null && saveDraft?.amendment ||
+      projection.finalOutcome == null ||
+      projection.finalOutcome === "unknown" &&
+        (projection.finalOutcomeSource !== "manual" ||
+          (saveDraft.amendment
+            ? saveDraft.finalOutcomeMode !== "manual" || saveDraft.finalManualOutcome !== "unknown"
+            : saveDraft.baseOutcomeMode !== "manual" || saveDraft.baseManualOutcome !== "unknown"))) {
+    return null;
+  }
+  const outcome = projection.finalOutcome;
   const hasDamage = outcome !== "unknown" && saveDraft.hasDamage === true;
   return {
     kind: "completed-save",
     ...identity,
+    saveFlowVersion: 1,
     outcome,
     baseOutcome: projection.baseOutcome,
     baseOutcomeSource: projection.baseOutcomeSource,
     finalOutcome: projection.finalOutcome,
     finalOutcomeSource: projection.finalOutcomeSource,
+    baseOutcomeMode: saveDraft.baseOutcomeMode,
+    finalOutcomeMode: saveDraft.amendment
+      ? saveDraft.finalOutcomeMode : saveDraft.baseOutcomeMode,
     baseManualOutcome: projection.baseOutcomeSource === "manual" ? saveDraft.baseManualOutcome : null,
-    finalManualOutcome: projection.finalOutcomeSource === "manual" ? saveDraft.finalManualOutcome : null,
+    finalManualOutcome: projection.finalOutcomeSource === "manual"
+      ? saveDraft.amendment ? saveDraft.finalManualOutcome : saveDraft.baseManualOutcome
+      : null,
     amendment: saveDraft.amendment ? { techniqueId: saveDraft.amendment, baseOutcome: "failure" } : null,
     hasDamage,
     damage: hasDamage ? saveDraft.damage : null,

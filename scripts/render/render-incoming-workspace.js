@@ -2,13 +2,13 @@ import { getDerivedStats } from "../calculations.js";
 import { calculateDeflectionPreview } from "../combat/sara-combat.js";
 import {
   buildDeflectionParameters,
-  previewIncomingEvent,
 } from "../actions/incoming-event.js";
 import { parsePhysicalInteger } from "../combat/physical-input.js";
 import { renderSaraEndBattleButton } from "./sara-hud.js";
 import { incomingContextIsCurrent } from "../battle/incoming-event-draft.js";
 import { getEffectiveTechniqueIds } from "../selectors/techniques.js";
 import { previewIncomingReplyAttack } from "../actions/sara-combat.js";
+import { projectSavingThrow } from "../rolls/saving-throw-flow.js";
 
 const ABILITIES = [
   ["strength", "Сила"], ["dexterity", "Ловкость"], ["constitution", "Телосложение"],
@@ -101,69 +101,33 @@ export function renderIncomingPreview(session, state) {
       HP ${state.combat?.hp?.current ?? "—"} → ${Math.max(0, Number(state.combat?.hp?.current ?? 0) - (parsed.value - tempHp))}</p>`;
   }
   if (["save-input", "save-consequence"].includes(draft.stage)) {
-    const amendmentSelected = Boolean(draft.rollDraft.amendment);
-    const preview = previewIncomingEvent(state, incomingSavePreviewRequest(session));
-    if (!preview.ok) return `<p role="status">${escapeHtml(preview.reason)}</p>`;
-    const roll = preview.calculated;
+    const projection = projectSavingThrow(state, draft.stage === "save-input"
+      ? { ...draft.saveDraft, amendment: null }
+      : draft.saveDraft);
+    if (!projection.ok) return `<p role="status">${escapeHtml(projection.reason)}</p>`;
+    const amendmentSelected = Boolean(draft.saveDraft.amendment);
+    const roll = projection.finalRecord;
     if (draft.stage === "save-input") {
       return `<p>${escapeHtml(roll.label)}: ${roll.chosenD20} + ${roll.totalModifier} = <strong>${roll.total}</strong>
-        ${roll.dc == null ? " · Сложность не указана" : ` · СЛ ${roll.dc}; ожидаемый исход ${roll.total >= roll.dc ? "успех" : "провал"}`}</p>`;
+        ${roll.dc == null ? " · Сложность не указана; требуется ответ ведущего" :
+          ` · СЛ ${roll.dc}; исход: ${projection.baseOutcome === "success" ? "успех" : "провал"}`}</p>`;
     }
     if (amendmentSelected) {
-      const amendment = preview.amendmentPreview;
-      const finalOutcomeSelected = ["success", "failure"].includes(draft.rollDraft.amendedOutcome);
+      const amendment = projection.amendmentPreview;
       return `<p>Базовый итог: ${amendment.before.total} · провал. После поправки: ${roll.chosenD20} + ${roll.totalModifier} = <strong>${roll.total}</strong>.
-        ${roll.dc == null ? "СЛ не указана — уточните исход у ведущего." :
-          `СЛ ${roll.dc}; ожидаемый результат: ${roll.total >= roll.dc ? "успех" : "провал"}.`}
+        ${projection.finalOutcomeSource === "unresolved" ? "СЛ не указана — уточните исход у ведущего." :
+          `СЛ ${roll.dc}; исход: ${projection.finalOutcome === "success" ? "успех" : "провал"}.`}
         Ци при применении: ${state.combat?.ki?.current ?? "—"} → ${Math.max(0, Number(state.combat?.ki?.current ?? 0) - 1)}; реакция не расходуется.
-        ${finalOutcomeSelected && draft.rollDraft.hasDamage === true
-          ? ` ${escapeHtml(preview.ruleExplanation ?? "")} Итог к применению: <strong>${preview.finalDamage}</strong>.`
-          : finalOutcomeSelected ? "" : " Выберите окончательный исход ниже."}</p>`;
+        ${projection.consequencePreview
+          ? ` ${escapeHtml(projection.consequencePreview.ruleExplanation)} Итог к применению: <strong>${projection.consequencePreview.finalDamage}</strong>.`
+          : ""}</p>`;
     }
-    if (draft.outcome === "unknown") {
-      return "<p>Уточните исход у ведущего. Поправка после неизвестного базового исхода недоступна.</p>";
-    }
-    return `<p>${escapeHtml(roll.label)}: ${roll.chosenD20} + ${roll.totalModifier} = <strong>${roll.total}</strong> · базовый исход: ${draft.rollDraft.baseOutcome}.
-      ${draft.rollDraft.hasDamage === true
-        ? `${escapeHtml(preview.ruleExplanation ?? "")} Итог к применению: <strong>${preview.finalDamage}</strong>.`
+    return `<p>Базовый исход: ${projection.baseOutcome ?? "требуется решение ведущего"}.
+      ${projection.consequencePreview
+        ? `${escapeHtml(projection.consequencePreview.ruleExplanation)} Итог к применению: ${projection.consequencePreview.finalDamage}.`
         : ""}</p>`;
   }
   return "";
-}
-
-function incomingSavePreviewRequest(session, { eligibilityOnly = false } = {}) {
-  const draft = session.incomingDraft;
-  const amendmentSelected = !eligibilityOnly && draft.stage === "save-consequence" &&
-    Boolean(draft.rollDraft.amendment);
-  const outcome = eligibilityOnly ? "failure"
-    : draft.stage === "save-input" ? "unknown"
-      : amendmentSelected && !draft.rollDraft.amendedOutcome ? null
-        : draft.outcome ?? "unknown";
-  return {
-    kind: "completed-save",
-    battleId: draft.battleId,
-    eventId: draft.eventId,
-    phaseAtOpen: draft.phaseAtOpen,
-    ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
-    outcome,
-    amendment: amendmentSelected ? {
-      techniqueId: draft.rollDraft.amendment,
-      baseOutcome: draft.rollDraft.baseOutcome,
-    } : null,
-    hasDamage: !eligibilityOnly && outcome != null && outcome !== "unknown" &&
-      draft.rollDraft.hasDamage === true,
-    damage: draft.rollDraft.damage,
-    damageBasis: draft.rollDraft.damageBasis ?? "dm-final",
-    effectProfile: draft.rollDraft.effectProfile,
-    spellSaveSource: draft.source === "spell",
-    roll: {
-      id: draft.rollDraft.ability ?? "dexterity",
-      firstD20: draft.rollDraft.firstD20,
-      secondD20: draft.rollDraft.secondD20,
-      rollMode: draft.rollDraft.rollMode ?? "advantage",
-      dc: draft.rollDraft.dc,
-    },
-  };
 }
 
 export function renderIncomingCatchControls(session, state) {
@@ -248,57 +212,72 @@ export function renderIncomingWorkspace(session, state) {
         ${button("incoming-back", "Назад")}${button("incoming-cancel", "Отмена")}`;
       break;
     case "save-input":
-      body = `<label>Спасбросок<select data-workspace-field name="saveAbility">${ABILITIES.map(([key, label]) =>
-        `<option value="${key}" ${draft.rollDraft.ability === key ? "selected" : ""}>${label}</option>`).join("")}</select></label>
-        ${field("firstD20", "Первый физический к20", draft.rollDraft.firstD20 ?? "", 'type="number" min="1" max="20" step="1"')}
-        <label>Режим<select data-workspace-field name="rollMode">${["normal", "advantage", "disadvantage"].map((mode) =>
-        `<option value="${mode}" ${draft.rollDraft.rollMode === mode ? "selected" : ""}>${mode}</option>`).join("")}</select></label>
-        ${draft.rollDraft.rollMode !== "normal" ? field("secondD20", "Второй физический к20", draft.rollDraft.secondD20 ?? "", 'type="number" min="1" max="20" step="1"') : ""}
-        ${field("dc", "Сложность (если известна)", draft.rollDraft.dc ?? "", 'type="number" min="1" max="99" step="1"')}
+      {
+      const save = draft.saveDraft;
+      const projection = projectSavingThrow(state, { ...save, amendment: null });
+      const modes = save.source === "spell" ? ["advantage"] : ["normal", "advantage", "disadvantage"];
+      body = `<label>Источник<select data-workspace-field name="saveSource">${["unknown", "other", "spell"].map((source) =>
+        `<option value="${source}" ${save.source === source ? "selected" : ""}>${source === "unknown" ? "Не указан" : source === "other" ? "Другое" : "Заклинание"}</option>`).join("")}</select></label>
+        <label>Спасбросок<select data-workspace-field name="saveAbility">${ABILITIES.map(([key, label]) =>
+        `<option value="${key}" ${save.ability === key ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+        ${field("firstD20", "Первый физический к20", save.firstD20 ?? "", 'type="number" min="1" max="20" step="1"')}
+        <label>Режим<select data-workspace-field name="rollMode">${modes.map((mode) =>
+        `<option value="${mode}" ${save.rollMode === mode ? "selected" : ""}>${mode}</option>`).join("")}</select></label>
+        ${save.rollMode !== "normal" ? field("secondD20", "Второй физический к20", save.secondD20 ?? "", 'type="number" min="1" max="20" step="1"') : ""}
+        ${field("dc", "Сложность (если известна)", save.dc ?? "", 'type="number" min="1" max="99" step="1"')}
+        ${save.source === "spell" ? "<small>Спасбросок от заклинания использует текущее правило: преимущество «Сопротивления магии» Юань-ти.</small>" : ""}
         <div data-incoming-preview>${renderIncomingPreview(session, state)}</div>`;
-      footer = `${button("incoming-save-success", "Успех")}
-        ${button("incoming-save-failure", "Провал")}
-        ${button("incoming-save-unknown", "Исход пока неизвестен")}
+      const autoReady = projection.ok && projection.baseOutcome != null;
+      footer = `${save.baseOutcomeMode === "manual" ? `${button("incoming-save-success", "Успех")}
+        ${button("incoming-save-failure", "Провал")}${button("incoming-save-unknown", "Пока неизвестно")}
+        ${button("incoming-save-auto", "Вернуться к расчёту по СЛ")}` :
+        `${autoReady ? button("incoming-save-continue", "К последствиям", 'class="btn btn--primary"') :
+          `${button("incoming-save-success", "Успех")}${button("incoming-save-failure", "Провал")}${button("incoming-save-unknown", "Исход пока неизвестен")}`}
+        ${button("incoming-save-override", "Указать исход по решению ведущего")}`}
         ${button("incoming-back", "Назад")}${button("incoming-cancel", "Отмена")}`;
       break;
+      }
     case "save-consequence":
       {
-      const amendmentSelected = Boolean(draft.rollDraft.amendment);
-      const eligibilityPreview = previewIncomingEvent(
-        state, incomingSavePreviewRequest(session, { eligibilityOnly: true }),
-      );
-      const canOfferAmendment = draft.rollDraft.baseOutcome === "failure" &&
-        eligibilityPreview.ok &&
-        eligibilityPreview.amendmentPreview?.availability === true;
-      const needsFinalOutcome = amendmentSelected &&
-        !["success", "failure"].includes(draft.rollDraft.amendedOutcome);
+      const save = draft.saveDraft;
+      const projection = projectSavingThrow(state, save);
+      const decisionProjection = projectSavingThrow(state, { ...save, hasDamage: false });
+      const amendmentSelected = Boolean(save.amendment);
+      const canOfferAmendment = decisionProjection.ok && decisionProjection.baseOutcome === "failure" &&
+        decisionProjection.amendmentAvailability?.availability === true;
+      const needsFinalOutcome = decisionProjection.ok && decisionProjection.needsOutcome;
       const amendmentUnavailable = amendmentSelected &&
-        (!eligibilityPreview.ok ||
-          eligibilityPreview.amendmentPreview?.availability !== true);
+        (!decisionProjection.ok || !decisionProjection.amendmentPreview?.ok);
       body = `<p>Выберите последствие спасброска.</p>
-        ${draft.outcome === "unknown" ? "<p>Запись будет сохранена без исхода и без изменения HP.</p>" : ""}
+        ${decisionProjection.ok && decisionProjection.finalOutcome === "unknown" ? "<p>Запись будет сохранена без исхода и без изменения HP.</p>" : ""}
         ${canOfferAmendment ? button("incoming-save-amendment",
           `Дух спокойствия · +${derived.abilityModifiers.wisdom} · 1 ци`) : ""}
-        ${amendmentSelected ? `<p>Поправка выбрана. Окончательный исход остаётся за игроком.</p>
+        ${amendmentSelected ? `<p>Поправка выбрана.${needsFinalOutcome ? " Уточните окончательный исход у ведущего." : " Исход рассчитан по СЛ."}</p>
           ${button("incoming-save-amendment-decline", "Не использовать")}
-          ${button("incoming-save-success", "Успех после поправки")}
-          ${button("incoming-save-failure", "Провал после поправки")}` : ""}
-        ${draft.outcome !== "unknown" ? `${button("incoming-set-no-damage", "Без урона")}
+          ${needsFinalOutcome ? `${button("incoming-save-success", "Успех после поправки")}
+          ${button("incoming-save-failure", "Провал после поправки")}
+          ${button("incoming-save-unknown", "Пока неизвестно")}` : ""}
+          ${save.finalOutcomeMode === "manual"
+            ? button("incoming-save-auto-final", "Вернуться к расчёту по СЛ")
+            : button("incoming-save-override", "Указать исход по решению ведущего")}` : ""}
+        ${!amendmentSelected && save.baseOutcomeMode === "auto"
+          ? button("incoming-save-override", "Указать исход по решению ведущего") : ""}
+        ${decisionProjection.ok && decisionProjection.finalOutcome !== "unknown" ? `${button("incoming-set-no-damage", "Без урона")}
           ${button("incoming-set-has-damage", "Есть урон")}` : ""}
-        ${draft.rollDraft.hasDamage === true && draft.outcome !== "unknown" ? `
-        ${field("saveDamage", "Урон (0 допустим)", draft.rollDraft.damage ?? "", 'type="number" min="0" step="1"')}
+        ${save.hasDamage === true && decisionProjection.ok && decisionProjection.finalOutcome !== "unknown" ? `
+        ${field("saveDamage", "Урон (0 допустим)", save.damage ?? "", 'type="number" min="0" step="1"')}
         <label>Основа урона<select data-workspace-field name="damageBasis">
-          <option value="dm-final" ${draft.rollDraft.damageBasis !== "full-effect" ? "selected" : ""}>Итоговый урон от ведущего</option>
-          <option value="full-effect" ${draft.rollDraft.damageBasis === "full-effect" ? "selected" : ""}>Полный урон эффекта</option></select></label>
-        ${draft.rollDraft.damageBasis === "full-effect" ? `<label>Профиль эффекта<select data-workspace-field name="effectProfile">
-          <option value="" ${draft.rollDraft.effectProfile == null ? "selected" : ""} disabled>Выберите профиль эффекта</option>
-          <option value="failure-full" ${draft.rollDraft.effectProfile === "failure-full" ? "selected" : ""}>Полный урон при провале</option>
-          <option value="save-half" ${draft.rollDraft.effectProfile === "save-half" ? "selected" : ""}>Половина при успехе</option></select></label>` : ""}` : ""}`;
+          <option value="dm-final" ${save.damageBasis === "dm-final" ? "selected" : ""}>Итоговый урон от ведущего</option>
+          <option value="full-effect" ${save.damageBasis === "full-effect" ? "selected" : ""}>Полный урон эффекта</option></select></label>
+        ${save.damageBasis === "full-effect" ? `<label>Профиль эффекта<select data-workspace-field name="effectProfile">
+          <option value="" ${save.effectProfile == null ? "selected" : ""} disabled>Выберите профиль эффекта</option>
+          <option value="failure-full" ${save.effectProfile === "failure-full" ? "selected" : ""}>Полный урон при провале</option>
+          <option value="save-half" ${save.effectProfile === "save-half" ? "selected" : ""}>Половина при успехе</option></select></label>` : ""}` : ""}`;
       body += `<div data-incoming-preview>${renderIncomingPreview(session, state)}</div>`;
       footer = `${button("incoming-apply-save",
         amendmentSelected ? "Применить результат · 1 ци"
-          : draft.outcome === "unknown" ? "Записать без исхода" : "Применить результат",
-        `class="btn btn--primary"${needsFinalOutcome || amendmentUnavailable ? " disabled" : ""}`)}
+          : projection.ok && projection.finalOutcome === "unknown" ? "Записать без исхода" : "Применить результат",
+        `class="btn btn--primary"${!projection.ok || projection.canCommit !== true || needsFinalOutcome || amendmentUnavailable ? " disabled" : ""}`)}
         ${button("incoming-back", "Назад")}${button("incoming-cancel", "Отмена")}`;
       break;
       }

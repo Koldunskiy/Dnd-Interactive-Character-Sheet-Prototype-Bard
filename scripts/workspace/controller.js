@@ -77,7 +77,11 @@ import {
   resolveCharacterRollConsequence,
 } from "../rolls/commands.js";
 import { getSaraRollBreakdown } from "../rolls/providers/sara.js";
-import { createSavingThrowDraft } from "../rolls/saving-throw-flow.js";
+import {
+  buildCompletedSaveRequest,
+  createSavingThrowDraft,
+  projectSavingThrow,
+} from "../rolls/saving-throw-flow.js";
 import {
   closeWorkspaceHost,
   focusWorkspaceHeading,
@@ -606,6 +610,8 @@ function render() {
   if (!session) return;
   const state = getState();
   if (session.workspaceType === "incoming") {
+    const incoming = session.incomingDraft;
+    syncSaveCompatibility(incoming, state);
     syncIncomingPreviewFingerprint(session.incomingDraft, state);
   }
   const sceneControls = document.querySelector("[data-sara-task-scene-controls]");
@@ -632,11 +638,12 @@ function render() {
       Boolean(session.appliedUnsaved),
       session.workspaceType === "incoming" ? session.incomingDraft.stage : null,
       session.workspaceType === "incoming" && session.incomingDraft.stage === "save-input"
-        ? session.incomingDraft.rollDraft.rollMode : null,
+        ? [session.incomingDraft.saveDraft.source, session.incomingDraft.saveDraft.rollMode] : null,
       session.workspaceType === "incoming" && session.incomingDraft.stage === "save-consequence"
-        ? [session.incomingDraft.rollDraft.amendment, session.incomingDraft.rollDraft.baseOutcome,
-          session.incomingDraft.rollDraft.amendedOutcome, session.incomingDraft.rollDraft.damageBasis,
-          session.incomingDraft.rollDraft.effectProfile, session.incomingDraft.rollDraft.hasDamage] : null,
+        ? [session.incomingDraft.saveDraft.amendment, session.incomingDraft.saveDraft.baseOutcomeMode,
+          session.incomingDraft.saveDraft.baseManualOutcome, session.incomingDraft.saveDraft.finalOutcomeMode,
+          session.incomingDraft.saveDraft.finalManualOutcome, session.incomingDraft.saveDraft.damageBasis,
+          session.incomingDraft.saveDraft.effectProfile, session.incomingDraft.saveDraft.hasDamage] : null,
     ]),
   });
   session.forceWorkspaceBodyRender = false;
@@ -712,6 +719,7 @@ function incomingRequestForDraft(draft) {
     eventId: draft.eventId,
     phaseAtOpen: draft.phaseAtOpen,
     ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
+    entryKind: draft.entryKind,
   };
   if (draft.stage === "damage") {
     return {
@@ -731,29 +739,8 @@ function incomingRequestForDraft(draft) {
     };
   }
   if (draft.stage === "save-consequence") {
-    return {
-      kind: "completed-save",
-      ...identity,
-      outcome: draft.outcome,
-      amendment: draft.rollDraft.amendment
-        ? {
-          techniqueId: draft.rollDraft.amendment,
-          baseOutcome: draft.rollDraft.baseOutcome,
-        }
-        : null,
-      hasDamage: draft.outcome !== "unknown" && draft.rollDraft.hasDamage === true,
-      damage: draft.rollDraft.damage,
-      damageBasis: draft.rollDraft.damageBasis ?? "dm-final",
-      effectProfile: draft.rollDraft.effectProfile,
-      spellSaveSource: draft.source === "spell",
-      roll: {
-        id: draft.rollDraft.ability,
-        firstD20: draft.rollDraft.firstD20,
-        secondD20: draft.rollDraft.secondD20,
-        rollMode: draft.rollDraft.rollMode,
-        dc: draft.rollDraft.dc,
-      },
-    };
+    const projection = projectSavingThrow(getState(), draft.saveDraft);
+    return buildCompletedSaveRequest(identity, projection, draft.saveDraft);
   }
   if (draft.stage === "miss-response" && draft.outcome === "miss") {
     return {
@@ -1214,55 +1201,74 @@ function handleIncomingAction(action) {
   }
   if (action === "incoming-save-success" || action === "incoming-save-failure") {
     const outcome = action === "incoming-save-success" ? "success" : "failure";
-    if (draft.stage === "save-consequence" && draft.rollDraft.amendment) {
-      draft.rollDraft.amendedOutcome = outcome;
-      draft.outcome = outcome;
+    if (draft.stage === "save-consequence" && draft.saveDraft?.amendment) {
+      draft.saveDraft.finalOutcomeMode = "manual";
+      draft.saveDraft.finalManualOutcome = outcome;
     } else {
-      draft.rollDraft.baseOutcome = outcome;
-      draft.rollDraft.amendment = null;
-      draft.rollDraft.amendedOutcome = null;
-      draft.outcome = outcome;
-      draft.rollDraft.hasDamage = false;
+      draft.saveDraft.baseOutcomeMode = "manual";
+      draft.saveDraft.baseManualOutcome = outcome;
       draft.stage = "save-consequence";
     }
+  } else if (action === "incoming-save-continue") {
+    const projection = projectSavingThrow(state, draft.saveDraft);
+    if (projection.ok && projection.baseOutcome != null) {
+      draft.saveDraft.baseOutcomeMode = "auto";
+      draft.saveDraft.baseManualOutcome = null;
+      draft.stage = "save-consequence";
+    } else {
+      draft.error = projection.reason ?? "Сначала укажите исход спасброска.";
+    }
+  } else if (action === "incoming-save-override") {
+    if (draft.stage === "save-consequence" && draft.saveDraft.amendment) {
+      draft.saveDraft.finalOutcomeMode = "manual";
+      draft.saveDraft.finalManualOutcome = null;
+    } else {
+      draft.saveDraft.baseOutcomeMode = "manual";
+      draft.saveDraft.baseManualOutcome = null;
+      draft.stage = "save-input";
+    }
+  } else if (action === "incoming-save-auto") {
+    draft.saveDraft.baseOutcomeMode = "auto";
+    draft.saveDraft.baseManualOutcome = null;
+    draft.saveDraft.finalOutcomeMode = "auto";
+    draft.saveDraft.finalManualOutcome = null;
+  } else if (action === "incoming-save-auto-final") {
+    draft.saveDraft.finalOutcomeMode = "auto";
+    draft.saveDraft.finalManualOutcome = null;
   } else if (action === "incoming-save-amendment") {
-    if (draft.rollDraft.amendment === "base:spirit-of-tranquility") {
+    if (draft.saveDraft?.amendment === "base:spirit-of-tranquility") {
       render();
       return true;
     }
-    const previewRequest = {
-      ...incomingRequestForDraft(draft),
-      outcome: "failure",
-      amendment: null,
-      hasDamage: false,
-      damage: null,
-    };
-    const availability = previewIncomingEvent(getState(), previewRequest);
-    if (!availability.ok || availability.amendmentPreview?.availability !== true) {
-      draft.error = availability.amendmentPreview?.reason ??
-        availability.reason ?? "Дух спокойствия сейчас недоступен.";
+    const projection = projectSavingThrow(getState(), draft.saveDraft);
+    if (!projection.ok || projection.baseOutcome !== "failure" ||
+        projection.amendmentAvailability?.availability !== true) {
+      draft.error = projection.amendmentAvailability?.reason ??
+        projection.reason ?? "Дух спокойствия сейчас недоступен.";
     } else {
-      draft.rollDraft.amendment = "base:spirit-of-tranquility";
-      draft.rollDraft.amendedOutcome = null;
-      draft.outcome = null;
+      draft.saveDraft.amendment = "base:spirit-of-tranquility";
+      draft.saveDraft.finalOutcomeMode = "auto";
+      draft.saveDraft.finalManualOutcome = null;
       draft.error = "";
     }
   } else if (action === "incoming-save-amendment-decline") {
-    draft.rollDraft.amendment = null;
-    draft.rollDraft.amendedOutcome = null;
-    draft.outcome = draft.rollDraft.baseOutcome;
+    draft.saveDraft.amendment = null;
+    draft.saveDraft.finalOutcomeMode = "auto";
+    draft.saveDraft.finalManualOutcome = null;
     draft.error = "";
   } else if (action === "incoming-save-unknown") {
-    draft.rollDraft.baseOutcome = "unknown";
-    draft.rollDraft.amendment = null;
-    draft.rollDraft.amendedOutcome = null;
-    draft.outcome = "unknown";
-    draft.rollDraft.hasDamage = false;
+    if (draft.saveDraft?.amendment) {
+      draft.saveDraft.finalOutcomeMode = "manual";
+      draft.saveDraft.finalManualOutcome = "unknown";
+    } else {
+      draft.saveDraft.baseOutcomeMode = "manual";
+      draft.saveDraft.baseManualOutcome = "unknown";
+    }
     draft.stage = "save-consequence";
   } else if (action === "incoming-set-has-damage") {
-    draft.rollDraft.hasDamage = true;
+    draft.saveDraft.hasDamage = true;
   } else if (action === "incoming-set-no-damage") {
-    draft.rollDraft.hasDamage = false;
+    draft.saveDraft.hasDamage = false;
   }
   else if (action === "incoming-hit") draft.stage = "source";
   else if (action === "incoming-miss") {
@@ -1376,13 +1382,10 @@ function handleIncomingAction(action) {
     draft.stage = "damage";
   } else if (action === "incoming-spell-save") {
     draft.source = "spell";
-    draft.rollDraft = {
-      ...draft.rollDraft,
-      kind: "saving-throw",
-      ability: draft.rollDraft.ability ?? "dexterity",
-      rollMode: draft.rollDraft.rollMode ?? "advantage",
-      firstD20: draft.rollDraft.firstD20 ?? "",
-    };
+    draft.saveDraft ??= createSavingThrowDraft({ ability: "dexterity", source: "spell" });
+    draft.saveDraft.source = "spell";
+    draft.saveDraft.rollMode = "advantage";
+    draft.entryKind = "incoming-spell-save";
     draft.stage = "save-input";
   } else if (action === "incoming-open-deflect") {
     draft.stage = "deflect";
@@ -1393,11 +1396,16 @@ function handleIncomingAction(action) {
   } else if (action === "incoming-apply-damage" ||
       action === "incoming-apply-deflection" || action === "incoming-apply-save") {
     if (active.submitting) return true;
-    if (action === "incoming-apply-save" && draft.rollDraft.amendment &&
-        !["success", "failure"].includes(draft.rollDraft.amendedOutcome)) {
-      draft.error = "Выберите окончательный исход спасброска после поправки.";
-      render();
-      return true;
+    if (action === "incoming-apply-save") {
+      const projection = projectSavingThrow(state, draft.saveDraft);
+      if (!projection.ok || projection.canCommit !== true) {
+        draft.error = projection.reason ?? (projection.needsOutcome
+          ? "Уточните исход у ведущего."
+          : projection.needsConsequenceChoice ? "Выберите последствие спасброска."
+            : "Проверьте параметры спасброска.");
+        render();
+        return true;
+      }
     }
     const liveOwner = getSessionContext();
     if (!isCurrentSession(active.owner) ||
@@ -1413,32 +1421,7 @@ function handleIncomingAction(action) {
       ? draft.operationIds.save : draft.operationIds.apply;
     const returnStage = draft.stage;
     const request = action === "incoming-apply-save"
-      ? {
-        kind: "completed-save",
-        battleId: draft.battleId,
-        eventId: draft.eventId,
-        phaseAtOpen: draft.phaseAtOpen,
-        ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
-        outcome: draft.outcome,
-        amendment: draft.rollDraft.amendment
-          ? {
-            techniqueId: draft.rollDraft.amendment,
-            baseOutcome: draft.rollDraft.baseOutcome,
-          }
-          : null,
-        hasDamage: draft.outcome !== "unknown" && draft.rollDraft.hasDamage === true,
-        damage: draft.rollDraft.damage,
-        damageBasis: draft.rollDraft.damageBasis ?? "dm-final",
-        effectProfile: draft.rollDraft.effectProfile,
-        spellSaveSource: draft.source === "spell",
-        roll: {
-          id: draft.rollDraft.ability,
-          firstD20: draft.rollDraft.firstD20,
-          secondD20: draft.rollDraft.secondD20,
-          rollMode: draft.rollDraft.rollMode,
-          dc: draft.rollDraft.dc,
-        },
-      }
+      ? incomingRequestForDraft({ ...draft, stage: "save-consequence" })
       : action === "incoming-apply-damage" ? {
         kind: "direct-damage", damage: draft.rawDamage,
         battleId: draft.battleId, eventId: draft.eventId,
@@ -1468,6 +1451,58 @@ function clearAttackInputFeedback({ hideNaturalException = false } = {}) {
     const exception = root?.querySelector("[data-natural-exception]");
     if (exception) exception.hidden = true;
   }
+}
+
+function invalidateSaveDecision(saveDraft) {
+  saveDraft.amendment = null;
+  saveDraft.baseOutcomeMode = "auto";
+  saveDraft.baseManualOutcome = null;
+  saveDraft.finalOutcomeMode = "auto";
+  saveDraft.finalManualOutcome = null;
+}
+
+function syncSaveCompatibility(draft, state) {
+  if (!draft.saveDraft || !["save-input", "save-consequence"].includes(draft.stage)) return;
+  const projection = projectSavingThrow(state,
+    draft.stage === "save-input" ? { ...draft.saveDraft, amendment: null } : draft.saveDraft);
+  draft.rollDraft = {
+    kind: "saving-throw",
+    ability: draft.saveDraft.ability,
+    source: draft.saveDraft.source,
+    rollMode: draft.saveDraft.rollMode,
+    firstD20: draft.saveDraft.firstD20,
+    secondD20: draft.saveDraft.secondD20,
+    dc: draft.saveDraft.dc,
+    amendment: draft.saveDraft.amendment,
+    baseOutcome: projection.ok ? projection.baseOutcome : null,
+    amendedOutcome: draft.saveDraft.amendment && projection.ok ? projection.finalOutcome : null,
+    hasDamage: draft.saveDraft.hasDamage,
+    damage: draft.saveDraft.damage,
+    damageBasis: draft.saveDraft.damageBasis,
+    effectProfile: draft.saveDraft.effectProfile,
+  };
+  draft.outcome = projection.ok ? projection.finalOutcome : null;
+}
+
+function switchGenericToSavingThrow(commandSession, genericDraft) {
+  const ability = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+    .includes(genericDraft.id) ? genericDraft.id : "strength";
+  const saveDraft = createIncomingEventDraft(getState(), commandSession.owner, {
+    saveContext: { ability, source: "unknown", entryKind: "standalone-save" },
+  });
+  saveDraft.stage = "save-input";
+  saveDraft.saveDraft.firstD20 = genericDraft.firstD20 ?? "";
+  saveDraft.saveDraft.secondD20 = genericDraft.secondD20 ?? "";
+  saveDraft.saveDraft.rollMode = ["normal", "advantage", "disadvantage"].includes(genericDraft.rollMode)
+    ? genericDraft.rollMode : "normal";
+  commandSession.workspaceType = "incoming";
+  commandSession.incomingDraft = saveDraft;
+  commandSession.currentStep = "incoming";
+  commandSession.currentStepKey = `incoming:${saveDraft.eventId}`;
+  commandSession.rawInputsByStep = {};
+  commandSession.operationIdsByIntent = {};
+  commandSession.dirty = true;
+  render();
 }
 
 function updateInput(field) {
@@ -1524,22 +1559,28 @@ function updateInput(field) {
       syncIncomingPreviewFingerprint(draft, getState());
       return;
     }
-    if (["saveAbility", "firstD20", "secondD20", "rollMode", "dc"].includes(field.name)) {
-      draft.rollDraft.amendment = null;
-      draft.rollDraft.amendedOutcome = null;
-      draft.rollDraft.baseOutcome = null;
-      draft.outcome = null;
-    }
     if (field.name === "incomingDamage") draft.rawDamage = field.value;
     else if (field.name === "deflectRoll") draft.rawDeflectRoll = field.value;
-    else if (field.name === "saveDamage") draft.rollDraft.damage = field.value;
-    else if (["saveAbility", "firstD20", "secondD20", "rollMode", "dc",
-      "saveDamage", "damageBasis", "effectProfile"].includes(field.name)) {
-      draft.rollDraft[field.name] = field.type === "checkbox" ? field.checked : field.value;
-      if (field.name === "saveAbility") draft.rollDraft.ability = field.value;
+    else if (field.name === "saveDamage") draft.saveDraft.damage = field.value;
+    else if (["saveAbility", "saveSource", "firstD20", "secondD20", "rollMode", "dc",
+      "damageBasis", "effectProfile"].includes(field.name)) {
+      const sourceDecisionChanged = ["saveAbility", "saveSource", "firstD20",
+        "secondD20", "rollMode", "dc"].includes(field.name);
+      if (sourceDecisionChanged) invalidateSaveDecision(draft.saveDraft);
+      const key = {
+        saveAbility: "ability",
+        saveSource: "source",
+        saveDamage: "damage",
+      }[field.name] ?? field.name;
+      draft.saveDraft[key] = field.type === "checkbox" ? field.checked : field.value;
+      if (field.name === "saveSource" && field.value === "spell") {
+        draft.saveDraft.rollMode = "advantage";
+      }
     }
+    syncSaveCompatibility(draft, getState());
     session.dirty = true;
-    const structural = ["rollMode", "damageBasis", "effectProfile", "saveAbility"].includes(field.name);
+    const structural = ["rollMode", "damageBasis", "effectProfile", "saveAbility",
+      "saveSource"].includes(field.name);
     if (structural) {
       draft.error = "";
       const fieldName = field.name;
@@ -1583,6 +1624,11 @@ function updateInput(field) {
       field.name === "spellSaveSource" && field.checked) {
     draft.kind = "saving-throw";
     draft.rollMode = "advantage";
+  }
+  if (session.workspaceType === "command" && session.scenarioId === "character-roll" &&
+      field.name === "kind" && field.value === "saving-throw") {
+    switchGenericToSavingThrow(session, draft);
+    return;
   }
   session.dirty = true;
   session.error = "";

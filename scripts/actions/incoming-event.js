@@ -9,6 +9,7 @@ import { getSaraRollBreakdown } from "../rolls/providers/sara.js";
 import { calculateCharacterRoll } from "../rolls/calculations.js";
 import { calculateRollConsequencePreview } from "../rolls/consequences.js";
 import { previewIncomingSaveAmendment } from "../rolls/incoming-save-amendment.js";
+import { projectSavingThrow } from "../rolls/saving-throw-flow.js";
 
 export function normalizeIncomingEventRequest(request, state = getState()) {
   if (!request || !["direct-damage", "deflection", "completed-save", "ebb-and-flow"].includes(request.kind)) {
@@ -60,6 +61,9 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
   }
   if (request.kind === "completed-save") {
     const roll = request.roll;
+    if (typeof request.hasDamage !== "boolean") {
+      return { ok: false, reason: "Выберите наличие последствий спасброска." };
+    }
     if (!roll || !["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"].includes(roll.id) ||
         !["success", "failure", "unknown"].includes(request.outcome)) {
       return { ok: false, reason: "Выберите характеристику и допустимый исход спасброска." };
@@ -82,6 +86,31 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
         techniqueId: "base:spirit-of-tranquility",
         baseOutcome: "failure",
       };
+    }
+    if (Object.prototype.hasOwnProperty.call(request, "baseOutcomeMode")) {
+      const validSource = (value) => ["dc", "manual"].includes(value);
+      if (!["auto", "manual"].includes(request.baseOutcomeMode) ||
+          !["auto", "manual"].includes(request.finalOutcomeMode) ||
+          !validSource(request.baseOutcomeSource) ||
+          !validSource(request.finalOutcomeSource) ||
+          !["success", "failure", "unknown"].includes(request.baseOutcome) ||
+          !["success", "failure", "unknown"].includes(request.finalOutcome) ||
+          request.outcome !== request.finalOutcome ||
+          request.baseManualOutcome != null &&
+            !["success", "failure", "unknown"].includes(request.baseManualOutcome) ||
+          request.finalManualOutcome != null &&
+            !["success", "failure", "unknown"].includes(request.finalManualOutcome) ||
+          request.amendment == null &&
+            (request.finalOutcome !== request.baseOutcome ||
+              request.finalOutcomeSource !== request.baseOutcomeSource)) {
+        return { ok: false, reason: "Evidence исхода спасброска недопустимо." };
+      }
+    }
+    if (request.saveFlowVersion != null &&
+        (request.saveFlowVersion !== 1 ||
+          !["standalone-save", "incoming-spell-save"].includes(request.entryKind) ||
+          !Object.prototype.hasOwnProperty.call(request, "baseOutcomeMode"))) {
+      return { ok: false, reason: "Версия или тип нового save workflow недопустимы." };
     }
     const activeConsequence = request.outcome !== "unknown" && request.hasDamage === true;
     if (activeConsequence && !["dm-final", "full-effect"].includes(request.damageBasis)) {
@@ -130,6 +159,20 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
           dc: roll.dc == null || String(roll.dc).trim() === "" ? null : String(roll.dc),
         },
         spellSaveSource: request.spellSaveSource === true,
+        ...(Object.prototype.hasOwnProperty.call(request, "baseOutcomeMode") ? {
+          baseOutcome: request.baseOutcome,
+          baseOutcomeSource: request.baseOutcomeSource,
+          finalOutcome: request.finalOutcome,
+          finalOutcomeSource: request.finalOutcomeSource,
+          baseOutcomeMode: request.baseOutcomeMode,
+          finalOutcomeMode: request.finalOutcomeMode,
+          baseManualOutcome: request.baseManualOutcome ?? null,
+          finalManualOutcome: request.finalManualOutcome ?? null,
+        } : {}),
+        ...(request.saveFlowVersion === 1 ? {
+          saveFlowVersion: 1,
+          entryKind: request.entryKind,
+        } : {}),
       },
     };
   }
@@ -315,6 +358,34 @@ export function commitIncomingEvent(context, request, operationId) {
           ? normalized.request.effectProfile : "none",
       }, breakdown);
       if (!calculated.ok) throw new Error(calculated.reason);
+      if (Object.prototype.hasOwnProperty.call(normalized.request, "baseOutcomeMode")) {
+        const saveDraft = {
+          ability: normalized.request.roll.id,
+          source: normalized.request.spellSaveSource ? "spell" : "unknown",
+          rollMode: normalized.request.roll.rollMode,
+          firstD20: normalized.request.roll.firstD20,
+          secondD20: normalized.request.roll.secondD20,
+          dc: normalized.request.roll.dc,
+          baseOutcomeMode: normalized.request.baseOutcomeMode,
+          baseManualOutcome: normalized.request.baseManualOutcome,
+          amendment: normalized.request.amendment?.techniqueId ?? null,
+          finalOutcomeMode: normalized.request.finalOutcomeMode,
+          finalManualOutcome: normalized.request.finalManualOutcome,
+          hasDamage: normalized.request.outcome === "unknown" ? false : normalized.request.hasDamage,
+          damage: normalized.request.damage,
+          damageBasis: normalized.request.damageBasis ?? "dm-final",
+          effectProfile: normalized.request.effectProfile,
+        };
+        const projection = projectSavingThrow(draft, saveDraft);
+        if (!projection.ok || projection.canCommit !== true ||
+            projection.baseOutcome !== normalized.request.baseOutcome ||
+            projection.baseOutcomeSource !== normalized.request.baseOutcomeSource ||
+            projection.finalOutcome !== normalized.request.finalOutcome ||
+            projection.finalOutcomeSource !== normalized.request.finalOutcomeSource ||
+            normalized.request.outcome !== projection.finalOutcome) {
+          throw new Error(projection.reason ?? "Исход спасброска не совпадает с повторным расчётом.");
+        }
+      }
       const amendmentBaseRecord = {
         ...calculated,
         manualOutcome: normalized.request.amendment?.baseOutcome ?? normalized.request.outcome,
@@ -332,8 +403,26 @@ export function commitIncomingEvent(context, request, operationId) {
       delete record.baseOutcome;
       record.recordedAt = new Date().toISOString();
       record.id = operationId;
-      record.manualOutcome = known ? normalized.request.outcome : null;
-      record.dcResult = known ? normalized.request.outcome === "success" : null;
+      if (Object.prototype.hasOwnProperty.call(normalized.request, "baseOutcomeMode")) {
+        record.baseOutcome = normalized.request.baseOutcome;
+        record.finalOutcome = normalized.request.finalOutcome;
+        record.baseOutcomeSource = normalized.request.baseOutcomeSource;
+        record.finalOutcomeSource = normalized.request.finalOutcomeSource;
+        record.baseTotal = calculated.total;
+        record.adjustedTotal = amendmentPreview.record.total;
+        record.baseManualOutcome = normalized.request.baseManualOutcome;
+        record.finalManualOutcome = normalized.request.finalManualOutcome;
+        record.override = normalized.request.baseOutcomeMode === "manual" ||
+          normalized.request.finalOutcomeMode === "manual";
+      }
+      record.manualOutcome = known &&
+        (!Object.prototype.hasOwnProperty.call(normalized.request, "baseOutcomeMode") ||
+          normalized.request.finalOutcomeSource === "manual")
+        ? normalized.request.outcome : null;
+      record.dcResult = known &&
+        (!Object.prototype.hasOwnProperty.call(normalized.request, "baseOutcomeMode") ||
+          normalized.request.finalOutcomeSource === "dc")
+        ? normalized.request.outcome === "success" : null;
       record.consequence = null;
       record.incomingEventId = normalized.request.eventId;
       record.appliedAmendments ??= [];

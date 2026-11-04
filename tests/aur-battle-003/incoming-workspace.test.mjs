@@ -385,8 +385,12 @@ test("production structural changes preserve incoming fields and focus the chang
   fireWorkspaceAction(dialog, "incoming-spell-save");
   structuralInput("rollMode", "advantage");
   assert.match(dialog.body.innerHTML, /Второй физический к20/);
+  structuralInput("saveSource", "other");
   structuralInput("rollMode", "normal");
   assert.doesNotMatch(dialog.body.innerHTML, /Второй физический к20/);
+  structuralInput("saveSource", "spell");
+  assert.match(dialog.body.innerHTML, /Второй физический к20/);
+  numericInput("secondD20", "12");
   numericInput("firstD20", "16");
   structuralInput("saveAbility", "dexterity");
   assert.equal(getWorkspaceSessionForTests().incomingDraft.rollDraft.firstD20, "16");

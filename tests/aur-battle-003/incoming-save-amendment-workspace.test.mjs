@@ -47,14 +47,15 @@ function openSaveInput(dialog) {
 
 function chooseFailedSave(dialog) {
   openSaveInput(dialog);
-  typeIncoming(dialog, "firstD20", "19");
+  typeIncoming(dialog, "firstD20", "15");
   typeIncoming(dialog, "secondD20", "1");
   typeIncoming(dialog, "dc", "25");
-  fireWorkspaceAction(dialog, "incoming-save-failure");
+  fireWorkspaceAction(dialog, "incoming-save-continue");
+  fireWorkspaceAction(dialog, "incoming-set-no-damage");
   assert.equal(getWorkspaceSessionForTests().incomingDraft.rollDraft.baseOutcome, "failure");
 }
 
-test("production handler applies selected Spirit of Tranquility only after explicit amended outcome", () => {
+test("production handler automatically resolves amended known DC and applies Spirit once", () => {
   const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
   chooseFailedSave(dialog);
   const beforePreview = structuredClone(getState());
@@ -63,18 +64,21 @@ test("production handler applies selected Spirit of Tranquility only after expli
   fireWorkspaceAction(dialog, "incoming-save-amendment");
   let draft = getWorkspaceSessionForTests().incomingDraft;
   assert.equal(draft.rollDraft.amendment, "base:spirit-of-tranquility");
-  assert.equal(draft.rollDraft.amendedOutcome, null);
-  assert.equal(draft.outcome, null);
+  assert.equal(draft.rollDraft.amendedOutcome, "success");
+  assert.equal(draft.outcome, "success");
+  fireWorkspaceAction(dialog, "incoming-save-amendment");
+  draft = getWorkspaceSessionForTests().incomingDraft;
+  assert.equal(draft.rollDraft.amendedOutcome, "success");
+  assert.equal(draft.outcome, "success");
   assert.match(dialog.body.innerHTML, /Базовый итог: \d+ · провал/);
   assert.match(dialog.body.innerHTML, /станет|После поправки/);
   assert.match(dialog.body.innerHTML, /реакция не расходуется/);
   assert.match(dialog.footer.innerHTML, /Применить результат · 1 ци/);
-  assert.match(dialog.footer.innerHTML, /disabled/);
+  assert.doesNotMatch(dialog.footer.innerHTML, /disabled/);
   assert.deepEqual(getState(), beforePreview);
   assert.deepEqual(window.localStorage.values, storageBefore);
   assert.equal(getState().characterRolls?.records?.length ?? 0, 0);
 
-  fireWorkspaceAction(dialog, "incoming-save-success");
   draft = getWorkspaceSessionForTests().incomingDraft;
   assert.equal(draft.rollDraft.amendedOutcome, "success");
   assert.equal(draft.outcome, "success");
@@ -92,7 +96,8 @@ test("production handler applies selected Spirit of Tranquility only after expli
   const record = getState().characterRolls.records.find((entry) =>
     entry.id === draft.operationIds.save);
   assert.ok(record);
-  assert.equal(record.manualOutcome, "success");
+  assert.equal(record.manualOutcome, null);
+  assert.equal(record.finalOutcomeSource, "dc");
   assert.equal(record.appliedAmendments.length, 1);
   assert.equal(record.appliedAmendments[0].paidKi, 1);
   const receipt = readIncomingEventReceipt(getState(), draft.operationIds.save);
@@ -132,14 +137,17 @@ test("focused amendment controls update the actual host view immediately through
 
   assert.notEqual(dialog.dataset.workspaceViewKey, keyBeforeSelection);
   assert.doesNotMatch(dialog.footer.innerHTML, /data-deferred-probe/);
-  assert.match(dialog.body.innerHTML, /incoming-save-success/);
-  assert.match(dialog.body.innerHTML, /incoming-save-failure/);
-  assert.equal(dialog.body.querySelector('[data-workspace-action="incoming-save-success"]') !== null, true);
-  assert.equal(dialog.footer.querySelector('[data-workspace-action="incoming-apply-save"]').disabled, true);
+  assert.match(dialog.body.innerHTML, /incoming-save-override/);
+  assert.equal(dialog.body.querySelector('[data-workspace-action="incoming-save-success"]') !== null, false);
+  assert.equal(dialog.footer.querySelector('[data-workspace-action="incoming-apply-save"]').disabled, false);
 
   const keyBeforeOutcome = dialog.dataset.workspaceViewKey;
-  fireWorkspaceAction(dialog, "incoming-save-success");
+  fireWorkspaceAction(dialog, "incoming-save-override");
   assert.notEqual(dialog.dataset.workspaceViewKey, keyBeforeOutcome);
+  assert.equal(dialog.body.querySelector('[data-workspace-action="incoming-save-success"]') !== null, true);
+  const keyBeforeManualOutcome = dialog.dataset.workspaceViewKey;
+  fireWorkspaceAction(dialog, "incoming-save-success");
+  assert.notEqual(dialog.dataset.workspaceViewKey, keyBeforeManualOutcome);
   assert.equal(getWorkspaceSessionForTests().incomingDraft.rollDraft.amendedOutcome, "success");
   assert.equal(dialog.footer.querySelector('[data-workspace-action="incoming-apply-save"]').disabled, false);
 
@@ -279,8 +287,8 @@ test("unknown base outcome offers no amendment and changed roll input clears an 
   const draft = getWorkspaceSessionForTests().incomingDraft;
   assert.equal(draft.rollDraft.amendment, null);
   assert.equal(draft.rollDraft.amendedOutcome, null);
-  assert.equal(draft.rollDraft.baseOutcome, null);
-  assert.equal(draft.outcome, null);
+  assert.equal(draft.rollDraft.baseOutcome, "success");
+  assert.equal(draft.outcome, "success");
   assert.equal(dialog.body.querySelector('[data-workspace-field][name="firstD20"]'), firstD20);
   assert.equal(globalThis.document.activeElement, firstD20);
   unsubscribe();
@@ -307,6 +315,31 @@ test("save input keeps DOM identity during 1-to-19 typing and damage edits prese
   assert.equal(getWorkspaceSessionForTests().incomingDraft.rollDraft.amendment,
     "base:spirit-of-tranquility");
   assert.equal(getWorkspaceSessionForTests().incomingDraft.rollDraft.amendedOutcome, null);
+  unsubscribe();
+});
+
+test("full-effect starts unselected and switching to explicit no-damage commits without a profile", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  openSaveInput(dialog);
+  typeIncoming(dialog, "firstD20", "15");
+  typeIncoming(dialog, "secondD20", "1");
+  typeIncoming(dialog, "dc", "25");
+  fireWorkspaceAction(dialog, "incoming-save-continue");
+  fireWorkspaceAction(dialog, "incoming-set-has-damage");
+  typeIncoming(dialog, "damageBasis", "full-effect", "select-one");
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.saveDraft.effectProfile, null);
+  assert.match(dialog.body.innerHTML, /Выберите профиль эффекта/);
+  fireWorkspaceAction(dialog, "incoming-set-no-damage");
+  fireWorkspaceAction(dialog, "incoming-apply-save");
+  const draft = getWorkspaceSessionForTests().incomingDraft;
+  assert.equal(draft.stage, "result", draft.error);
+  const record = getState().characterRolls.records.find((entry) =>
+    entry.id === draft.operationIds.save);
+  assert.equal(record.consequence.status, "no-damage");
+  const receipt = readIncomingEventReceipt(getState(), draft.operationIds.save);
+  assert.equal(receipt.request.hasDamage, false);
+  assert.equal(receipt.request.damageBasis, null);
+  assert.equal(receipt.request.effectProfile, null);
   unsubscribe();
 });
 
