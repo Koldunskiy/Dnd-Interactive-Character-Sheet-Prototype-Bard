@@ -63,6 +63,7 @@ import {
 } from "../render/render-incoming-workspace.js";
 import {
   commitIncomingEvent,
+  incomingEventRequestsMatch,
   normalizeIncomingEventRequest,
   previewIncomingEvent,
   readIncomingEventReceipt,
@@ -673,7 +674,7 @@ function incomingReceiptEvidence(state, operationId, normalizedRequest, provenNo
   }
   const receipt = readIncomingEventReceipt(state, operationId);
   if (!receipt) return { status: provenNotApplied ? "not-applied" : "unknown" };
-  if (JSON.stringify(receipt.request) !== JSON.stringify(normalizedRequest)) {
+  if (!incomingEventRequestsMatch(receipt.request, normalizedRequest)) {
     return { status: "unknown", reason: "Receipt не совпадает с исходным запросом." };
   }
   return { status: "applied", receipt };
@@ -732,6 +733,12 @@ function incomingRequestForDraft(draft) {
       kind: "completed-save",
       ...identity,
       outcome: draft.outcome,
+      amendment: draft.rollDraft.amendment
+        ? {
+          techniqueId: draft.rollDraft.amendment,
+          baseOutcome: draft.rollDraft.baseOutcome,
+        }
+        : null,
       hasDamage: draft.outcome !== "unknown" && draft.rollDraft.hasDamage === true,
       damage: draft.rollDraft.damage,
       damageBasis: draft.rollDraft.damageBasis ?? "dm-final",
@@ -868,7 +875,12 @@ function incomingPreviewFingerprint(draft, state) {
   const request = incomingRequestForDraft(draft);
   if (!request) return null;
   const preview = previewIncomingEvent(state, request);
-  return JSON.stringify(preview);
+  return stableIncomingPreview(preview);
+}
+
+function stableIncomingPreview(preview) {
+  return JSON.stringify(preview, (key, value) =>
+    ["recordedAt", "appliedAt", "resolvedAt"].includes(key) ? undefined : value);
 }
 
 function syncIncomingPreviewFingerprint(draft, state, requireConfirmation = false) {
@@ -913,7 +925,7 @@ function commitIncomingRequest(active, draft, request, operationId, returnStage)
     if (incomingOperationIsCurrent(captured)) render();
     return true;
   }
-  const fingerprint = JSON.stringify(preview);
+  const fingerprint = stableIncomingPreview(preview);
   if (draft.previewConfirmationRequired ||
       draft.previewFingerprint && draft.previewFingerprint !== fingerprint) {
     draft.previewConfirmationRequired = false;
@@ -938,9 +950,9 @@ function commitIncomingRequest(active, draft, request, operationId, returnStage)
   if (commitContext.stateRevision !== initialContext.stateRevision) {
     const refreshedPreview = previewIncomingEvent(commitState, request);
     if (!incomingOperationIsCurrent(captured)) return true;
-    if (!refreshedPreview.ok || JSON.stringify(refreshedPreview) !== fingerprint) {
+    if (!refreshedPreview.ok || stableIncomingPreview(refreshedPreview) !== fingerprint) {
       draft.previewConfirmationRequired = false;
-      draft.previewFingerprint = JSON.stringify(refreshedPreview);
+      draft.previewFingerprint = stableIncomingPreview(refreshedPreview);
       draft.error = refreshedPreview.reason ??
         "Предварительный результат изменился. Проверьте обновлённый расчёт и подтвердите ещё раз.";
       if (incomingOperationIsCurrent(captured)) render();
@@ -1199,10 +1211,45 @@ function handleIncomingAction(action) {
     return true;
   }
   if (action === "incoming-save-success" || action === "incoming-save-failure") {
-    draft.outcome = action === "incoming-save-success" ? "success" : "failure";
-    draft.rollDraft.hasDamage = false;
-    draft.stage = "save-consequence";
+    const outcome = action === "incoming-save-success" ? "success" : "failure";
+    if (draft.stage === "save-consequence" && draft.rollDraft.amendment) {
+      draft.rollDraft.amendedOutcome = outcome;
+      draft.outcome = outcome;
+    } else {
+      draft.rollDraft.baseOutcome = outcome;
+      draft.rollDraft.amendment = null;
+      draft.rollDraft.amendedOutcome = null;
+      draft.outcome = outcome;
+      draft.rollDraft.hasDamage = false;
+      draft.stage = "save-consequence";
+    }
+  } else if (action === "incoming-save-amendment") {
+    const previewRequest = {
+      ...incomingRequestForDraft(draft),
+      outcome: "failure",
+      amendment: null,
+      hasDamage: false,
+      damage: null,
+    };
+    const availability = previewIncomingEvent(getState(), previewRequest);
+    if (!availability.ok || availability.amendmentPreview?.availability !== true) {
+      draft.error = availability.amendmentPreview?.reason ??
+        availability.reason ?? "Дух спокойствия сейчас недоступен.";
+    } else {
+      draft.rollDraft.amendment = "base:spirit-of-tranquility";
+      draft.rollDraft.amendedOutcome = null;
+      draft.outcome = null;
+      draft.error = "";
+    }
+  } else if (action === "incoming-save-amendment-decline") {
+    draft.rollDraft.amendment = null;
+    draft.rollDraft.amendedOutcome = null;
+    draft.outcome = draft.rollDraft.baseOutcome;
+    draft.error = "";
   } else if (action === "incoming-save-unknown") {
+    draft.rollDraft.baseOutcome = "unknown";
+    draft.rollDraft.amendment = null;
+    draft.rollDraft.amendedOutcome = null;
     draft.outcome = "unknown";
     draft.rollDraft.hasDamage = false;
     draft.stage = "save-consequence";
@@ -1340,6 +1387,12 @@ function handleIncomingAction(action) {
   } else if (action === "incoming-apply-damage" ||
       action === "incoming-apply-deflection" || action === "incoming-apply-save") {
     if (active.submitting) return true;
+    if (action === "incoming-apply-save" && draft.rollDraft.amendment &&
+        !["success", "failure"].includes(draft.rollDraft.amendedOutcome)) {
+      draft.error = "Выберите окончательный исход спасброска после поправки.";
+      render();
+      return true;
+    }
     const liveOwner = getSessionContext();
     if (!isCurrentSession(active.owner) ||
         liveOwner.characterId !== active.owner.characterId ||
@@ -1361,6 +1414,12 @@ function handleIncomingAction(action) {
         phaseAtOpen: draft.phaseAtOpen,
         ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
         outcome: draft.outcome,
+        amendment: draft.rollDraft.amendment
+          ? {
+            techniqueId: draft.rollDraft.amendment,
+            baseOutcome: draft.rollDraft.baseOutcome,
+          }
+          : null,
         hasDamage: draft.outcome !== "unknown" && draft.rollDraft.hasDamage === true,
         damage: draft.rollDraft.damage,
         damageBasis: draft.rollDraft.damageBasis ?? "dm-final",
@@ -1458,6 +1517,12 @@ function updateInput(field) {
       if (preview) preview.innerHTML = renderIncomingPreview(session, getState());
       syncIncomingPreviewFingerprint(draft, getState());
       return;
+    }
+    if (["saveAbility", "firstD20", "secondD20", "rollMode", "dc"].includes(field.name)) {
+      draft.rollDraft.amendment = null;
+      draft.rollDraft.amendedOutcome = null;
+      draft.rollDraft.baseOutcome = null;
+      draft.outcome = null;
     }
     if (field.name === "incomingDamage") draft.rawDamage = field.value;
     else if (field.name === "deflectRoll") draft.rawDeflectRoll = field.value;

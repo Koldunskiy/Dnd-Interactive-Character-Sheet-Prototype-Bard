@@ -119,6 +119,7 @@ export function getEffectiveTechniqueIds(character) {
   if (level >= 5) ids.push("base:extra-attack");
   if (level >= 6) ids.push("base:enlightened-strikes", "base:ebb-and-flow");
   if (level >= 7) ids.push("base:evasion");
+  if (level >= 9) ids.push("base:spirit-of-tranquility");
   if (level >= 10) ids.push("base:open-hand-strike", "base:master-of-many-forms");
   if (level >= 11) ids.push("base:warriors-spirit");
   if (level >= 13) ids.push("base:purity-of-body");

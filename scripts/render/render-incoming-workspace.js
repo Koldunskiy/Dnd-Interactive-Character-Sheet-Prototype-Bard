@@ -1,12 +1,12 @@
 import { getDerivedStats } from "../calculations.js";
 import { calculateDeflectionPreview } from "../combat/sara-combat.js";
-import { buildDeflectionParameters } from "../actions/incoming-event.js";
+import {
+  buildDeflectionParameters,
+  previewIncomingEvent,
+} from "../actions/incoming-event.js";
 import { parsePhysicalInteger } from "../combat/physical-input.js";
 import { renderSaraEndBattleButton } from "./sara-hud.js";
 import { incomingContextIsCurrent } from "../battle/incoming-event-draft.js";
-import { getSaraRollBreakdown } from "../rolls/providers/sara.js";
-import { calculateCharacterRoll } from "../rolls/calculations.js";
-import { calculateRollConsequencePreview } from "../rolls/consequences.js";
 import { getEffectiveTechniqueIds } from "../selectors/techniques.js";
 import { previewIncomingReplyAttack } from "../actions/sara-combat.js";
 
@@ -100,53 +100,69 @@ export function renderIncomingPreview(session, state) {
     return `<p>Урон: ${parsed.value}; временные HP ${state.combat?.hp?.temp ?? 0} → ${Number(state.combat?.hp?.temp ?? 0) - tempHp};
       HP ${state.combat?.hp?.current ?? "—"} → ${Math.max(0, Number(state.combat?.hp?.current ?? 0) - (parsed.value - tempHp))}</p>`;
   }
-  if (draft.stage === "save-input") {
-    const breakdown = getSaraRollBreakdown(state, "saving-throw",
-      draft.rollDraft.ability ?? "dexterity");
-    if (!breakdown.ok) return `<p role="status">${escapeHtml(breakdown.reason)}</p>`;
-    const result = calculateCharacterRoll({
-      kind: "saving-throw",
+  if (["save-input", "save-consequence"].includes(draft.stage)) {
+    const amendmentSelected = Boolean(draft.rollDraft.amendment);
+    const preview = previewIncomingEvent(state, incomingSavePreviewRequest(session));
+    if (!preview.ok) return `<p role="status">${escapeHtml(preview.reason)}</p>`;
+    const roll = preview.calculated;
+    if (draft.stage === "save-input") {
+      return `<p>${escapeHtml(roll.label)}: ${roll.chosenD20} + ${roll.totalModifier} = <strong>${roll.total}</strong>
+        ${roll.dc == null ? " · Сложность не указана" : ` · СЛ ${roll.dc}; ожидаемый исход ${roll.total >= roll.dc ? "успех" : "провал"}`}</p>`;
+    }
+    if (amendmentSelected) {
+      const amendment = preview.amendmentPreview;
+      const finalOutcomeSelected = ["success", "failure"].includes(draft.rollDraft.amendedOutcome);
+      return `<p>Базовый итог: ${amendment.before.total} · провал. После поправки: ${roll.chosenD20} + ${roll.totalModifier} = <strong>${roll.total}</strong>.
+        ${roll.dc == null ? "СЛ не указана — уточните исход у ведущего." :
+          `СЛ ${roll.dc}; ожидаемый результат: ${roll.total >= roll.dc ? "успех" : "провал"}.`}
+        Ци при применении: ${state.combat?.ki?.current ?? "—"} → ${Math.max(0, Number(state.combat?.ki?.current ?? 0) - 1)}; реакция не расходуется.
+        ${finalOutcomeSelected && draft.rollDraft.hasDamage === true
+          ? ` ${escapeHtml(preview.ruleExplanation ?? "")} Итог к применению: <strong>${preview.finalDamage}</strong>.`
+          : finalOutcomeSelected ? "" : " Выберите окончательный исход ниже."}</p>`;
+    }
+    if (draft.outcome === "unknown") {
+      return "<p>Уточните исход у ведущего. Поправка после неизвестного базового исхода недоступна.</p>";
+    }
+    return `<p>${escapeHtml(roll.label)}: ${roll.chosenD20} + ${roll.totalModifier} = <strong>${roll.total}</strong> · базовый исход: ${draft.rollDraft.baseOutcome}.
+      ${draft.rollDraft.hasDamage === true
+        ? `${escapeHtml(preview.ruleExplanation ?? "")} Итог к применению: <strong>${preview.finalDamage}</strong>.`
+        : ""}</p>`;
+  }
+  return "";
+}
+
+function incomingSavePreviewRequest(session, { eligibilityOnly = false } = {}) {
+  const draft = session.incomingDraft;
+  const amendmentSelected = !eligibilityOnly && Boolean(draft.rollDraft.amendment);
+  const outcome = eligibilityOnly ? "failure"
+    : draft.stage === "save-input" ? "unknown"
+      : amendmentSelected && !draft.rollDraft.amendedOutcome ? null
+        : draft.outcome ?? "unknown";
+  return {
+    kind: "completed-save",
+    battleId: draft.battleId,
+    eventId: draft.eventId,
+    phaseAtOpen: draft.phaseAtOpen,
+    ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
+    outcome,
+    amendment: amendmentSelected ? {
+      techniqueId: draft.rollDraft.amendment,
+      baseOutcome: draft.rollDraft.baseOutcome,
+    } : null,
+    hasDamage: !eligibilityOnly && outcome != null && outcome !== "unknown" &&
+      draft.rollDraft.hasDamage === true,
+    damage: draft.rollDraft.damage,
+    damageBasis: draft.rollDraft.damageBasis ?? "dm-final",
+    effectProfile: draft.rollDraft.effectProfile,
+    spellSaveSource: draft.source === "spell",
+    roll: {
       id: draft.rollDraft.ability ?? "dexterity",
       firstD20: draft.rollDraft.firstD20,
       secondD20: draft.rollDraft.secondD20,
       rollMode: draft.rollDraft.rollMode ?? "advantage",
       dc: draft.rollDraft.dc,
-      spellSaveSource: draft.source === "spell",
-    }, breakdown);
-    return result.ok
-      ? `<p>${escapeHtml(breakdown.label)}: ${result.chosenD20} + ${result.totalModifier} = <strong>${result.total}</strong>
-        ${result.dc == null ? " · Сложность не указана" : ` · СЛ ${result.dc}`}</p>`
-      : `<p role="status">${escapeHtml(result.reason)}</p>`;
-  }
-  if (draft.stage === "save-consequence" && draft.outcome !== "unknown" &&
-      draft.rollDraft.hasDamage === true) {
-    const breakdown = getSaraRollBreakdown(state, "saving-throw", draft.rollDraft.ability);
-    if (!breakdown.ok) return `<p role="status">${escapeHtml(breakdown.reason)}</p>`;
-    const roll = calculateCharacterRoll({
-      kind: "saving-throw",
-      id: draft.rollDraft.ability,
-      firstD20: draft.rollDraft.firstD20,
-      secondD20: draft.rollDraft.secondD20,
-      rollMode: draft.rollDraft.rollMode ?? "advantage",
-      dc: draft.rollDraft.dc,
-      spellSaveSource: draft.source === "spell",
-    }, breakdown);
-    if (!roll.ok) return `<p role="status">${escapeHtml(roll.reason)}</p>`;
-    const consequence = calculateRollConsequencePreview({
-      ...roll,
-      manualOutcome: draft.outcome,
-      dcResult: draft.outcome === "success",
-      featureSnapshot: { evasionAvailable: breakdown.evasionAvailable === true },
-    }, state, {
-      damage: draft.rollDraft.damage,
-      damageBasis: draft.rollDraft.damageBasis ?? "dm-final",
-      effectProfile: draft.rollDraft.effectProfile,
-    });
-    return consequence.ok
-      ? `<p>${escapeHtml(consequence.ruleExplanation)} Итог к применению: <strong>${consequence.finalDamage}</strong></p>`
-      : `<p role="status">${escapeHtml(consequence.reason)}</p>`;
-  }
-  return "";
+    },
+  };
 }
 
 export function renderIncomingCatchControls(session, state) {
@@ -245,8 +261,27 @@ export function renderIncomingWorkspace(session, state) {
         ${button("incoming-back", "Назад")}${button("incoming-cancel", "Отмена")}`;
       break;
     case "save-consequence":
+      {
+      const amendmentSelected = Boolean(draft.rollDraft.amendment);
+      const eligibilityPreview = previewIncomingEvent(
+        state, incomingSavePreviewRequest(session, { eligibilityOnly: true }),
+      );
+      const canOfferAmendment = draft.rollDraft.baseOutcome === "failure" &&
+        eligibilityPreview.ok &&
+        eligibilityPreview.amendmentPreview?.availability === true;
+      const needsFinalOutcome = amendmentSelected &&
+        !["success", "failure"].includes(draft.rollDraft.amendedOutcome);
+      const amendmentUnavailable = amendmentSelected &&
+        (!eligibilityPreview.ok ||
+          eligibilityPreview.amendmentPreview?.availability !== true);
       body = `<p>Выберите последствие спасброска.</p>
         ${draft.outcome === "unknown" ? "<p>Запись будет сохранена без исхода и без изменения HP.</p>" : ""}
+        ${canOfferAmendment ? button("incoming-save-amendment",
+          `Дух спокойствия · +${derived.abilityModifiers.wisdom} · 1 ци`) : ""}
+        ${amendmentSelected ? `<p>Поправка выбрана. Окончательный исход остаётся за игроком.</p>
+          ${button("incoming-save-amendment-decline", "Не использовать")}
+          ${button("incoming-save-success", "Успех после поправки")}
+          ${button("incoming-save-failure", "Провал после поправки")}` : ""}
         ${draft.outcome !== "unknown" ? `${button("incoming-set-no-damage", "Без урона")}
           ${button("incoming-set-has-damage", "Есть урон")}` : ""}
         ${draft.rollDraft.hasDamage === true && draft.outcome !== "unknown" ? `
@@ -258,18 +293,38 @@ export function renderIncomingWorkspace(session, state) {
           <option value="failure-full" ${draft.rollDraft.effectProfile !== "save-half" ? "selected" : ""}>Полный урон при провале</option>
           <option value="save-half" ${draft.rollDraft.effectProfile === "save-half" ? "selected" : ""}>Половина при успехе</option></select></label>` : ""}` : ""}`;
       body += `<div data-incoming-preview>${renderIncomingPreview(session, state)}</div>`;
-      footer = `${button("incoming-apply-save", draft.outcome === "unknown" ? "Записать без исхода" : "Применить результат", 'class="btn btn--primary"')}
+      footer = `${button("incoming-apply-save",
+        amendmentSelected ? "Применить результат · 1 ци"
+          : draft.outcome === "unknown" ? "Записать без исхода" : "Применить результат",
+        `class="btn btn--primary"${needsFinalOutcome || amendmentUnavailable ? " disabled" : ""}`)}
         ${button("incoming-back", "Назад")}${button("incoming-cancel", "Отмена")}`;
       break;
+      }
     case "result":
       {
-        const receipt = draft.appliedReceipt?.outcome;
-        const effects = receipt?.effects ?? {};
-        body = `<p>Входящее событие применено.</p>
-          <p>Исходный урон: ${effects.incomingDamage ?? effects.finalDamage ?? "—"};
-            уменьшение: ${effects.reduction ?? "—"}; остаток: ${effects.finalRemainder ?? effects.finalDamage ?? "—"}.</p>
-          <p>Временные HP ${receipt?.tempHpBefore ?? "—"} → ${receipt?.tempHpAfter ?? "—"};
-            HP ${receipt?.hpBefore ?? "—"} → ${receipt?.hpAfter ?? "—"}.</p>`;
+        const receipt = draft.appliedReceipt;
+        const outcome = receipt?.outcome;
+        const effects = outcome?.effects ?? {};
+        if (receipt?.request?.kind === "completed-save") {
+          const roll = effects.roll;
+          const amendment = effects.amendment;
+          body = `<p>Спасбросок записан: ${escapeHtml(roll?.label ?? "—")} ${roll?.total ?? "—"} ·
+            ${roll?.manualOutcome ?? "исход неизвестен"}.</p>
+            ${amendment ? `<p>Дух спокойствия: +${amendment.bonus} Мудрости; уплачено 1 ци
+              (${amendment.kiBefore} → ${amendment.kiAfter}).</p>` : ""}
+            <p>${effects.consequence?.status === "applied"
+              ? `Применённый урон: ${effects.consequence.finalDamage}.`
+              : effects.consequence?.status === "no-damage"
+                ? "Урон не применялся." : "Последствие не применялось."}</p>
+            <p>Временные HP ${outcome?.tempHpBefore ?? "—"} → ${outcome?.tempHpAfter ?? "—"};
+              HP ${outcome?.hpBefore ?? "—"} → ${outcome?.hpAfter ?? "—"}.</p>`;
+        } else {
+          body = `<p>Входящее событие применено.</p>
+            <p>Исходный урон: ${effects.incomingDamage ?? effects.finalDamage ?? "—"};
+              уменьшение: ${effects.reduction ?? "—"}; остаток: ${effects.finalRemainder ?? effects.finalDamage ?? "—"}.</p>
+            <p>Временные HP ${outcome?.tempHpBefore ?? "—"} → ${outcome?.tempHpAfter ?? "—"};
+              HP ${outcome?.hpBefore ?? "—"} → ${outcome?.hpAfter ?? "—"}.</p>`;
+        }
       }
       footer = `${draft.appliedReceipt?.kind === "incoming-event"
         ? (() => {

@@ -8,6 +8,7 @@ import { getSessionContext, getState, isCurrentSession, updateSessionState } fro
 import { getSaraRollBreakdown } from "../rolls/providers/sara.js";
 import { calculateCharacterRoll } from "../rolls/calculations.js";
 import { calculateRollConsequencePreview } from "../rolls/consequences.js";
+import { previewIncomingSaveAmendment } from "../rolls/incoming-save-amendment.js";
 
 export function normalizeIncomingEventRequest(request, state = getState()) {
   if (!request || !["direct-damage", "deflection", "completed-save", "ebb-and-flow"].includes(request.kind)) {
@@ -63,6 +64,25 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
         !["success", "failure", "unknown"].includes(request.outcome)) {
       return { ok: false, reason: "Выберите характеристику и допустимый исход спасброска." };
     }
+    if (Object.prototype.hasOwnProperty.call(request, "paidKi") ||
+        Object.prototype.hasOwnProperty.call(request, "bonus")) {
+      return { ok: false, reason: "Стоимость и бонус поправки определяются сервером." };
+    }
+    let amendment = null;
+    if (request.amendment != null) {
+      if (!request.amendment || typeof request.amendment !== "object" ||
+          Array.isArray(request.amendment) ||
+          Object.keys(request.amendment).length !== 2 ||
+          request.amendment.techniqueId !== "base:spirit-of-tranquility" ||
+          request.amendment.baseOutcome !== "failure" ||
+          !["success", "failure"].includes(request.outcome)) {
+        return { ok: false, reason: "Поправка Духа спокойствия содержит недопустимый выбор или исход." };
+      }
+      amendment = {
+        techniqueId: "base:spirit-of-tranquility",
+        baseOutcome: "failure",
+      };
+    }
     if (request.outcome !== "unknown" && request.hasDamage === true &&
         !["dm-final", "full-effect"].includes(request.damageBasis)) {
       return { ok: false, reason: "Уточните основу урона спасброска." };
@@ -80,8 +100,10 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
       secondD20: roll.secondD20,
       rollMode: roll.rollMode,
       dc: roll.dc,
+      incomingDamage: request.hasDamage === true ? damage.value : null,
       spellSaveSource: request.spellSaveSource === true,
-      consequenceProfile: "none",
+      consequenceProfile: request.hasDamage === true && request.damageBasis === "full-effect"
+        ? request.effectProfile : "none",
     }, breakdown);
     if (!calculated.ok) return calculated;
     return {
@@ -94,6 +116,7 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
         phaseAtOpen: request.phaseAtOpen ?? null,
         ownTurnIdAtOpen: request.ownTurnIdAtOpen ?? null,
         outcome: request.outcome,
+        amendment,
         hasDamage: request.hasDamage === true,
         damage: damage.value,
         damageBasis: request.damageBasis ?? null,
@@ -135,26 +158,69 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
   };
 }
 
+export function incomingEventRequestsMatch(left, right) {
+  const canonicalize = (value) => {
+    if (Array.isArray(value)) return value.map(canonicalize);
+    if (!value || typeof value !== "object") return value;
+    const request = value.kind === "completed-save" &&
+      !Object.prototype.hasOwnProperty.call(value, "amendment")
+      ? { ...value, amendment: null }
+      : value;
+    return Object.fromEntries(Object.keys(request).sort()
+      .map((key) => [key, canonicalize(request[key])]));
+  };
+  return JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
+}
+
 export function previewIncomingEvent(state, request) {
-  const normalized = normalizeIncomingEventRequest(request, state);
+  const pendingAmendment = request?.kind === "completed-save" &&
+    request.amendment != null && request.outcome == null;
+  const normalized = normalizeIncomingEventRequest(pendingAmendment
+    ? { ...request, outcome: "failure", hasDamage: false, damage: null }
+    : request, state);
   if (!normalized.ok) return normalized;
   if (normalized.request.kind === "ebb-and-flow") return { ok: true };
   if (normalized.request.kind === "deflection") {
     return calculateDeflectionPreview(state, buildDeflectionParameters(normalized.request));
   }
   if (normalized.request.kind === "completed-save") {
-    if (normalized.request.outcome === "unknown" || !normalized.request.hasDamage) {
-      return { ok: true, finalDamage: 0 };
-    }
-    return calculateRollConsequencePreview({
+    const baseRecord = {
       ...normalized.calculated,
-      manualOutcome: normalized.request.outcome,
-      dcResult: normalized.request.outcome === "success",
-    }, state, {
+      manualOutcome: normalized.request.amendment?.baseOutcome ?? normalized.request.outcome,
+      baseOutcome: normalized.request.amendment?.baseOutcome ?? normalized.request.outcome,
+      dcResult: normalized.request.amendment
+        ? false : normalized.request.outcome === "success",
+    };
+    const amendmentPreview = previewIncomingSaveAmendment(
+      state, baseRecord, normalized.request.amendment,
+    );
+    if (!amendmentPreview.ok) return amendmentPreview;
+    const calculated = amendmentPreview.record;
+    calculated.manualOutcome = pendingAmendment ? null : normalized.request.outcome;
+    calculated.dcResult = pendingAmendment
+      ? calculated.dc == null ? null : calculated.total >= calculated.dc
+      : normalized.request.outcome === "success";
+    if (pendingAmendment) {
+      return {
+        ok: true,
+        finalDamage: null,
+        calculated,
+        amendmentPreview,
+        outcomePending: true,
+      };
+    }
+    if (normalized.request.outcome === "unknown" || !normalized.request.hasDamage) {
+      return { ok: true, finalDamage: 0, calculated, amendmentPreview };
+    }
+    return {
+      ...calculateRollConsequencePreview(calculated, state, {
       damage: normalized.request.damage,
       damageBasis: normalized.request.damageBasis,
       effectProfile: normalized.request.effectProfile,
-    });
+      }),
+      calculated,
+      amendmentPreview,
+    };
   }
   const hp = Number(state.combat?.hp?.current);
   const tempHp = Number(state.combat?.hp?.temp ?? 0);
@@ -193,7 +259,7 @@ export function commitIncomingEvent(context, request, operationId) {
   const current = getState();
   const existing = readIncomingEventReceipt(current, operationId);
   if (existing) {
-    if (JSON.stringify(existing.request) !== JSON.stringify(normalized.request)) {
+    if (!incomingEventRequestsMatch(existing.request, normalized.request)) {
       return {
         status: "rejected",
         code: "operation-id-collision",
@@ -240,20 +306,54 @@ export function commitIncomingEvent(context, request, operationId) {
         secondD20: normalized.request.roll.secondD20,
         rollMode: normalized.request.roll.rollMode,
         dc: normalized.request.roll.dc,
+        incomingDamage: normalized.request.hasDamage
+          ? normalized.request.damage : null,
         spellSaveSource: normalized.request.spellSaveSource,
-        consequenceProfile: "none",
+        consequenceProfile: normalized.request.hasDamage === true &&
+          normalized.request.damageBasis === "full-effect"
+          ? normalized.request.effectProfile : "none",
       }, breakdown);
       if (!calculated.ok) throw new Error(calculated.reason);
-      const known = normalized.request.outcome !== "unknown";
-      const record = {
+      const amendmentBaseRecord = {
         ...calculated,
-        id: operationId,
-        manualOutcome: known ? normalized.request.outcome : null,
-        dcResult: known ? normalized.request.outcome === "success" : null,
-        consequence: null,
+        manualOutcome: normalized.request.amendment?.baseOutcome ?? normalized.request.outcome,
+        baseOutcome: normalized.request.amendment?.baseOutcome ?? normalized.request.outcome,
+        dcResult: normalized.request.amendment ? false :
+          normalized.request.outcome === "success",
         appliedAmendments: [],
-        incomingEventId: request.eventId ?? null,
       };
+      const amendmentPreview = previewIncomingSaveAmendment(
+        draft, amendmentBaseRecord, normalized.request.amendment,
+      );
+      if (!amendmentPreview.ok) throw new Error(amendmentPreview.reason);
+      const known = normalized.request.outcome !== "unknown";
+      const record = amendmentPreview.record;
+      delete record.baseOutcome;
+      record.recordedAt = new Date().toISOString();
+      record.id = operationId;
+      record.manualOutcome = known ? normalized.request.outcome : null;
+      record.dcResult = known ? normalized.request.outcome === "success" : null;
+      record.consequence = null;
+      record.incomingEventId = normalized.request.eventId;
+      record.appliedAmendments ??= [];
+      const kiBefore = Number(draft.combat?.ki?.current);
+      if (amendmentPreview.selected) {
+        if (!Number.isInteger(kiBefore) || kiBefore < 1) {
+          throw new Error("Для Духа спокойствия требуется 1 ци.");
+        }
+        draft.combat.ki.current = kiBefore - 1;
+        const appliedAmendment = {
+          techniqueId: normalized.request.amendment.techniqueId,
+          paidKi: 1,
+          before: amendmentPreview.before,
+          after: {
+            ...amendmentPreview.after,
+            outcome: normalized.request.outcome,
+          },
+          appliedAt: new Date().toISOString(),
+        };
+        record.appliedAmendments.push(appliedAmendment);
+      }
       let saveOutcome = { finalDamage: 0 };
       if (known && normalized.request.hasDamage) {
         saveOutcome = calculateRollConsequencePreview(record, draft, {
@@ -300,7 +400,20 @@ export function commitIncomingEvent(context, request, operationId) {
         .slice(-30);
       draft.characterRolls.records = [...completed, ...pending];
       closeRestWindow(draft, "incoming-save");
-      outcome = { rollId: record.id, roll: record, consequence: saveOutcome };
+      outcome = {
+        rollId: record.id,
+        roll: record,
+        consequence: saveOutcome,
+        amendment: amendmentPreview.selected ? {
+          techniqueId: normalized.request.amendment.techniqueId,
+          bonus: amendmentPreview.bonus,
+          paidKi: 1,
+          kiBefore,
+          kiAfter: Number(draft.combat.ki.current),
+          before: amendmentPreview.before,
+          after: record.appliedAmendments.at(-1).after,
+        } : null,
+      };
     } else if (normalized.request.kind === "ebb-and-flow") {
       if (draft.profile?.id !== "sara-velaris" || Number(draft.profile.level) < 6) {
         throw new Error("Ebb & Flow доступна с 6 уровня.");

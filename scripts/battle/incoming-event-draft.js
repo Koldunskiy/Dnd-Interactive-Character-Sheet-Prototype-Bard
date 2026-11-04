@@ -25,7 +25,11 @@ export function createIncomingEventDraft(state, owner, options = {}) {
     rawDamage: "",
     rawDeflectRoll: "",
     catchChoice: null,
-    rollDraft: {},
+    rollDraft: {
+      amendment: null,
+      baseOutcome: null,
+      amendedOutcome: null,
+    },
     replyDraft: {},
     operationIds: {
       apply: createOperationId("incoming-apply"),
