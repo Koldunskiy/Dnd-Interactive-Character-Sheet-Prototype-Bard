@@ -1,6 +1,7 @@
 import { escapeHtml } from "./shared/spell-card.js";
 import { executeBattleCommand } from "../battle/commands.js";
 import {
+  getActiveWorkspaceSession,
   getMinimizedWorkspaceSessions,
   getWorkspaceSessions,
   openNormalAttack,
@@ -125,8 +126,8 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
   } catch {}
   const endBattleButton = renderSaraEndBattleButton(state, endBattleOwner);
   const workspaceSessions = getWorkspaceSessions();
-  const activeWorkspace = workspaceSessions.find((entry) =>
-    !entry.minimized && !entry.suspended);
+  const activeWorkspace = getActiveWorkspaceSession() ??
+    workspaceSessions.find((entry) => !entry.minimized && !entry.suspended);
   const view = getPlayerHubViewModel(state, workspaceSessions);
   const derived = getDerivedStats(state);
   const commands = getSaraBattleCommandRegistry(state);

@@ -1,5 +1,6 @@
 import { getDerivedStats } from "../calculations.js";
 import { calculateDeflectionPreview } from "../combat/sara-combat.js";
+import { buildDeflectionParameters } from "../actions/incoming-event.js";
 import { parsePhysicalInteger } from "../combat/physical-input.js";
 import { renderSaraEndBattleButton } from "./sara-hud.js";
 import { incomingContextIsCurrent } from "../battle/incoming-event-draft.js";
@@ -13,12 +14,18 @@ const ABILITIES = [
   ["intelligence", "Интеллект"], ["wisdom", "Мудрость"], ["charisma", "Харизма"],
 ];
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]);
+}
+
 function button(action, label, attrs = "") {
   return `<button type="button" data-workspace-action="${action}" ${attrs}>${label}</button>`;
 }
 
 function field(name, label, value, attrs = "") {
-  return `<label>${label}<input data-workspace-field name="${name}" value="${value ?? ""}" ${attrs}></label>`;
+  return `<label>${escapeHtml(label)}<input data-workspace-field name="${escapeHtml(name)}" value="${escapeHtml(value)}" ${attrs}></label>`;
 }
 
 export function renderIncomingPreview(session, state) {
@@ -28,21 +35,18 @@ export function renderIncomingPreview(session, state) {
     return `<p class="incoming-event__armor-class">КД <strong>${derived.armorClass}</strong></p>`;
   }
   if (draft.stage === "deflect") {
-    const preview = calculateDeflectionPreview(state, {
-      kind: draft.source === "projectile" ? "missile" : "strike",
-      mode: draft.source === "projectile" ? "weapon-projectile" : "weapon-melee",
-      incomingDamage: draft.rawDamage,
-      deflectRoll: draft.rawDeflectRoll,
-      applyDamageToSara: true,
-    });
+    const preview = calculateDeflectionPreview(state, buildDeflectionParameters({
+      source: draft.source, damage: draft.rawDamage, deflectRoll: draft.rawDeflectRoll,
+      catchChoice: draft.catchChoice,
+    }));
     return preview.ok
       ? `<p>Снижение: ${preview.reduction}; остаток: ${preview.rawRemainder}; к применению: <strong>${preview.finalRemainder}</strong></p>
         <p>Временные HP ${preview.damagePools.tempHpBefore} → ${preview.damagePools.tempHpAfter}; HP ${preview.damagePools.hpBefore} → ${preview.damagePools.hpAfter}</p>`
-      : `<p role="status">${preview.reason}</p>`;
+      : `<p role="status">${escapeHtml(preview.reason)}</p>`;
   }
   if (draft.stage === "damage") {
     const parsed = parsePhysicalInteger(draft.rawDamage, 0, Number.MAX_SAFE_INTEGER, "Полученный урон");
-    if (!parsed.ok) return `<p role="status">${parsed.reason}</p>`;
+    if (!parsed.ok) return `<p role="status">${escapeHtml(parsed.reason)}</p>`;
     const tempHp = Math.min(Number(state.combat?.hp?.temp ?? 0), parsed.value);
     return `<p>Урон: ${parsed.value}; временные HP ${state.combat?.hp?.temp ?? 0} → ${Number(state.combat?.hp?.temp ?? 0) - tempHp};
       HP ${state.combat?.hp?.current ?? "—"} → ${Math.max(0, Number(state.combat?.hp?.current ?? 0) - (parsed.value - tempHp))}</p>`;
@@ -50,7 +54,7 @@ export function renderIncomingPreview(session, state) {
   if (draft.stage === "save-input") {
     const breakdown = getSaraRollBreakdown(state, "saving-throw",
       draft.rollDraft.ability ?? "dexterity");
-    if (!breakdown.ok) return `<p role="status">${breakdown.reason}</p>`;
+    if (!breakdown.ok) return `<p role="status">${escapeHtml(breakdown.reason)}</p>`;
     const result = calculateCharacterRoll({
       kind: "saving-throw",
       id: draft.rollDraft.ability ?? "dexterity",
@@ -61,14 +65,14 @@ export function renderIncomingPreview(session, state) {
       spellSaveSource: draft.source === "spell",
     }, breakdown);
     return result.ok
-      ? `<p>${breakdown.label}: ${result.chosenD20} + ${result.totalModifier} = <strong>${result.total}</strong>
+      ? `<p>${escapeHtml(breakdown.label)}: ${result.chosenD20} + ${result.totalModifier} = <strong>${result.total}</strong>
         ${result.dc == null ? " · Сложность не указана" : ` · СЛ ${result.dc}`}</p>`
-      : `<p role="status">${result.reason}</p>`;
+      : `<p role="status">${escapeHtml(result.reason)}</p>`;
   }
   if (draft.stage === "save-consequence" && draft.outcome !== "unknown" &&
       draft.rollDraft.hasDamage === true) {
     const breakdown = getSaraRollBreakdown(state, "saving-throw", draft.rollDraft.ability);
-    if (!breakdown.ok) return `<p role="status">${breakdown.reason}</p>`;
+    if (!breakdown.ok) return `<p role="status">${escapeHtml(breakdown.reason)}</p>`;
     const roll = calculateCharacterRoll({
       kind: "saving-throw",
       id: draft.rollDraft.ability,
@@ -78,7 +82,7 @@ export function renderIncomingPreview(session, state) {
       dc: draft.rollDraft.dc,
       spellSaveSource: draft.source === "spell",
     }, breakdown);
-    if (!roll.ok) return `<p role="status">${roll.reason}</p>`;
+    if (!roll.ok) return `<p role="status">${escapeHtml(roll.reason)}</p>`;
     const consequence = calculateRollConsequencePreview({
       ...roll,
       manualOutcome: draft.outcome,
@@ -90,10 +94,22 @@ export function renderIncomingPreview(session, state) {
       effectProfile: draft.rollDraft.effectProfile,
     });
     return consequence.ok
-      ? `<p>${consequence.ruleExplanation} Итог к применению: <strong>${consequence.finalDamage}</strong></p>`
-      : `<p role="status">${consequence.reason}</p>`;
+      ? `<p>${escapeHtml(consequence.ruleExplanation)} Итог к применению: <strong>${consequence.finalDamage}</strong></p>`
+      : `<p role="status">${escapeHtml(consequence.reason)}</p>`;
   }
   return "";
+}
+
+export function renderIncomingCatchControls(session, state) {
+  const draft = session.incomingDraft;
+  if (draft.stage !== "deflect" || draft.source !== "projectile") return "";
+  const preview = calculateDeflectionPreview(state, buildDeflectionParameters({
+    source: draft.source, damage: draft.rawDamage, deflectRoll: draft.rawDeflectRoll,
+    catchChoice: draft.catchChoice,
+  }));
+  if (!preview.ok || preview.rawRemainder !== 0) return "";
+  return `${button("incoming-catch", draft.catchChoice === "catch" ? "✓ Поймать" : "Поймать")}
+    ${button("incoming-skip-catch", draft.catchChoice === "skip" ? "✓ Не ловить" : "Не ловить")}`;
 }
 
 export function renderIncomingWorkspace(session, state) {
@@ -151,12 +167,7 @@ export function renderIncomingWorkspace(session, state) {
         ${field("incomingDamage", "Входящий урон", draft.rawDamage, 'type="number" min="0" step="1" inputmode="numeric"')}
         ${field("deflectRoll", `Кость Боевых искусств (1–${derived.monk.martialDieSides})`,
     draft.rawDeflectRoll, `type="number" min="1" max="${derived.monk.martialDieSides}" step="1" inputmode="numeric"`)}
-        ${draft.source === "projectile" && draft.catchChoice == null &&
-          calculateDeflectionPreview(state, {
-            kind: "missile", mode: "weapon", incomingDamage: draft.rawDamage,
-            deflectRoll: draft.rawDeflectRoll, applyDamageToSara: true,
-          }).rawRemainder === 0
-          ? `${button("incoming-catch", "Поймать")}${button("incoming-skip-catch", "Не ловить")}` : ""}
+        <div data-incoming-catch-controls>${renderIncomingCatchControls(session, state)}</div>
         <div data-incoming-preview>${renderIncomingPreview(session, state)}</div>`;
       footer = `${button("incoming-apply-deflection", "Применить отражение", 'class="btn btn--primary"')}
         ${button("incoming-back", "Назад")}${button("incoming-cancel", "Отмена")}`;
@@ -189,17 +200,25 @@ export function renderIncomingWorkspace(session, state) {
         ${draft.rollDraft.hasDamage === true && draft.outcome !== "unknown" ? `
         ${field("saveDamage", "Урон (0 допустим)", draft.rollDraft.damage ?? "", 'type="number" min="0" step="1"')}
         <label>Основа урона<select data-workspace-field name="damageBasis">
-          <option value="dm-final">Итоговый урон от ведущего</option>
-          <option value="full-effect">Полный урон эффекта</option></select></label>
+          <option value="dm-final" ${draft.rollDraft.damageBasis !== "full-effect" ? "selected" : ""}>Итоговый урон от ведущего</option>
+          <option value="full-effect" ${draft.rollDraft.damageBasis === "full-effect" ? "selected" : ""}>Полный урон эффекта</option></select></label>
         ${draft.rollDraft.damageBasis === "full-effect" ? `<label>Профиль эффекта<select data-workspace-field name="effectProfile">
-          <option value="failure-full">Полный урон при провале</option>
-          <option value="save-half">Половина при успехе</option></select></label>` : ""}` : ""}`;
+          <option value="failure-full" ${draft.rollDraft.effectProfile !== "save-half" ? "selected" : ""}>Полный урон при провале</option>
+          <option value="save-half" ${draft.rollDraft.effectProfile === "save-half" ? "selected" : ""}>Половина при успехе</option></select></label>` : ""}` : ""}`;
       body += `<div data-incoming-preview>${renderIncomingPreview(session, state)}</div>`;
       footer = `${button("incoming-apply-save", draft.outcome === "unknown" ? "Записать без исхода" : "Применить результат", 'class="btn btn--primary"')}
         ${button("incoming-back", "Назад")}${button("incoming-cancel", "Отмена")}`;
       break;
     case "result":
-      body = `<p>Входящее событие применено.</p><p>HP ${draft.appliedReceipt?.hpBefore ?? "—"} → ${draft.appliedReceipt?.hpAfter ?? "—"}</p>`;
+      {
+        const receipt = draft.appliedReceipt?.outcome;
+        const effects = receipt?.effects ?? {};
+        body = `<p>Входящее событие применено.</p>
+          <p>Исходный урон: ${effects.incomingDamage ?? effects.finalDamage ?? "—"};
+            уменьшение: ${effects.reduction ?? "—"}; остаток: ${effects.finalRemainder ?? effects.finalDamage ?? "—"}.</p>
+          <p>Временные HP ${receipt?.tempHpBefore ?? "—"} → ${receipt?.tempHpAfter ?? "—"};
+            HP ${receipt?.hpBefore ?? "—"} → ${receipt?.hpAfter ?? "—"}.</p>`;
+      }
       footer = `${button("incoming-close", "Закрыть")}`;
       break;
     case "save-recovery":
@@ -207,7 +226,7 @@ export function renderIncomingWorkspace(session, state) {
       footer = `${button("incoming-retry-save", "Повторить сохранение")}${button("incoming-close", "Закрыть")}`;
       break;
     case "verification":
-      body = `<p role="alert">Результат не подтверждён: ${draft.error || "проверьте состояние."} Повторное применение заблокировано.</p>`;
+      body = `<p role="alert">Результат не подтверждён: ${escapeHtml(draft.error || "проверьте состояние.")} Повторное применение заблокировано.</p>`;
       footer = `${button("incoming-close", "Закрыть")}`;
       break;
     case "expired":

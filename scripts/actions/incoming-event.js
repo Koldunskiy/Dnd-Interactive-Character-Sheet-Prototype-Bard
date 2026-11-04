@@ -19,7 +19,11 @@ function normalizeRequest(request, state = getState()) {
       request.kind === "completed-save" ? "Урон эффекта" : "Полученный урон");
   if (!damage.ok) return damage;
   if (request.kind === "direct-damage") {
-    return { ok: true, request: { kind: request.kind, damage: damage.value, battleId: request.battleId ?? null } };
+    return { ok: true, request: {
+      kind: request.kind, damage: damage.value, battleId: request.battleId ?? null,
+      eventId: request.eventId ?? null, phaseAtOpen: request.phaseAtOpen ?? null,
+      ownTurnIdAtOpen: request.ownTurnIdAtOpen ?? null,
+    } };
   }
   if (request.kind === "completed-save") {
     const roll = request.roll;
@@ -54,6 +58,9 @@ function normalizeRequest(request, state = getState()) {
       request: {
         kind: "completed-save",
         battleId: request.battleId ?? null,
+        eventId: request.eventId ?? null,
+        phaseAtOpen: request.phaseAtOpen ?? null,
+        ownTurnIdAtOpen: request.ownTurnIdAtOpen ?? null,
         outcome: request.outcome,
         hasDamage: request.hasDamage === true,
         damage: damage.value,
@@ -89,6 +96,9 @@ function normalizeRequest(request, state = getState()) {
       source: request.source,
       catchChoice,
       battleId: request.battleId ?? null,
+      eventId: request.eventId ?? null,
+      phaseAtOpen: request.phaseAtOpen ?? null,
+      ownTurnIdAtOpen: request.ownTurnIdAtOpen ?? null,
     },
   };
 }
@@ -97,13 +107,7 @@ export function previewIncomingEvent(state, request) {
   const normalized = normalizeRequest(request, state);
   if (!normalized.ok) return normalized;
   if (normalized.request.kind === "deflection") {
-    return calculateDeflectionPreview(state, {
-      kind: normalized.request.source === "projectile" ? "missile" : "strike",
-      mode: normalized.request.source === "projectile" ? "weapon" : "weapon-melee",
-      incomingDamage: normalized.request.damage,
-      deflectRoll: normalized.request.deflectRoll,
-      applyDamageToSara: true,
-    });
+    return calculateDeflectionPreview(state, buildDeflectionParameters(normalized.request));
   }
   if (normalized.request.kind === "completed-save") {
     if (normalized.request.outcome === "unknown" || !normalized.request.hasDamage) {
@@ -122,6 +126,21 @@ export function previewIncomingEvent(state, request) {
   const hp = Number(state.combat?.hp?.current);
   const tempHp = Number(state.combat?.hp?.temp ?? 0);
   return applyDamagePools(hp, tempHp, normalized.request.damage);
+}
+
+export function buildDeflectionParameters(request) {
+  const projectile = request.source === "projectile";
+  const catching = projectile && request.catchChoice === "catch";
+  return {
+    kind: projectile ? "missile" : "strike",
+    mode: projectile ? "weapon" : "weapon-melee",
+    incomingDamage: request.damage,
+    deflectRoll: request.deflectRoll,
+    applyDamageToSara: true,
+    freeHand: catching,
+    physicalProjectile: projectile,
+    caught: catching,
+  };
 }
 
 export function readIncomingEventReceipt(state, operationId) {
@@ -150,11 +169,18 @@ export function commitIncomingEvent(context, request, operationId) {
   if (normalized.request.battleId !== (battle?.id ?? null)) {
     return { status: "rejected", reason: "Бой изменился; входящее событие устарело." };
   }
+  if ((normalized.request.eventId ?? null) !== (request.eventId ?? null) ||
+      normalized.request.phaseAtOpen !== (battle?.phase ?? "outside") ||
+      normalized.request.ownTurnIdAtOpen !== (battle?.ownTurnId ?? null)) {
+    return { status: "rejected", reason: "Ход или событие изменились; входящее применение устарело." };
+  }
   let receipt = null;
   const result = updateSessionState(context, (draft) => {
     const active = draft.battleConsole?.current ?? null;
     if ((active?.id ?? null) !== normalized.request.battleId ||
-        active && !["waiting", "own-turn"].includes(active.phase)) {
+        active && (!["waiting", "own-turn"].includes(active.phase) ||
+          active.phase !== normalized.request.phaseAtOpen ||
+          (active.ownTurnId ?? null) !== normalized.request.ownTurnIdAtOpen)) {
       throw new Error("Сцена больше не принимает входящее событие.");
     }
     const hpBefore = Number(draft.combat?.hp?.current);
@@ -201,6 +227,18 @@ export function commitIncomingEvent(context, request, operationId) {
         if (!saveOutcome.ok) throw new Error(saveOutcome.reason);
         draft.combat.hp.current = saveOutcome.hpAfter;
         draft.combat.hp.temp = saveOutcome.tempHpAfter;
+        if (saveOutcome.finalDamage > 0) {
+          record.consequence = {
+            status: "applied",
+            finalDamage: saveOutcome.finalDamage,
+            hpBefore: saveOutcome.hpBefore,
+            hpAfter: saveOutcome.hpAfter,
+            tempHpBefore: saveOutcome.tempHpBefore,
+            tempHpAfter: saveOutcome.tempHpAfter,
+            outcomeAtApplication: normalized.request.outcome,
+            resolvedAt: new Date().toISOString(),
+          };
+        }
       }
       draft.characterRolls ??= { records: [] };
       draft.characterRolls.records ??= [];
@@ -223,16 +261,8 @@ export function commitIncomingEvent(context, request, operationId) {
       if (!getEffectiveSelectedTechniqueIds(draft).has(techniqueId)) {
         throw new Error("Техника отражения не выбрана или сейчас недоступна.");
       }
-      const preview = calculateDeflectionPreview(draft, {
-        kind: normalized.request.source === "projectile" ? "missile" : "strike",
-        mode: normalized.request.source === "projectile" ? "weapon" : "weapon-melee",
-        freeHand: normalized.request.catchChoice === "catch",
-        physicalProjectile: normalized.request.source === "projectile",
-        caught: normalized.request.catchChoice === "catch",
-        incomingDamage: normalized.request.damage,
-        deflectRoll: normalized.request.deflectRoll,
-        applyDamageToSara: true,
-      });
+      const deflection = buildDeflectionParameters(normalized.request);
+      const preview = calculateDeflectionPreview(draft, deflection);
       if (!preview.ok) throw new Error(preview.reason);
       const applied = applyMonkTechnique(draft, techniqueId, {
         confirmed: true,
@@ -241,13 +271,18 @@ export function commitIncomingEvent(context, request, operationId) {
         applyDamageToSara: true,
         incomingDamage: normalized.request.damage,
         deflectRoll: normalized.request.deflectRoll,
-        mode: normalized.request.source === "projectile" ? "weapon" : "weapon-melee",
+        finalAdjustedDamage: preview.finalRemainder,
+        mode: deflection.mode,
+        freeHand: deflection.freeHand,
+        physicalProjectile: deflection.physicalProjectile,
+        caught: deflection.caught && preview.finalRemainder === 0,
       });
       if (!applied.ok) throw new Error(applied.reason);
       draft.combat.hp.current = preview.damagePools.hpAfter;
       draft.combat.hp.temp = preview.damagePools.tempHpAfter;
       closeRestWindow(draft, "incoming-deflection");
       outcome = {
+        incomingDamage: preview.incomingDamage,
         finalDamage: preview.finalRemainder,
         reduction: preview.reduction,
         rawRemainder: preview.rawRemainder,

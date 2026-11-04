@@ -50,7 +50,11 @@ import {
   createIncomingEventDraft,
   incomingContextIsCurrent,
 } from "../battle/incoming-event-draft.js";
-import { renderIncomingPreview, renderIncomingWorkspace } from "../render/render-incoming-workspace.js";
+import {
+  renderIncomingCatchControls,
+  renderIncomingPreview,
+  renderIncomingWorkspace,
+} from "../render/render-incoming-workspace.js";
 import {
   commitIncomingEvent,
   previewIncomingEvent,
@@ -90,7 +94,12 @@ import {
   renderWorkspaceAttackPreview,
   renderWorkspaceDamagePreview,
 } from "../render/render-attack-workspace.js";
-import { getSessionContext, retryPersistedState, getState } from "../state.js";
+import {
+  getSessionContext,
+  isCurrentSession,
+  retryPersistedState,
+  getState,
+} from "../state.js";
 import { MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
 import { POTIONS } from "../sara-functional.js";
 import {
@@ -289,6 +298,11 @@ function restoreParentSession({ validateBattleContext = false } = {}) {
       const currentBattle = getState().battleConsole?.current ?? null;
       if ((parent.battleContext.battleId ?? null) !== (currentBattle?.id ?? null) ||
           parent.battleContext.ownTurnId !== currentBattle?.ownTurnId) continue;
+    }
+    if (parent.workspaceType === "command" && parent.currentStep === "command-input" &&
+        !parent.appliedUnsaved) {
+      const currentCommand = getCommandDescriptor(getState(), parent.scenarioId);
+      if (!currentCommand?.availability.enabled) continue;
     }
     session = parent;
     if (session.workspaceType === "attack") rehydrateFromState(getState());
@@ -591,7 +605,7 @@ function render() {
     ? `Вернуться к ${parent.command?.titleRu ?? "рабочей панели"}`
     : "Готово";
   const view = session.workspaceType === "incoming"
-    ? renderIncomingWorkspace(session, state)
+    ? renderIncomingWorkspace({ ...session, owner: getSessionContext() }, state)
     : session.workspaceType === "command"
       ? renderCommandWorkspace(session, state)
       : renderAttackWorkspace(session, state);
@@ -604,6 +618,12 @@ function render() {
       session.workspaceSessionId,
       session.currentStepKey,
       Boolean(session.appliedUnsaved),
+      session.workspaceType === "incoming" ? session.incomingDraft.stage : null,
+      session.workspaceType === "incoming" && session.incomingDraft.stage === "save-input"
+        ? session.incomingDraft.rollDraft.rollMode : null,
+      session.workspaceType === "incoming" && session.incomingDraft.stage === "save-consequence"
+        ? [session.incomingDraft.rollDraft.damageBasis, session.incomingDraft.rollDraft.effectProfile,
+          session.incomingDraft.rollDraft.hasDamage] : null,
     ]),
   });
   session.forceWorkspaceBodyRender = false;
@@ -637,6 +657,8 @@ function handleIncomingAction(action) {
   const draft = active.incomingDraft;
   const state = getState();
   if (!draft || active.workspaceType !== "incoming") return false;
+  if (active.submitting || draft.stage === "verification" &&
+      !["incoming-retry-save"].includes(action)) return true;
   if (action === "incoming-cancel") {
     if (draft.appliedReceipt) return true;
     session = null;
@@ -662,7 +684,7 @@ function handleIncomingAction(action) {
       "save-consequence": "save-input",
     }[draft.stage];
     if (previous) draft.stage = previous;
-    draft.error = "";
+    if (!action.startsWith("incoming-ebb")) draft.error = "";
     render();
     return true;
   }
@@ -696,18 +718,22 @@ function handleIncomingAction(action) {
   else if (action === "incoming-miss") {
     draft.outcome = "miss";
     draft.stage = "miss-response";
-  } else if (action === "incoming-finish-miss") {
-    finishCurrentSession();
+  } else   if (action === "incoming-finish-miss") {
+    finishCurrentSession({ validateBattleContext: true });
     return true;
   } else if (action === "incoming-ebb-save") {
-    if (!incomingContextIsCurrent(draft, state, active.owner)) {
+    const liveOwner = getSessionContext();
+    if (!isCurrentSession(active.owner) ||
+        liveOwner.characterId !== active.owner.characterId ||
+        liveOwner.sessionGeneration !== active.owner.sessionGeneration ||
+        !incomingContextIsCurrent(draft, state, liveOwner)) {
       draft.stage = "expired";
       draft.error = "Контекст боя изменился.";
     } else {
       const capturedSession = active;
       active.submitting = true;
       try {
-        const result = applySaraCombatAction(getSessionContext(), "ebb-and-flow", {
+        const result = applySaraCombatAction(active.owner, "ebb-and-flow", {
           confirmed: true,
           triggerConfirmed: true,
           mode: "dexterity-save",
@@ -762,7 +788,11 @@ function handleIncomingAction(action) {
   } else if (action === "incoming-apply-damage" ||
       action === "incoming-apply-deflection" || action === "incoming-apply-save") {
     if (active.submitting) return true;
-    if (!incomingContextIsCurrent(draft, state, active.owner)) {
+    const liveOwner = getSessionContext();
+    if (!isCurrentSession(active.owner) ||
+        liveOwner.characterId !== active.owner.characterId ||
+        liveOwner.sessionGeneration !== active.owner.sessionGeneration ||
+        !incomingContextIsCurrent(draft, state, liveOwner)) {
       draft.stage = "expired";
       draft.error = "Контекст боя или владельца изменился.";
       render();
@@ -772,9 +802,10 @@ function handleIncomingAction(action) {
       session: active,
       draft,
       eventId: draft.eventId,
-      owner: { characterId: active.owner.characterId,
-        sessionGeneration: active.owner.sessionGeneration },
+      owner: { ...active.owner },
       battleId: draft.battleId,
+      phaseAtOpen: draft.phaseAtOpen,
+      ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
       operationId: action === "incoming-apply-save"
         ? draft.operationIds.save : draft.operationIds.apply,
     };
@@ -783,6 +814,8 @@ function handleIncomingAction(action) {
         kind: "completed-save",
         battleId: draft.battleId,
         eventId: draft.eventId,
+        phaseAtOpen: draft.phaseAtOpen,
+        ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
         outcome: draft.outcome,
         hasDamage: draft.outcome !== "unknown" && draft.rollDraft.hasDamage === true,
         damage: draft.rollDraft.damage,
@@ -800,12 +833,14 @@ function handleIncomingAction(action) {
       : action === "incoming-apply-damage" ? {
         kind: "direct-damage", damage: draft.rawDamage,
         battleId: draft.battleId, eventId: draft.eventId,
+        phaseAtOpen: draft.phaseAtOpen, ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
       }
       : {
         kind: "deflection", damage: draft.rawDamage,
         deflectRoll: draft.rawDeflectRoll, source: draft.source,
         catchChoice: draft.catchChoice, battleId: draft.battleId,
-        eventId: draft.eventId,
+        eventId: draft.eventId, phaseAtOpen: draft.phaseAtOpen,
+        ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
       };
     const preview = previewIncomingEvent(state, request);
     if (!preview.ok) {
@@ -815,7 +850,7 @@ function handleIncomingAction(action) {
     }
     active.submitting = true;
     try {
-      const result = commitIncomingEvent(getSessionContext(), request, captured.operationId);
+      const result = commitIncomingEvent(captured.owner, request, captured.operationId);
       if (result.status === "applied" || result.status === "replayed") {
         if (session === captured.session && session.incomingDraft?.eventId === captured.eventId) {
           draft.appliedReceipt = result.receipt;
@@ -887,9 +922,18 @@ function updateInput(field) {
       if (field.name === "saveAbility") draft.rollDraft.ability = field.value;
     }
     session.dirty = true;
+    const structural = ["rollMode", "damageBasis", "effectProfile", "saveAbility"].includes(field.name);
+    if (structural) {
+      draft.error = "";
+      render();
+      focusWorkspaceHeading();
+      return;
+    }
     draft.error = "";
     const preview = getWorkspaceHost()?.querySelector("[data-incoming-preview]");
     if (preview) preview.innerHTML = renderIncomingPreview(session, getState());
+    const catchControls = getWorkspaceHost()?.querySelector("[data-incoming-catch-controls]");
+    if (catchControls) catchControls.innerHTML = renderIncomingCatchControls(session, getState());
     return;
   }
   const draft = getStepDraft();
@@ -1232,7 +1276,7 @@ export function openIncomingAttack(invoker = null, options = {}) {
     return { ok: false, reason: "Сначала завершите сохранение текущего результата." };
   }
   if (!initWorkspaceHost({ onAction: handleAction, onInput: updateInput, onSubmit: handleSubmit })) {
-    if (session) restoreParentSession();
+    restoreParentSession();
     return { ok: false, reason: "Рабочая панель не смонтирована." };
   }
   const draft = createIncomingEventDraft(state, owner, allowed);
@@ -3476,7 +3520,7 @@ export function reconcileWorkspaceAfterStateChange(state, metadata = null) {
       session.incomingDraft.stage = "result";
       session.status = "Сохранение выполнено.";
     } else if (!session.incomingDraft.appliedReceipt &&
-        !incomingContextIsCurrent(session.incomingDraft, state, session.owner)) {
+        !incomingContextIsCurrent(session.incomingDraft, state, getSessionContext())) {
       session.incomingDraft.stage = "expired";
     }
     if (workspaceHostIsOpen()) render();
@@ -3644,6 +3688,15 @@ export function getWorkspaceSessions() {
       : ["damage-input", "seeking-input"].includes(entry.currentStep) ? "required"
         : isUnrecordedWorkspaceDraft(entry) ? "drafts" : "continuations",
   }));
+}
+
+export function getActiveWorkspaceSession() {
+  if (!session || session.minimized || session.suspended) return null;
+  return {
+    workspaceSessionId: session.workspaceSessionId,
+    appliedUnsaved: session.appliedUnsaved === true,
+    workspaceType: session.workspaceType,
+  };
 }
 
 export function getMinimizedWorkspaceSessions() {
