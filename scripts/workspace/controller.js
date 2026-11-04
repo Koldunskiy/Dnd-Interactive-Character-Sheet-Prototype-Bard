@@ -653,6 +653,110 @@ function render() {
   }
 }
 
+function incomingReceiptEvidence(state, operationId, normalizedRequest, provenNotApplied = false) {
+  const receipt = readIncomingEventReceipt(state, operationId);
+  if (!receipt) return { status: provenNotApplied ? "not-applied" : "unknown" };
+  if (JSON.stringify(receipt.request) !== JSON.stringify(normalizedRequest)) {
+    return { status: "unknown", reason: "Receipt не совпадает с исходным запросом." };
+  }
+  return { status: "applied", receipt };
+}
+
+function clearIncomingPending(draft, active) {
+  delete draft.pendingOperationId;
+  delete draft.pendingNormalizedRequest;
+  delete draft.pendingReturnStage;
+  active.appliedUnsaved = false;
+}
+
+function commitIncomingRequest(active, draft, request, operationId, returnStage) {
+  const state = getState();
+  const preview = previewIncomingEvent(state, request);
+  if (!preview.ok) {
+    draft.error = preview.reason;
+    render();
+    return true;
+  }
+  const normalized = normalizeIncomingEventRequest(request, state);
+  if (!normalized.ok) {
+    draft.error = normalized.reason;
+    render();
+    return true;
+  }
+  draft.pendingOperationId = operationId;
+  draft.pendingNormalizedRequest = structuredClone(normalized.request);
+  draft.pendingReturnStage = returnStage;
+  active.submitting = true;
+  try {
+    const result = commitIncomingEvent(active.owner, request, operationId);
+    if (result.status === "applied" || result.status === "replayed") {
+      const evidence = incomingReceiptEvidence(
+        getState(), operationId, draft.pendingNormalizedRequest,
+      );
+      if (evidence.status === "applied") {
+        draft.appliedReceipt = evidence.receipt;
+        draft.stage = result.persistence?.ok === false ? "save-recovery" : "result";
+        active.appliedUnsaved = result.persistence?.ok === false;
+        active.status = active.appliedUnsaved
+          ? "Применено в памяти; повторите сохранение."
+          : "Входящее событие записано.";
+      } else {
+        draft.stage = "verification";
+        draft.error = evidence.reason ?? "Не удалось подтвердить receipt операции.";
+        active.appliedUnsaved = true;
+      }
+    } else if (result.reason === "duplicate-operation") {
+      draft.stage = "verification";
+      draft.error = result.reason;
+      active.appliedUnsaved = true;
+    } else if (result.code === "operation-id-collision") {
+      clearIncomingPending(draft, active);
+      if (request.kind === "completed-save") draft.operationIds.save = createId("incoming-save");
+      else if (request.kind === "ebb-and-flow") draft.operationIds.reply = createId("incoming-reply");
+      else draft.operationIds.apply = createId("incoming-apply");
+      draft.stage = returnStage;
+      draft.error = result.reason;
+    } else {
+      const evidence = incomingReceiptEvidence(
+        getState(), operationId, draft.pendingNormalizedRequest, true,
+      );
+      if (evidence.status === "applied") {
+        draft.appliedReceipt = evidence.receipt;
+        draft.stage = result.persistence?.ok === false ? "save-recovery" : "result";
+        active.appliedUnsaved = result.persistence?.ok === false;
+      } else {
+        clearIncomingPending(draft, active);
+        draft.stage = returnStage;
+        draft.error = result.reason ?? "Входящее событие не применено.";
+      }
+    }
+  } catch (error) {
+    let evidence = { status: "unknown" };
+    let inspectionError = null;
+    try {
+      evidence = incomingReceiptEvidence(
+        getState(), operationId, draft.pendingNormalizedRequest,
+      );
+    } catch (verificationError) {
+      inspectionError = verificationError;
+    }
+    if (evidence.status === "applied") {
+      draft.appliedReceipt = evidence.receipt;
+      draft.stage = "save-recovery";
+      active.appliedUnsaved = true;
+    } else {
+      draft.stage = "verification";
+      active.appliedUnsaved = true;
+    }
+    const reason = inspectionError ?? evidence.reason ?? error;
+    draft.error = reason instanceof Error ? reason.message : String(reason);
+  } finally {
+    active.submitting = false;
+  }
+  render();
+  return true;
+}
+
 function handleIncomingAction(action) {
   const active = session;
   const draft = active.incomingDraft;
@@ -691,23 +795,36 @@ function handleIncomingAction(action) {
     return true;
   }
   if (action === "incoming-retry-save") {
-    if (draft.stage !== "save-recovery" || !draft.appliedReceipt) return true;
-    const receipt = draft.appliedReceipt.kind === "incoming-ebb-and-flow"
-      ? draft.appliedReceipt
-      : readIncomingEventReceipt(getState(), draft.operationIds.save) ??
-        readIncomingEventReceipt(getState(), draft.operationIds.apply);
-    if (!receipt || receipt.id !== draft.appliedReceipt.id) {
+    if (draft.stage !== "save-recovery" || !draft.pendingOperationId ||
+        !draft.pendingNormalizedRequest) return true;
+    const evidence = incomingReceiptEvidence(
+      getState(), draft.pendingOperationId, draft.pendingNormalizedRequest,
+    );
+    if (evidence.status !== "applied") {
       draft.stage = "verification";
-      draft.error = "Не удалось подтвердить receipt применённой операции.";
+      draft.error = evidence.reason ?? "Не удалось подтвердить receipt применённой операции.";
       render();
       return true;
     }
+    draft.appliedReceipt = evidence.receipt;
     const saved = retryPersistedState();
     if (!saved.ok) {
       draft.error = saved.reason ?? "Не удалось сохранить результат.";
       render();
       return true;
     }
+    const savedEvidence = incomingReceiptEvidence(
+      getState(), draft.pendingOperationId, draft.pendingNormalizedRequest,
+    );
+    if (savedEvidence.status !== "applied") {
+      active.appliedUnsaved = false;
+      draft.stage = "verification";
+      draft.error = savedEvidence.reason ??
+        "Сохранение выполнено, но применение не подтверждено.";
+      render();
+      return true;
+    }
+    draft.appliedReceipt = savedEvidence.receipt;
     active.appliedUnsaved = false;
     draft.stage = "result";
     active.status = "Сохранение выполнено.";
@@ -716,30 +833,36 @@ function handleIncomingAction(action) {
   }
   if (action === "incoming-verify") {
     try {
-      const request = draft.pendingRequest;
-      const receipt = request && readIncomingEventReceipt(getState(), draft.pendingOperationId);
-      if (receipt) {
-        const normalized = normalizeIncomingEventRequest(request, getState());
-        if (!normalized.ok ||
-            JSON.stringify(receipt.request) !== JSON.stringify(normalized.request)) {
-          draft.error = "Receipt относится к другому запросу; состояние требует проверки.";
-          render();
-          return true;
-        }
-        draft.appliedReceipt = receipt;
+      const evidence = draft.pendingOperationId && draft.pendingNormalizedRequest
+        ? incomingReceiptEvidence(
+          getState(), draft.pendingOperationId, draft.pendingNormalizedRequest,
+        )
+        : { status: "unknown", reason: "Нет сохранённого запроса для проверки." };
+      if (evidence.status === "applied") {
+        draft.appliedReceipt = evidence.receipt;
         draft.stage = "save-recovery";
         active.appliedUnsaved = true;
         const saved = retryPersistedState();
         if (saved.ok) {
-          active.appliedUnsaved = false;
-          draft.stage = "result";
+          const savedEvidence = incomingReceiptEvidence(
+            getState(), draft.pendingOperationId, draft.pendingNormalizedRequest,
+          );
+          if (savedEvidence.status === "applied") {
+            draft.appliedReceipt = savedEvidence.receipt;
+            active.appliedUnsaved = false;
+            draft.stage = "result";
+          } else {
+            active.appliedUnsaved = false;
+            draft.stage = "verification";
+            draft.error = savedEvidence.reason ??
+              "Сохранение выполнено, но применение не подтверждено.";
+          }
         } else {
           draft.error = saved.reason ?? "Не удалось сохранить результат.";
         }
       } else {
-        draft.stage = draft.pendingRequest?.kind === "direct-damage" ? "damage"
-          : draft.pendingRequest?.kind === "deflection" ? "deflect" : "save-input";
-        draft.error = "";
+        draft.stage = "verification";
+        draft.error = evidence.reason ?? "Receipt отсутствует; исход операции неизвестен.";
       }
     } catch (error) {
       draft.error = error instanceof Error ? error.message : String(error);
@@ -776,53 +899,16 @@ function handleIncomingAction(action) {
       draft.stage = "expired";
       draft.error = "Контекст боя изменился.";
     } else {
-      const capturedSession = active;
-      const reactionUsedBefore = state.ui?.turn?.reactionUsed === true;
-      active.submitting = true;
-      try {
-        const result = applySaraCombatAction(active.owner, "ebb-and-flow", {
-          confirmed: true,
-          triggerConfirmed: true,
-          mode: "dexterity-save",
-          operationId: draft.operationIds.reply,
-        });
-        if (result.status === "applied" && session === capturedSession) {
-          draft.appliedReceipt = {
-            id: draft.operationIds.reply,
-            kind: "incoming-ebb-and-flow",
-            eventId: draft.eventId,
-            outcome: result.outcome,
-          };
-          draft.stage = result.persistence?.ok === false ? "save-recovery" : "result";
-          active.appliedUnsaved = result.persistence?.ok === false;
-        } else if (session === capturedSession) {
-          draft.error = result.reason ?? "Ответ не применён.";
-        }
-      } catch (error) {
-        if (session === capturedSession) {
-          const current = getState();
-          const applied = !reactionUsedBefore &&
-            current.ui?.turn?.reactionUsed === true &&
-            incomingContextIsCurrent(draft, current, getSessionContext());
-          if (applied) {
-            draft.error = error instanceof Error ? error.message : String(error);
-            draft.appliedReceipt = {
-              id: draft.operationIds.reply,
-              kind: "incoming-ebb-and-flow",
-              eventId: draft.eventId,
-              outcome: { response: "dexterity-save", kiSpent: 0 },
-            };
-            draft.stage = "save-recovery";
-            active.appliedUnsaved = true;
-          } else {
-            draft.stage = "verification";
-            draft.error = error instanceof Error ? error.message : String(error);
-            active.appliedUnsaved = true;
-          }
-        }
-      } finally {
-        if (session === capturedSession) active.submitting = false;
-      }
+      const request = {
+        kind: "ebb-and-flow",
+        mode: "dexterity-save",
+        triggerConfirmed: true,
+        battleId: draft.battleId,
+        eventId: draft.eventId,
+        phaseAtOpen: draft.phaseAtOpen,
+        ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
+      };
+      return commitIncomingRequest(active, draft, request, draft.operationIds.reply, "miss-response");
     }
   } else if (action.startsWith("incoming-source-")) {
     const source = action.slice("incoming-source-".length);
@@ -861,17 +947,9 @@ function handleIncomingAction(action) {
       render();
       return true;
     }
-    const captured = {
-      session: active,
-      draft,
-      eventId: draft.eventId,
-      owner: { ...active.owner },
-      battleId: draft.battleId,
-      phaseAtOpen: draft.phaseAtOpen,
-      ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
-      operationId: action === "incoming-apply-save"
-        ? draft.operationIds.save : draft.operationIds.apply,
-    };
+    const operationId = action === "incoming-apply-save"
+      ? draft.operationIds.save : draft.operationIds.apply;
+    const returnStage = draft.stage;
     const request = action === "incoming-apply-save"
       ? {
         kind: "completed-save",
@@ -905,69 +983,7 @@ function handleIncomingAction(action) {
         eventId: draft.eventId, phaseAtOpen: draft.phaseAtOpen,
         ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
       };
-    const preview = previewIncomingEvent(state, request);
-    if (!preview.ok) {
-      draft.error = preview.reason;
-      render();
-      return true;
-    }
-    const normalizedRequest = normalizeIncomingEventRequest(request, state);
-    if (!normalizedRequest.ok) {
-      draft.error = normalizedRequest.reason;
-      render();
-      return true;
-    }
-    draft.pendingRequest = structuredClone(request);
-    draft.pendingOperationId = captured.operationId;
-    active.submitting = true;
-    try {
-      const result = commitIncomingEvent(captured.owner, request, captured.operationId);
-      if (result.status === "applied" || result.status === "replayed") {
-        if (session === captured.session && session.incomingDraft?.eventId === captured.eventId) {
-          draft.appliedReceipt = result.receipt;
-          draft.stage = result.persistence?.ok === false ? "save-recovery" : "result";
-          active.appliedUnsaved = result.persistence?.ok === false;
-          active.submitting = false;
-          active.status = active.appliedUnsaved
-            ? "Применено в памяти; повторите сохранение."
-            : "Входящее событие записано.";
-          render();
-        }
-      } else if (session === captured.session && session.incomingDraft?.eventId === captured.eventId) {
-        draft.error = result.reason ?? "Входящее событие не применено.";
-        active.submitting = false;
-        render();
-      }
-    } catch (error) {
-      let receipt = null;
-      let inspectionError = null;
-      try {
-        receipt = readIncomingEventReceipt(getState(), captured.operationId);
-      } catch (verificationError) {
-        inspectionError = verificationError;
-      }
-      if (session === captured.session && session.incomingDraft?.eventId === captured.eventId) {
-        active.submitting = false;
-        if (receipt) {
-          draft.appliedReceipt = receipt;
-          draft.stage = "save-recovery";
-          active.appliedUnsaved = true;
-          active.status = "Применено в памяти; повторите сохранение.";
-        } else {
-          draft.stage = "verification";
-          const reason = inspectionError ?? error;
-          draft.error = reason instanceof Error ? reason.message : String(reason);
-          active.appliedUnsaved = true;
-        }
-        render();
-      }
-    } finally {
-      if (session === captured.session &&
-          session.incomingDraft?.eventId === captured.eventId) {
-        active.submitting = false;
-      }
-    }
-    return true;
+    return commitIncomingRequest(active, draft, request, operationId, returnStage);
   }
   render();
   return true;
@@ -3597,11 +3613,30 @@ export function reconcileWorkspaceAfterStateChange(state, metadata = null) {
   }
   if (session.workspaceType === "incoming") {
     if (metadata?.kind === "persistence-retry" && metadata.persistenceResult?.ok &&
-        session.appliedUnsaved && session.incomingDraft.appliedReceipt) {
-      session.appliedUnsaved = false;
-      session.incomingDraft.stage = "result";
-      session.status = "Сохранение выполнено.";
-    } else if (!session.incomingDraft.appliedReceipt &&
+        session.appliedUnsaved && session.incomingDraft.pendingOperationId &&
+        session.incomingDraft.pendingNormalizedRequest) {
+      try {
+        const evidence = incomingReceiptEvidence(
+          state,
+          session.incomingDraft.pendingOperationId,
+          session.incomingDraft.pendingNormalizedRequest,
+        );
+        if (evidence.status === "applied") {
+          session.incomingDraft.appliedReceipt = evidence.receipt;
+          session.appliedUnsaved = false;
+          session.incomingDraft.stage = "result";
+          session.status = "Сохранение выполнено.";
+        } else {
+          session.incomingDraft.stage = "verification";
+          session.incomingDraft.error = evidence.reason ??
+            "Сохранение выполнено, но применение не подтверждено.";
+        }
+      } catch (error) {
+        session.incomingDraft.stage = "verification";
+        session.incomingDraft.error = error instanceof Error ? error.message : String(error);
+      }
+    } else if (session.incomingDraft.stage !== "verification" &&
+        !session.incomingDraft.appliedReceipt &&
         !incomingContextIsCurrent(session.incomingDraft, state, getSessionContext())) {
       session.incomingDraft.stage = "expired";
     }

@@ -6,7 +6,13 @@ import {
   openIncomingAttack,
   openNormalAttack,
 } from "../../scripts/workspace/controller.js";
-import { getState, getSessionContext, subscribe } from "../../scripts/state.js";
+import {
+  getState,
+  getSessionContext,
+  retryPersistedState,
+  subscribe,
+  updateState,
+} from "../../scripts/state.js";
 import { executeBattleCommand } from "../../scripts/battle/commands.js";
 import { fireWorkspaceAction, installWorkspaceFixture } from "./workspace-fixture.mjs";
 
@@ -109,8 +115,119 @@ test("production Ebb handler keeps a post-commit exception visible", () => {
   const draft = getWorkspaceSessionForTests().incomingDraft;
   assert.match(draft.error, /Ebb persistence callback failure/);
   assert.equal(draft.stage, "save-recovery");
-  assert.ok(draft.appliedReceipt);
+  const receipt = getState().monk.combatAssistant.recentlyCompletedSummaries.find((entry) =>
+    entry.id === draft.pendingOperationId);
+  assert.equal(receipt.kind, "incoming-event");
+  assert.equal(receipt.request.kind, "ebb-and-flow");
+  assert.deepEqual(receipt.outcome.effects, {
+    response: "dexterity-save",
+    kiSpent: 0,
+    onFailedSave: "prone-and-speed-zero-until-end-of-target-turn",
+    largerTargetHasAdvantage: true,
+  });
   assert.equal(getState().ui.turn.reactionUsed, true);
+  unsubscribe();
+});
+
+test("unknown receipt absence remains locked and cannot replay or cancel", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  startBattle();
+  assert.equal(openIncomingAttack(null, { mode: "direct-damage" }).ok, true);
+  typeIncoming(dialog, "incomingDamage", "4");
+  const failUnknown = subscribe((state) => {
+    state.monk.combatAssistant.recentlyCompletedSummaries = [];
+    throw new Error("unknown post-commit result");
+  });
+  const hpBefore = getState().combat.hp.current;
+  try {
+    fireWorkspaceAction(dialog, "incoming-apply-damage");
+  } finally {
+    failUnknown();
+  }
+  const hpAfter = getState().combat.hp.current;
+  assert.equal(hpAfter, hpBefore - 4);
+  let draft = getWorkspaceSessionForTests().incomingDraft;
+  assert.equal(draft.stage, "verification");
+  assert.ok(draft.pendingOperationId);
+  assert.ok(draft.pendingNormalizedRequest);
+  assert.equal(draft.pendingReturnStage, "damage");
+  updateState((state) => {
+    state.battleConsole.current.phase = "paused";
+    return state;
+  });
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "verification");
+  fireWorkspaceAction(dialog, "incoming-verify");
+  fireWorkspaceAction(dialog, "incoming-apply-damage");
+  fireWorkspaceAction(dialog, "incoming-cancel");
+  fireWorkspaceAction(dialog, "incoming-close");
+  draft = getWorkspaceSessionForTests().incomingDraft;
+  assert.equal(draft.stage, "verification");
+  assert.equal(getState().combat.hp.current, hpAfter);
+  assert.ok(getWorkspaceSessionForTests());
+  unsubscribe();
+});
+
+test("successful persistence retry without a canonical receipt remains verification", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  startBattle();
+  assert.equal(openIncomingAttack(null, { mode: "direct-damage" }).ok, true);
+  typeIncoming(dialog, "incomingDamage", "2");
+  const originalSetItem = window.localStorage.setItem;
+  window.localStorage.setItem = () => { throw new Error("initial storage failure"); };
+  fireWorkspaceAction(dialog, "incoming-apply-damage");
+  window.localStorage.setItem = originalSetItem;
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "save-recovery");
+  getState().monk.combatAssistant.recentlyCompletedSummaries = [];
+  assert.equal(retryPersistedState().ok, true);
+  const draft = getWorkspaceSessionForTests().incomingDraft;
+  assert.equal(draft.stage, "verification");
+  assert.match(draft.error, /не подтверждено/i);
+  fireWorkspaceAction(dialog, "incoming-retry-save");
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "verification");
+  unsubscribe();
+});
+
+test("Ebb cannot manufacture a receipt when a different action spent the reaction", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  startBattle();
+  assert.equal(openIncomingAttack().ok, true);
+  fireWorkspaceAction(dialog, "incoming-miss");
+  updateState((draft) => {
+    draft.ui.turn.reactionUsed = true;
+    return draft;
+  });
+  const before = structuredClone(getState());
+  const storageBefore = new Map(window.localStorage.values);
+  fireWorkspaceAction(dialog, "incoming-ebb-save");
+  const session = getWorkspaceSessionForTests();
+  assert.equal(session.incomingDraft.stage, "miss-response");
+  assert.equal(session.appliedUnsaved, false);
+  assert.equal(session.incomingDraft.pendingOperationId, undefined);
+  assert.deepEqual(getState(), before);
+  assert.deepEqual(window.localStorage.values, storageBefore);
+  assert.equal(getState().monk.combatAssistant.recentlyCompletedSummaries.some((entry) =>
+    entry.request?.kind === "ebb-and-flow"), false);
+  unsubscribe();
+});
+
+test("Ebb pre-commit refusal restores its editable stage without state or storage changes", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  startBattle();
+  assert.equal(openIncomingAttack().ok, true);
+  fireWorkspaceAction(dialog, "incoming-miss");
+  updateState((draft) => {
+    draft.profile.level = 5;
+    return draft;
+  });
+  const before = structuredClone(getState());
+  const storageBefore = new Map(window.localStorage.values);
+  fireWorkspaceAction(dialog, "incoming-ebb-save");
+  const session = getWorkspaceSessionForTests();
+  assert.equal(session.incomingDraft.stage, "miss-response");
+  assert.equal(session.appliedUnsaved, false);
+  assert.equal(session.incomingDraft.pendingOperationId, undefined);
+  assert.deepEqual(getState(), before);
+  assert.deepEqual(window.localStorage.values, storageBefore);
   unsubscribe();
 });
 
@@ -168,8 +285,19 @@ test("production structural changes preserve incoming fields and focus the chang
 test("production handler preserves verification on receipt-inspection failure, then recovers matching receipt", () => {
   const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
   startBattle();
-  assert.equal(openIncomingAttack(null, { mode: "direct-damage" }).ok, true);
-  typeIncoming(dialog, "incomingDamage", "3");
+  assert.equal(openIncomingAttack().ok, true);
+  fireWorkspaceAction(dialog, "incoming-hit");
+  fireWorkspaceAction(dialog, "incoming-source-spell");
+  fireWorkspaceAction(dialog, "incoming-spell-save");
+  typeIncoming(dialog, "rollMode", "advantage");
+  typeIncoming(dialog, "firstD20", "16");
+  typeIncoming(dialog, "secondD20", "14");
+  fireWorkspaceAction(dialog, "incoming-save-failure");
+  fireWorkspaceAction(dialog, "incoming-set-has-damage");
+  typeIncoming(dialog, "saveDamage", "3");
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "save-consequence");
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.rollDraft.firstD20, "16");
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.rollDraft.damage, "3");
   let assistant;
   let descriptor;
   const failInspection = subscribe(() => {
@@ -181,18 +309,26 @@ test("production handler preserves verification on receipt-inspection failure, t
     throw new Error("post-commit failure");
   });
   try {
-    fireWorkspaceAction(dialog, "incoming-apply-damage");
+    fireWorkspaceAction(dialog, "incoming-apply-save");
+    assert.ok(assistant, getWorkspaceSessionForTests().incomingDraft.error);
   } finally {
     failInspection();
-    Object.defineProperty(assistant, "recentlyCompletedSummaries", descriptor);
+    if (assistant) Object.defineProperty(assistant, "recentlyCompletedSummaries", descriptor);
   }
   const verification = getWorkspaceSessionForTests().incomingDraft;
   assert.equal(verification.stage, "verification");
   assert.match(verification.error, /receipt inspection failed/);
   assert.match(dialog.footer.innerHTML, /incoming-verify/);
+  const hpAfterApply = getState().combat.hp.current;
+  updateState((draft) => {
+    draft.abilities.dexterity = 3;
+    return draft;
+  });
   fireWorkspaceAction(dialog, "incoming-verify");
   const recovered = getWorkspaceSessionForTests().incomingDraft;
   assert.equal(recovered.stage, "result");
   assert.ok(recovered.appliedReceipt);
+  assert.equal(getState().combat.hp.current, hpAfterApply);
+  assert.deepEqual(recovered.pendingNormalizedRequest, recovered.appliedReceipt.request);
   unsubscribe();
 });

@@ -10,7 +10,7 @@ import { calculateCharacterRoll } from "../rolls/calculations.js";
 import { calculateRollConsequencePreview } from "../rolls/consequences.js";
 
 export function normalizeIncomingEventRequest(request, state = getState()) {
-  if (!request || !["direct-damage", "deflection", "completed-save"].includes(request.kind)) {
+  if (!request || !["direct-damage", "deflection", "completed-save", "ebb-and-flow"].includes(request.kind)) {
     return { ok: false, reason: "Неизвестное входящее применение." };
   }
   if (typeof request.eventId !== "string" || !request.eventId.trim()) {
@@ -26,7 +26,9 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
       (request.phaseAtOpen === "own-turn") !== (request.ownTurnIdAtOpen !== null)) {
     return { ok: false, reason: "Идентификаторы боя, фазы или хода некорректны либо несогласованы." };
   }
-  const damage = request.kind === "completed-save" && request.hasDamage !== true
+  const damage = request.kind === "ebb-and-flow"
+    ? { ok: true, value: null }
+    : request.kind === "completed-save" && request.hasDamage !== true
     ? { ok: true, value: null }
     : parsePhysicalInteger(request.damage, 0, Number.MAX_SAFE_INTEGER,
       request.kind === "completed-save" ? "Урон эффекта" : "Полученный урон");
@@ -37,6 +39,23 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
       eventId: request.eventId ?? null, phaseAtOpen: request.phaseAtOpen ?? null,
       ownTurnIdAtOpen: request.ownTurnIdAtOpen ?? null,
     } };
+  }
+  if (request.kind === "ebb-and-flow") {
+    if (request.mode !== "dexterity-save" || request.triggerConfirmed !== true) {
+      return { ok: false, reason: "Подтвердите допустимый ответ Ebb & Flow." };
+    }
+    return {
+      ok: true,
+      request: {
+        kind: "ebb-and-flow",
+        mode: request.mode,
+        triggerConfirmed: true,
+        battleId: request.battleId,
+        eventId: request.eventId,
+        phaseAtOpen: request.phaseAtOpen,
+        ownTurnIdAtOpen: request.ownTurnIdAtOpen,
+      },
+    };
   }
   if (request.kind === "completed-save") {
     const roll = request.roll;
@@ -119,6 +138,7 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
 export function previewIncomingEvent(state, request) {
   const normalized = normalizeIncomingEventRequest(request, state);
   if (!normalized.ok) return normalized;
+  if (normalized.request.kind === "ebb-and-flow") return { ok: true };
   if (normalized.request.kind === "deflection") {
     return calculateDeflectionPreview(state, buildDeflectionParameters(normalized.request));
   }
@@ -174,7 +194,11 @@ export function commitIncomingEvent(context, request, operationId) {
   const existing = readIncomingEventReceipt(current, operationId);
   if (existing) {
     if (JSON.stringify(existing.request) !== JSON.stringify(normalized.request)) {
-      return { status: "rejected", reason: "ID входящего применения уже связан с другим запросом." };
+      return {
+        status: "rejected",
+        code: "operation-id-collision",
+        reason: "ID входящего применения уже связан с другим запросом.",
+      };
     }
     return { status: "replayed", receipt: structuredClone(existing) };
   }
@@ -277,6 +301,20 @@ export function commitIncomingEvent(context, request, operationId) {
       draft.characterRolls.records = [...completed, ...pending];
       closeRestWindow(draft, "incoming-save");
       outcome = { rollId: record.id, roll: record, consequence: saveOutcome };
+    } else if (normalized.request.kind === "ebb-and-flow") {
+      if (draft.profile?.id !== "sara-velaris" || Number(draft.profile.level) < 6) {
+        throw new Error("Ebb & Flow доступна с 6 уровня.");
+      }
+      if (draft.ui?.turn?.reactionUsed === true) {
+        throw new Error("Реакция уже использована в этом ходу.");
+      }
+      draft.ui.turn.reactionUsed = true;
+      outcome = {
+        response: "dexterity-save",
+        kiSpent: 0,
+        onFailedSave: "prone-and-speed-zero-until-end-of-target-turn",
+        largerTargetHasAdvantage: true,
+      };
     } else {
       const techniqueId = normalized.request.source === "projectile"
         ? "ll-monk:deflect-missile" : "ll-monk:deflect-strike";

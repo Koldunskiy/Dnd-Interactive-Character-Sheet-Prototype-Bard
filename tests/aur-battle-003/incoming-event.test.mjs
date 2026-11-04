@@ -41,7 +41,7 @@ test("direct incoming damage validates physical values and applies temp HP befor
   const result = commitIncomingEvent(context, {
     kind: "direct-damage", damage: "0", ...identity,
   }, "incoming-test-operation");
-  assert.equal(result.status, "applied");
+  assert.equal(result.status, "applied", result.reason);
   assert.equal(getState().combat.hp.current, hp);
   assert.equal(getState().combat.hp.temp ?? 0, tempHp);
   assert.ok(readIncomingEventReceipt(getState(), "incoming-test-operation"));
@@ -75,7 +75,7 @@ test("completed incoming save records unknown without consequence or HP loss", (
       id: "wisdom", firstD20: "14", secondD20: null, rollMode: "normal", dc: null,
     },
   }, "incoming-unknown-save-operation");
-  assert.equal(result.status, "applied");
+  assert.equal(result.status, "applied", result.reason);
   assert.equal(getState().combat.hp.current, hp);
   const record = getState().characterRolls.records.find((entry) =>
     entry.id === "incoming-unknown-save-operation");
@@ -144,7 +144,7 @@ test("completed save with applied damage records an applied consequence and cann
     damage: "10", damageBasis: "dm-final",
     roll: { id: "wisdom", firstD20: "14", secondD20: null, rollMode: "normal", dc: null },
   }, "known-save-operation");
-  assert.equal(result.status, "applied");
+  assert.equal(result.status, "applied", result.reason);
   const record = getState().characterRolls.records.find((entry) =>
     entry.id === "known-save-operation");
   assert.equal(record.consequence.status, "applied");
@@ -164,7 +164,7 @@ test("known zero-damage save preserves calculation evidence and cannot reapply",
     damage: "20", damageBasis: "full-effect", effectProfile: "save-half",
     roll: { id: "dexterity", firstD20: "18", secondD20: null, rollMode: "normal", dc: "12" },
   }, "evasion-zero-operation");
-  assert.equal(result.status, "applied");
+  assert.equal(result.status, "applied", result.reason);
   const record = getState().characterRolls.records.find((entry) =>
     entry.id === "evasion-zero-operation");
   assert.equal(record.consequence.status, "applied");
@@ -218,5 +218,25 @@ test("incoming request rejects a changed turn in the same battle", () => {
   assert.equal(commitIncomingEvent(getSessionContext(), {
     kind: "direct-damage", damage: "5", ...identity,
   }, "stale-turn-operation").status, "rejected");
+  unsubscribe();
+});
+
+test("operation ID collision with another normalized request rejects without mutation", () => {
+  const { unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  assert.equal(executeBattleCommand("start-battle", { rawD20: "12" }).status, "applied");
+  const identity = incomingIdentity("collision-event");
+  const context = getSessionContext();
+  assert.equal(commitIncomingEvent(context, {
+    kind: "direct-damage", damage: "4", ...identity,
+  }, "collision-operation").status, "applied");
+  const stateBefore = structuredClone(getState());
+  const storageBefore = new Map(window.localStorage.values);
+  const collision = commitIncomingEvent(getSessionContext(), {
+    kind: "direct-damage", damage: "5", ...identity,
+  }, "collision-operation");
+  assert.equal(collision.status, "rejected");
+  assert.match(collision.reason, /уже связан с другим запросом/);
+  assert.deepEqual(getState(), stateBefore);
+  assert.deepEqual(window.localStorage.values, storageBefore);
   unsubscribe();
 });

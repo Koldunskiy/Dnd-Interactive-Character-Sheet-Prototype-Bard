@@ -126,7 +126,8 @@ export function renderIncomingWorkspace(session, state) {
     ["waiting", "own-turn"].includes(state.battleConsole?.current?.phase);
   let body = "";
   let footer = "";
-  if (!incomingContextIsCurrent(draft, state, session.owner) && !draft.appliedReceipt) {
+  if (draft.stage !== "verification" &&
+      !incomingContextIsCurrent(draft, state, session.owner) && !draft.appliedReceipt) {
     draft.stage = "expired";
   }
   switch (draft.stage) {
