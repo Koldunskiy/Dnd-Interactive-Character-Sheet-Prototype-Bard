@@ -1,12 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getState, openCharacterSession, subscribe, updateState } from "../../scripts/state.js";
+import { getSessionContext, getState, openCharacterSession, subscribe, updateState } from "../../scripts/state.js";
+import { executeBattleCommand } from "../../scripts/battle/commands.js";
 import { getDerivedStats } from "../../scripts/calculations.js";
 import {
   disposeWorkspaceOwner,
+  getWorkspaceSessions,
   openNormalAttack,
   openSaraBattleCommand,
   getWorkspaceSessionForTests,
+  requestEndBattle,
 } from "../../scripts/workspace/controller.js";
 import {
   getWorkspaceHost,
@@ -22,8 +25,29 @@ import {
   fireWorkspaceInput,
   fireWorkspaceAction,
   FixtureForm,
+  FixtureInput,
   installWorkspaceFixture,
 } from "./workspace-fixture.mjs";
+
+function beginActiveBattle() {
+  assert.equal(executeBattleCommand("start-battle", { rawD20: "10" }).status, "applied");
+  assert.equal(executeBattleCommand("begin-own-turn").status, "applied");
+  return getState().battleConsole.current.id;
+}
+
+function setAttackDraft(dialog, value) {
+  dialog.forms.attack = new FixtureForm("attack", { firstD20: value }, {
+    firstD20: { type: "number", min: 1, max: 20 },
+  });
+  fireWorkspaceInput(dialog, "firstD20", value);
+}
+
+function fireDockEnd(dialog, owner, battleId) {
+  fireWorkspaceAction(dialog, "end-battle", {
+    battleId,
+    battleOwner: JSON.stringify([owner.characterId, owner.sessionGeneration]),
+  });
+}
 
 test("Sara combat tasks use the embedded host without dialog or body-lock behavior", () => {
   const { dialog, taskHud, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
@@ -76,6 +100,211 @@ test("Sara combat tasks use the embedded host without dialog or body-lock behavi
   assert.equal(dialog.body.innerHTML, existingBody);
   assert.equal(dialog.error.textContent, "Проверьте введённое значение.");
   assert.equal(dialog.error.hidden, false);
+  unsubscribe();
+});
+
+test("dock cancellation preserves a dirty attack draft, session, state, and Map storage", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const battleId = beginActiveBattle();
+  assert.equal(openNormalAttack().ok, true);
+  setAttackDraft(dialog, "17");
+  const owner = getWorkspaceSessionForTests().owner;
+  const sessionId = getWorkspaceSessionForTests().workspaceSessionId;
+  const stateBefore = structuredClone(getState());
+  const storageBefore = new Map(window.localStorage.values);
+  let confirms = 0;
+  window.confirm = () => { confirms += 1; return false; };
+
+  fireDockEnd(dialog, owner, battleId);
+
+  assert.equal(confirms, 1);
+  assert.equal(getWorkspaceSessionForTests().workspaceSessionId, sessionId);
+  assert.equal(getWorkspaceSessionForTests().rawInputsByStep[
+    getWorkspaceSessionForTests().currentStepKey].firstD20, "17");
+  assert.equal(dialog.forms.attack.elements[0].value, "17");
+  assert.deepEqual(getState(), stateBefore);
+  assert.deepEqual(window.localStorage.values, storageBefore);
+  unsubscribe();
+});
+
+test("dock host delegation confirms once, archives once, and discards an unrecorded attack", () => {
+  const { dialog, taskSceneControls, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const battleId = beginActiveBattle();
+  assert.equal(openNormalAttack().ok, true);
+  setAttackDraft(dialog, "16");
+  const owner = getWorkspaceSessionForTests().owner;
+  assert.match(taskSceneControls.innerHTML, /data-sara-end-battle/);
+  let confirms = 0;
+  window.confirm = () => { confirms += 1; return true; };
+
+  fireDockEnd(dialog, owner, battleId);
+
+  assert.equal(confirms, 1);
+  assert.equal(getState().battleConsole.current, null);
+  assert.equal(getState().battleConsole.history.filter((entry) =>
+    entry.id === battleId && entry.phase === "ended").length, 1);
+  assert.equal(getWorkspaceSessionForTests(), null);
+  assert.equal(getWorkspaceSessions().filter((entry) =>
+    entry.workspaceSessionId && entry.label).length, 0);
+  assert.equal(getState().monk.combatAssistant?.activeSequences?.filter((entry) =>
+    entry.kind === "attack-action").length ?? 0, 0);
+  assert.equal(dialog.hidden, true);
+  unsubscribe();
+});
+
+test("battle end removes parent and child sessions without restoring the suspended parent", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const battleId = beginActiveBattle();
+  assert.equal(openNormalAttack().ok, true);
+  assert.equal(openSaraBattleCommand("character-roll").ok, true);
+  const owner = getWorkspaceSessionForTests().owner;
+  assert.equal(getWorkspaceSessions().filter((entry) => entry.suspended).length, 1);
+  window.confirm = () => true;
+
+  fireDockEnd(dialog, owner, battleId);
+
+  assert.equal(getWorkspaceSessionForTests(), null);
+  assert.equal(getWorkspaceSessions().length, 0);
+  assert.equal(dialog.hidden, true);
+  assert.equal(getState().battleConsole.current, null);
+  unsubscribe();
+});
+
+test("dock end closes numeric entry through the host and releases presentation", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const battleId = beginActiveBattle();
+  assert.equal(openNormalAttack().ok, true);
+  const field = new FixtureInput("firstD20", "12");
+  field.dataset.workspaceField = "firstD20";
+  field.parentElement = dialog.body;
+  document.activeElement = field;
+  dialog.fire("focusin", { target: field });
+  assert.equal(dialog.dataset.entryActive, "true");
+  assert.equal(document.documentElement.hasAttribute("data-combat-entry-active"), true);
+  const owner = getWorkspaceSessionForTests().owner;
+  window.confirm = () => true;
+
+  fireDockEnd(dialog, owner, battleId);
+
+  assert.equal(getWorkspaceSessionForTests(), null);
+  assert.equal(dialog.hidden, true);
+  assert.equal(dialog.dataset.entryActive, undefined);
+  assert.equal(document.documentElement.hasAttribute("data-combat-entry-active"), false);
+  unsubscribe();
+});
+
+test("resolved uncertain request for archived A cannot clear B workspace or its draft", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const battleA = beginActiveBattle();
+  const ownerA = getSessionContext();
+  assert.equal(openNormalAttack().ok, true);
+  let archivedA;
+  const removeArchive = subscribe((state, metadata) => {
+    if (metadata?.kind === "battle-command" && metadata.command === "end-battle") {
+      archivedA = structuredClone(state.battleConsole.history.find((entry) => entry.id === battleA));
+      state.battleConsole.history = state.battleConsole.history.filter((entry) => entry.id !== battleA);
+      throw new Error("simulate unverified post-commit state");
+    }
+  });
+  const uncertain = requestEndBattle({ owner: ownerA, battleId: battleA }, { confirm: () => true });
+  removeArchive();
+  assert.equal(uncertain.status, "verification-required");
+
+  const battleB = beginActiveBattle();
+  assert.notEqual(battleB, battleA);
+  assert.equal(openNormalAttack().ok, true);
+  setAttackDraft(dialog, "14");
+  updateState((state) => {
+    state.battleConsole.history.push(archivedA);
+    return state;
+  });
+  const sessionBefore = getWorkspaceSessionForTests();
+  const stateBefore = structuredClone(getState());
+  const storageBefore = new Map(window.localStorage.values);
+
+  const stale = requestEndBattle({ owner: ownerA, battleId: battleA }, { confirm: () => {
+    assert.fail("resolved uncertain request must not open another confirm");
+  } });
+
+  assert.equal(stale.status, "rejected");
+  assert.equal(stale.cleanupSkipped, true);
+  assert.equal(stale.staleContext, true);
+  assert.equal(getWorkspaceSessionForTests().workspaceSessionId, sessionBefore.workspaceSessionId);
+  assert.equal(getWorkspaceSessionForTests().rawInputsByStep[
+    getWorkspaceSessionForTests().currentStepKey].firstD20, "14");
+  assert.deepEqual(getState(), stateBefore);
+  assert.deepEqual(window.localStorage.values, storageBefore);
+  unsubscribe();
+});
+
+test("reentrant end request is rejected while the outer request confirms exactly once", () => {
+  const { unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const battleId = beginActiveBattle();
+  const owner = getSessionContext();
+  let confirmCalls = 0;
+  let nested;
+  const result = requestEndBattle({ owner, battleId }, { confirm: () => {
+    confirmCalls += 1;
+    nested = requestEndBattle({ owner, battleId }, { confirm: () => {
+      confirmCalls += 1;
+      return true;
+    } });
+    return true;
+  } });
+  assert.equal(nested.status, "rejected");
+  assert.equal(confirmCalls, 1);
+  assert.equal(result.status, "applied");
+  assert.equal(getState().battleConsole.history.filter((entry) => entry.id === battleId).length, 1);
+  unsubscribe();
+});
+
+test("owner or battle replacement during confirm rejects without clearing the replacement workspace", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const battleA = beginActiveBattle();
+  const ownerA = getSessionContext();
+  assert.equal(openNormalAttack().ok, true);
+  const result = requestEndBattle({ owner: ownerA, battleId: battleA }, { confirm: () => {
+    openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+    const battleB = beginActiveBattle();
+    assert.notEqual(battleB, battleA);
+    assert.equal(openNormalAttack().ok, true);
+    setAttackDraft(dialog, "13");
+    return true;
+  } });
+  const sessionB = getWorkspaceSessionForTests();
+  assert.equal(result.status, "rejected");
+  assert.equal(getState().battleConsole.history.some((entry) =>
+    entry.id === battleA && entry.phase === "ended"), false);
+  assert.equal(getState().battleConsole.current.phase, "own-turn");
+  assert.equal(sessionB.rawInputsByStep[sessionB.currentStepKey].firstD20, "13");
+  unsubscribe();
+});
+
+test("applied A with synchronous B scene and workspace replacement skips stale cleanup", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const battleA = beginActiveBattle();
+  const owner = getSessionContext();
+  assert.equal(openNormalAttack().ok, true);
+  let battleB;
+  const replaceScene = subscribe((_state, metadata) => {
+    if (metadata?.kind !== "battle-command" || metadata.command !== "end-battle") return;
+    battleB = beginActiveBattle();
+    assert.equal(openNormalAttack().ok, true);
+    setAttackDraft(dialog, "15");
+  });
+
+  const result = requestEndBattle({ owner, battleId: battleA }, { confirm: () => true });
+  replaceScene();
+
+  const sessionB = getWorkspaceSessionForTests();
+  assert.equal(result.status, "applied");
+  assert.equal(result.cleanupSkipped, true);
+  assert.equal(result.staleContext, true);
+  assert.equal(getState().battleConsole.history.filter((entry) =>
+    entry.id === battleA && entry.phase === "ended").length, 1);
+  assert.equal(getState().battleConsole.current.id, battleB);
+  assert.equal(sessionB.battleContext.battleId, battleB);
+  assert.equal(sessionB.rawInputsByStep[sessionB.currentStepKey].firstD20, "15");
   unsubscribe();
 });
 

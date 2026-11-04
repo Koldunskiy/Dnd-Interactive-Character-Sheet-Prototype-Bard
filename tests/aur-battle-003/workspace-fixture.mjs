@@ -242,6 +242,7 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
   };
   const invoker = reusableInvoker ??= new FixtureNode();
   const taskHud = new FixtureNode();
+  const taskSceneControls = new FixtureNode();
   dialog.open = false;
   dialog.forms = {};
   dialog.childNodes = [];
@@ -278,9 +279,20 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
       removeItem(key) { this.values.delete(key); },
     },
   };
+  globalThis.requestAnimationFrame = (callback) => {
+    callback();
+    return 1;
+  };
+  globalThis.cancelAnimationFrame = () => {};
   globalThis.document = {
     activeElement: null,
     body: { style: {} },
+    documentElement: {
+      attributes: new Set(),
+      setAttribute(name) { this.attributes.add(name); },
+      removeAttribute(name) { this.attributes.delete(name); },
+      hasAttribute(name) { return this.attributes.has(name); },
+    },
     getElementById(id) {
       if (id === "actionWorkspaceRoot") return fallbackDialog;
       if (id === "characterRollsRoot") return rollRoot;
@@ -294,6 +306,7 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
         return embeddedHost ? dialog : null;
       }
       if (selector === "[data-sara-task-dock] [data-sara-task-hud]") return taskHud;
+      if (selector === "[data-sara-task-scene-controls]") return taskSceneControls;
       if (selector === '[data-panel="melee"].is-active' && embeddedHost) {
         return {
           querySelector: (innerSelector) =>
@@ -321,7 +334,7 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
   const unsubscribe = subscribe((state, metadata) =>
     reconcileWorkspaceAfterStateChange(state, metadata));
   assertWorkspaceHostInitialized();
-  return { dialog, invoker, taskHud, unsubscribe };
+  return { dialog, invoker, taskHud, taskSceneControls, unsubscribe };
 }
 
 function assertWorkspaceHostInitialized() {

@@ -135,6 +135,11 @@
   cursor: pointer;
 }
 
+.sara-combat-shell[data-initiative-presenting="true"] .sara-app-head__title [data-sara-end-battle] {
+  display: none;
+  pointer-events: none;
+}
+
 .sara-app-head__title {
   display: flex;
   min-width: 0;

@@ -120,17 +120,32 @@ function ownerMatches(owner, context = getSessionContext()) {
     owner.characterId === "sara-velaris";
 }
 
+function hasEndedBattleEvidence(battleId) {
+  const state = getState();
+  return state.battleConsole?.history?.some((entry) =>
+    entry.id === battleId && entry.phase === "ended") === true;
+}
+
 function endBattleEvidence(owner, battleId) {
   if (!ownerMatches(owner)) return "verification-required";
-  const state = getState();
-  const current = state.battleConsole?.current;
-  const ended = state.battleConsole?.history?.some((entry) =>
-    entry.id === battleId && entry.phase === "ended");
-  if (ended && current?.id !== battleId) return "ended";
-  if (current?.id === battleId && ["waiting", "own-turn", "paused"].includes(current.phase) && !ended) {
+  if (hasEndedBattleEvidence(battleId)) return "ended";
+  const current = getState().battleConsole?.current;
+  if (current?.id === battleId && ["waiting", "own-turn", "paused"].includes(current.phase)) {
     return "not-applied";
   }
   return "verification-required";
+}
+
+function cleanupEndedBattleUi(owner, battleId, detail) {
+  if (!ownerMatches(owner)) return false;
+  const current = getState().battleConsole?.current;
+  if (current?.id && current.id !== battleId) return false;
+  if (current?.id === battleId && ["waiting", "own-turn", "paused"].includes(current.phase)) {
+    return false;
+  }
+  disposeWorkspaceOwner(owner, "battle-ended");
+  document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed", { detail }));
+  return true;
 }
 
 export function requestEndBattle({ owner, battleId }, { confirm = (message) =>
@@ -144,13 +159,25 @@ export function requestEndBattle({ owner, battleId }, { confirm = (message) =>
     return "";
   };
   if (uncertainEndBattles.has(key)) {
+    if (!ownerMatches(owner)) {
+      uncertainEndBattles.delete(key);
+      reportEndBattleVerificationRequired();
+      return { status: "verification-required", cleanupSkipped: true, staleContext: true };
+    }
     const evidence = endBattleEvidence(owner, battleId);
     if (evidence === "ended") {
-      disposeWorkspaceOwner(owner, "battle-ended");
-      document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed", {
-        detail: { reason: "battle-ended", persistenceUnconfirmed: true },
-      }));
-      return { status: "applied", persistenceUnconfirmed: true };
+      uncertainEndBattles.delete(key);
+      const currentBattle = getState().battleConsole?.current;
+      if (!ownerMatches(owner) ||
+          currentBattle?.id && currentBattle.id !== battleId) {
+        return { status: "rejected", reason: "Контекст боя изменился; новые панели не закрыты.", cleanupSkipped: true, staleContext: true };
+      }
+      const cleanupPerformed = cleanupEndedBattleUi(owner, battleId, {
+        reason: "battle-ended", persistenceUnconfirmed: true,
+      });
+      return cleanupPerformed
+        ? { status: "applied", persistenceUnconfirmed: true }
+        : { status: "rejected", reason: "Контекст боя изменился; новые панели не закрыты.", cleanupSkipped: true, staleContext: true };
     }
     if (evidence === "not-applied") {
       uncertainEndBattles.delete(key);
@@ -175,13 +202,27 @@ export function requestEndBattle({ owner, battleId }, { confirm = (message) =>
     try {
       result = executeBattleCommand("end-battle");
     } catch (error) {
+      if (!ownerMatches(owner)) {
+        uncertainEndBattles.delete(key);
+        reportEndBattleVerificationRequired();
+        return { status: "verification-required", cleanupSkipped: true, staleContext: true };
+      }
       uncertainEndBattles.add(key);
       if (endBattleEvidence(owner, battleId) === "ended") {
-        disposeWorkspaceOwner(owner, "battle-ended");
-        document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed", {
-          detail: { reason: "battle-ended", persistenceUnconfirmed: true },
-        }));
-        return { status: "applied", persistenceUnconfirmed: true, warning: error instanceof Error ? error.message : String(error) };
+        uncertainEndBattles.delete(key);
+        const cleanupPerformed = cleanupEndedBattleUi(owner, battleId, {
+          reason: "battle-ended", persistenceUnconfirmed: true,
+        });
+        if (!cleanupPerformed) {
+          return { status: "rejected", reason: "Контекст боя изменился; новые панели не закрыты.", cleanupSkipped: true, staleContext: true };
+        }
+        return {
+          status: "applied",
+          persistenceUnconfirmed: true,
+          cleanupSkipped: false,
+          staleContext: false,
+          warning: error instanceof Error ? error.message : String(error),
+        };
       }
       reportEndBattleVerificationRequired();
       return { status: "verification-required" };
@@ -190,11 +231,15 @@ export function requestEndBattle({ owner, battleId }, { confirm = (message) =>
       return { status: "rejected", reason: result.reason ?? "Бой не был завершён." };
     }
     const persistence = result.persistence ?? result.persistenceResult ?? { ok: true };
-    disposeWorkspaceOwner(owner, "battle-ended");
-    document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed", {
-      detail: { reason: "battle-ended", persistenceFailed: persistence.ok === false },
-    }));
-    return { status: "applied", persistence };
+    const cleanupPerformed = cleanupEndedBattleUi(owner, battleId, {
+      reason: "battle-ended", persistenceFailed: persistence.ok === false,
+    });
+    return {
+      status: "applied",
+      persistence,
+      cleanupSkipped: !cleanupPerformed,
+      staleContext: !cleanupPerformed,
+    };
   } finally {
     endBattleRequests.delete(key);
   }

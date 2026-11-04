@@ -491,6 +491,8 @@ function activateInitiativePresentation(root, input) {
   const viewport = globalThis.visualViewport;
   if (!form || !viewport) return;
   form.dataset.initiativePresentation = "true";
+  const shell = root.querySelector(".sara-combat-shell");
+  if (shell) shell.dataset.initiativePresenting = "true";
   const update = () => {
     form.style.position = "fixed";
     form.style.top = `${viewport.offsetTop}px`;
@@ -519,6 +521,7 @@ function activateInitiativePresentation(root, input) {
     viewport.removeEventListener("resize", update);
     viewport.removeEventListener("scroll", update);
     delete form.dataset.initiativePresentation;
+    if (shell) delete shell.dataset.initiativePresenting;
     for (const property of ["position", "top", "left", "right", "height", "z-index"]) {
       form.style.removeProperty(property);
     }

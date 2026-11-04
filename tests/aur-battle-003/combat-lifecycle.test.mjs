@@ -243,6 +243,7 @@ test("initiative keyboard presentation cleanup removes viewport listeners and in
     : selector === "[data-initiative-entry]" ? input : null;
   root.fire("focusin", { target: input });
   assert.equal(form.dataset.initiativePresentation, "true");
+  assert.equal(root.shell.dataset.initiativePresenting, "true");
   assert.equal(listeners.get("resize").size, 1);
   assert.equal(listeners.get("scroll").size, 1);
   assert.equal(styles.get("position"), "fixed");
@@ -252,6 +253,7 @@ test("initiative keyboard presentation cleanup removes viewport listeners and in
   panel.hidden = true;
   observers.at(-1).notify();
   assert.equal(form.dataset.initiativePresentation, undefined);
+  assert.equal(root.shell.dataset.initiativePresenting, undefined);
   assert.equal(listeners.get("resize").size, 0);
   assert.equal(listeners.get("scroll").size, 0);
   assert.equal(styles.size, 0);
