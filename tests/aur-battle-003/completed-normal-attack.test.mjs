@@ -80,6 +80,34 @@ test("completed normal attack rejects invalid hit damage before mutation and com
   assert.equal(attack.damageRolls, null);
 });
 
+test("completed normal hit with an empty damage list is rejected without state mutation", () => {
+  const previousWindow = globalThis.window;
+  const stored = new Map();
+  let writes = 0;
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => stored.get(key) ?? null,
+      setItem(key, value) { writes += 1; stored.set(key, value); },
+      removeItem: (key) => stored.delete(key),
+    },
+  };
+  try {
+    openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+    const before = structuredClone(getState());
+    const revision = getSessionContext().stateRevision;
+    const result = commitCompletedNormalAttack(
+      getSessionContext(), request({ damageRolls: [] }), "empty-hit-damage-op",
+    );
+    assert.equal(result.status, "rejected");
+    assert.equal(getSessionContext().stateRevision, revision);
+    assert.deepEqual(getState(), before);
+    assert.equal(writes, 0);
+    assert.equal(stored.size, 0);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
 test("completed normal operation replay is canonical and rejects request collisions", () => {
   openCharacterSession("sara-velaris", () => ({ status: "missing" }));
   const req = request();

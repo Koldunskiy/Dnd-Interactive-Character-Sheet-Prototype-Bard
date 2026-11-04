@@ -209,6 +209,7 @@ class FixtureDialog extends FixtureNode {
     super();
     this.open = false;
     this.header = new FixtureNode();
+    this.header.dataset.fixtureControls = true;
     this.body = new FixtureNode();
     this.body.dataset.fixtureBody = true;
     this.body.dataset.fixtureControls = true;
@@ -454,10 +455,28 @@ export function fireWorkspaceAction(dialog, action, data = {}) {
   dialog.fire("click", { target: button });
 }
 
+export function fireWorkspaceActionStrict(dialog, action, { apply = false, ...data } = {}) {
+  const selector = `[data-workspace-action="${action}"]`;
+  const button = dialog.header.querySelector(selector) ??
+    dialog.body.querySelector(selector) ?? dialog.footer.querySelector(selector);
+  if (!button || !button.isConnected) {
+    throw new Error(`Expected connected rendered workspace control: ${action}`);
+  }
+  if (apply && button.disabled !== false) {
+    throw new Error(`Expected enabled rendered apply control: ${action}`);
+  }
+  Object.assign(button.dataset, {
+    workspaceAttackId: ["attack-hit", "attack-miss"].includes(action)
+      ? getWorkspaceSessionForTests()?.attackId : undefined,
+    ...data,
+  });
+  globalThis.document.activeElement = button;
+  dialog.fire("click", { target: button });
+}
+
 export function fireWorkspaceInput(dialog, name, value, type = "number") {
-  const form = dialog.forms.attack ?? dialog.forms.damage ?? dialog.forms.strike ??
-    dialog.forms.command ?? dialog.forms.missileReturn ?? dialog.forms.seeking ??
-    dialog.forms.gentling;
+  const form = Object.values(dialog.forms).find((candidate) =>
+    candidate?.elements?.some((entry) => entry.name === name));
   const control = form?.elements?.find((entry) => entry.name === name);
   if (control) {
     if (type === "checkbox") control.checked = value === true;

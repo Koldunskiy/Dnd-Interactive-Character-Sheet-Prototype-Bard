@@ -24,6 +24,7 @@ import { updateRestReplacementSubchoices } from "../../scripts/render/render-com
 import {
   fireWorkspaceInput,
   fireWorkspaceAction,
+  fireWorkspaceActionStrict,
   FixtureForm,
   FixtureInput,
   installWorkspaceFixture,
@@ -428,10 +429,11 @@ test("equipped dart profile records the weapon snapshot and spends exactly one d
     rollMode: "normal",
     firstD20: "15",
   });
-  fireWorkspaceAction(dialog, "attack-hit");
+  fireWorkspaceActionStrict(dialog, "attack-hit");
   assert.equal(getState().inventory.items.find((item) => item.id === "darts").quantity, 20);
   dialog.forms.damage = new FixtureForm("damage", { damage1: "3" });
-  fireWorkspaceAction(dialog, "submit-damage");
+  fireWorkspaceInput(dialog, "damage1", "3");
+  fireWorkspaceActionStrict(dialog, "submit-damage", { apply: true });
   const sequence = getState().monk.combatAssistant.activeSequences
     .find((entry) => entry.id === getWorkspaceSessionForTests().sequenceId);
   const attack = sequence.resolvedAttacks[0];

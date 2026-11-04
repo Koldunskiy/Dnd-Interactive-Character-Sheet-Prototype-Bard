@@ -870,12 +870,18 @@ export function commitCompletedNormalAttack(context, request, operationId) {
       : reject("operation-collision");
   }
   const preview = previewCompletedNormalAttack(getState(), input);
-  if (!preview.ok) return reject(preview.reason);
+  if (!preview.ok || preview.stage !== "complete") {
+    return reject(preview.reason ?? "Завершённый результат атаки не готов.");
+  }
   let receipt;
   return commit(context, operationId, {
     kind: "sara-completed-normal-attack", sequenceId: input.sequenceId, attackId: input.attackId,
   }, (draft) => {
     if (!isSara(draft)) throw new Error("Атака доступна только в листе Сары.");
+    const fresh = previewCompletedNormalAttack(draft, input);
+    if (!fresh.ok || fresh.stage !== "complete") {
+      throw new Error(fresh.reason ?? "Завершённый результат атаки не готов.");
+    }
     const assistant = ensureCombatAssistant(draft);
     let sequence = assistant.activeSequences.find((entry) =>
       entry.id === input.sequenceId && entry.kind === "attack-action");
@@ -912,8 +918,6 @@ export function commitCompletedNormalAttack(context, request, operationId) {
         getUsedAttackSlots(sequence) >= sequence.maximumAttacks) {
       throw new Error("Слот атаки уже занят или последовательность завершена.");
     }
-    const fresh = previewCompletedNormalAttack(draft, input);
-    if (!fresh.ok) throw new Error(fresh.reason);
     const attack = {
       id: input.attackId,
       profileId: input.attack.profileId,
@@ -960,7 +964,9 @@ export function commitCompletedNormalAttack(context, request, operationId) {
     return draft;
   }, (current) => {
     const currentPreview = previewCompletedNormalAttack(current, input);
-    if (!currentPreview.ok) return currentPreview.reason;
+    if (!currentPreview.ok || currentPreview.stage !== "complete") {
+      return currentPreview.reason ?? "Завершённый результат атаки не готов.";
+    }
     const sequence = getNormalAttackSequenceForAction(current, input.sequenceId);
     if (sequence && (sequence.status !== "open" ||
         getUsedAttackSlots(sequence) !== input.expectedUsedSlots)) {

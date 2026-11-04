@@ -5,7 +5,6 @@ import { sara } from "../../data/sara.js";
 import { renderBattleConsole } from "../../scripts/render/render-battle-console.js";
 import { beginOwnTurn, startBattle } from "../../scripts/battle/transitions.js";
 import { bindBattleConsole } from "../../scripts/render/render-battle-console.js";
-import { applyTechniqueToHit } from "../../scripts/actions/sara-combat.js";
 import {
   getWorkspaceSessionForTests,
   initActionWorkspace,

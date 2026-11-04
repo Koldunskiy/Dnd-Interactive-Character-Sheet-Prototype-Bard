@@ -398,6 +398,9 @@ export function renderAttackWorkspace(session, state) {
   const header = session.workspaceType === "attack"
     ? `<div class="workspace-task-heading"><h2 id="workspaceDialogTitle" tabindex="-1"
         data-workspace-title>${escapeHtml(heading)}</h2>
+        ${session.pendingAttackIntent && session.currentStep === "damage-input"
+          ? `<button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>`
+          : ""}
         ${session.pendingAttackIntent ? "" : `<button type="button" class="workspace-defer" data-workspace-action="minimize">Отложить</button>`}</div>`
     : `<div class="workspace-nav">
       <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
@@ -418,7 +421,8 @@ export function renderAttackWorkspace(session, state) {
       <button type="button" class="primary" data-workspace-action="attack-hit" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: попадание" : "Попадание"}</button>
       <button type="button" data-workspace-action="attack-miss" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: промах" : "Промах"}</button>
     </div>`;
-    if (session.pendingAttackIntent) {
+    if (session.sequenceKind === "attack-action" && !session.readOnly &&
+        !session.historicalOnly && !session.selectedDamage) {
       footer += `<button type="button" class="btn btn--utility" data-workspace-action="cancel-attack-draft">Отмена текущего удара</button>`;
     }
     const canBeginGentling = getEffectiveSelectedTechniqueIds(state)

@@ -18,6 +18,7 @@ import {
   calculateWorkspaceDamagePreview,
   previewWorkspaceCompletedNormalAttack,
   submitWorkspaceCompletedNormalAttack,
+  readWorkspaceCompletedNormalAttackReceipt,
   submitWorkspaceAttack,
   submitWorkspaceSequenceAttack,
   submitWorkspaceDamage,
@@ -2438,6 +2439,51 @@ function setError(reason) {
   })[reason] ?? reason ?? "Операция не выполнена.";
 }
 
+function stableRequestString(value) {
+  if (Array.isArray(value)) return `[${value.map(stableRequestString).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) =>
+      `${JSON.stringify(key)}:${stableRequestString(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function runCompletedNormalMutation(capturedSession, request, operationIdValue) {
+  const owner = { ...capturedSession.owner };
+  const sessionId = capturedSession.workspaceSessionId;
+  let result = null;
+  let thrown = null;
+  capturedSession.submitting = true;
+  try {
+    result = submitWorkspaceCompletedNormalAttack(owner, request, operationIdValue);
+  } catch (error) {
+    thrown = error;
+  } finally {
+    if (session === capturedSession && session.workspaceSessionId === sessionId &&
+        isWorkspaceOwnerCurrent(owner)) {
+      session.submitting = false;
+    }
+  }
+  if (session !== capturedSession || !isWorkspaceOwnerCurrent(owner)) {
+    return { status: "replaced" };
+  }
+  if (!thrown) return result;
+  try {
+    if (!isWorkspaceOwnerCurrent(owner) || session !== capturedSession) {
+      return { status: "replaced" };
+    }
+    const receipt = readWorkspaceCompletedNormalAttackReceipt(getState(), operationIdValue);
+    if (receipt?.sequence?.id === request.sequenceId &&
+        receipt?.attack?.id === request.attackId &&
+        stableRequestString(receipt.request) === stableRequestString(request)) {
+      return { status: "applied", recovered: true, persistence: { ok: false } };
+    }
+  } catch {
+    return { status: "verification-required", error: thrown };
+  }
+  return { status: "verification-required", error: thrown };
+}
+
 function submitAttack(outcome, button = null) {
   if (!session || session.workspaceType !== "attack" ||
       session.currentStep !== "attack-input" ||
@@ -2568,13 +2614,15 @@ function submitAttack(outcome, button = null) {
       return;
     }
     request.damageRolls = [];
-    session.submitting = true;
-    const result = submitWorkspaceCompletedNormalAttack(
-      session.owner, request, operationId(intent),
-    );
-    if (session?.workspaceSessionId !== submittingSessionId ||
+    const result = runCompletedNormalMutation(session, request, operationId(intent));
+    if (result.status === "replaced" || session?.workspaceSessionId !== submittingSessionId ||
         !isWorkspaceOwnerCurrent(submittingOwner)) return;
-    session.submitting = false;
+    if (result.status === "verification-required") {
+      session.readOnly = true;
+      setError("Не удалось подтвердить применение атаки. Повтор заблокирован; проверьте запись и сохраните состояние.");
+      render();
+      return;
+    }
     if (result.status !== "applied" && result.status !== "replayed") {
       setError(result.reason);
       render();
@@ -2584,7 +2632,12 @@ function submitAttack(outcome, button = null) {
     session.dirty = false;
     session.firstAttempt = false;
     session.isExistingSequence = true;
-    session.appliedUnsaved = result.persistence?.ok === false;
+    session.pendingAttackIntent = null;
+    session.appliedUnsaved = result.recovered === true
+      ? true
+      : result.status === "replayed"
+        ? session.appliedUnsaved
+        : result.persistence?.ok === false;
     const savedSequence = getWorkspaceAttackSequence(getState(), session.sequenceId);
     const savedAttack = savedSequence?.resolvedAttacks?.find((entry) => entry.id === currentAttackId);
     session.selectedDamage = null;
@@ -2677,13 +2730,16 @@ function submitDamage() {
       render();
       return;
     }
-    session.submitting = true;
-    const result = submitWorkspaceCompletedNormalAttack(
-      session.owner, request, intent.operationId,
-    );
-    if (session?.workspaceSessionId !== intent.workspaceSessionId ||
+    const result = runCompletedNormalMutation(session, request, intent.operationId);
+    if (result.status === "replaced" ||
+        session?.workspaceSessionId !== intent.workspaceSessionId ||
         !isWorkspaceOwnerCurrent(intent.owner)) return;
-    session.submitting = false;
+    if (result.status === "verification-required") {
+      session.readOnly = true;
+      setError("Не удалось подтвердить применение атаки. Повтор заблокирован; проверьте запись и сохраните состояние.");
+      render();
+      return;
+    }
     if (result.status !== "applied" && result.status !== "replayed") {
       setError(result.reason);
       render();
@@ -2702,7 +2758,11 @@ function submitDamage() {
     session.pendingAttackIntent = null;
     session.selectedDamage = null;
     session.dirty = false;
-    session.appliedUnsaved = result.persistence?.ok === false;
+    session.appliedUnsaved = result.recovered === true
+      ? true
+      : result.status === "replayed"
+        ? session.appliedUnsaved
+        : result.persistence?.ok === false;
     session.strikeParent = committedAttack
       ? { sequenceId: committedSequence.id, attackId: committedAttack.id } : null;
     session.status = "Атака и урон записаны атомарно.";
@@ -4220,13 +4280,27 @@ function handleAction(action, button = null) {
   } else if (action === "submit-damage") {
     submitDamage();
   } else if (action === "cancel-attack-draft" &&
-      session.workspaceType === "attack" && session.pendingAttackIntent &&
+      session.workspaceType === "attack" && session.sequenceKind === "attack-action" &&
+      !session.historicalOnly && !session.readOnly &&
+      (session.pendingAttackIntent || session.currentStep === "attack-input") &&
       !session.submitting && !session.appliedUnsaved) {
-    const savedSlots = getUsedAttackSlots(getSequence());
+    const sequence = getSequence();
+    const savedSlots = getUsedAttackSlots(sequence);
     session.pendingAttackIntent = null;
     session.selectedDamage = null;
     session.dirty = false;
     if (savedSlots > 0) {
+      const previousAttack = [...(sequence?.resolvedAttacks ?? [])].reverse()
+        .find((entry) => entry.damageStatus !== "awaiting-damage");
+      if (previousAttack) {
+        session.attackId = previousAttack.id;
+        session.strikeParent = getCurrentWorkspaceStrikeParent(
+          getState(), sequence.id, previousAttack.id,
+        ) ? { sequenceId: sequence.id, attackId: previousAttack.id } : null;
+      }
+      session.capabilities.canContinueSequence = Boolean(sequence &&
+        sequence.status === "open" && getUsedAttackSlots(sequence) < sequence.maximumAttacks);
+      session.capabilities.canRecordAttack = session.capabilities.canContinueSequence;
       session.currentStep = "checkpoint";
       session.currentStepKey = stepKey("checkpoint", session.attackId);
       render();
@@ -4351,6 +4425,7 @@ function handleAction(action, button = null) {
     retrySave();
   } else if (action === "back") {
     if (session.currentStep === "damage-input" && session.pendingAttackIntent) {
+      session.pendingAttackIntent = null;
       session.currentStep = "attack-input";
       session.currentStepKey = stepKey("attack-input", session.attackId);
       session.selectedDamage = null;
