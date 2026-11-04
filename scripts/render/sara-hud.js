@@ -26,6 +26,16 @@ export function getSaraHudModel(state, derived = getDerivedStats(state)) {
   };
 }
 
+export function renderSaraEndBattleButton(state, owner) {
+  const battle = state?.battleConsole?.current;
+  if (state?.profile?.id !== "sara-velaris" || !battle?.id ||
+      !["waiting", "own-turn", "paused"].includes(battle.phase) ||
+      typeof owner?.characterId !== "string" ||
+      !Number.isInteger(owner.sessionGeneration)) return "";
+  return `<button type="button" data-sara-end-battle data-workspace-action="end-battle" data-battle-id="${escapeHtml(battle.id)}"
+    data-battle-owner="${escapeHtml(JSON.stringify([owner.characterId, owner.sessionGeneration]))}">Завершить бой</button>`;
+}
+
 export function renderSaraHud(model, { compact = false } = {}) {
   const format = (value) => escapeHtml(value ?? "—");
   const effects = model.effects.map((effect) => `<li>

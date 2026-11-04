@@ -17,7 +17,7 @@ import { getDerivedStats } from "./calculations.js";
 import { renderPortraitMedia, initPortraitControls, resetPortraitForCharacter } from "./media.js";
 
 import { renderHeader } from "./render/render-header.js";
-import { getSaraHudModel, updateSaraHudRegion } from "./render/sara-hud.js";
+import { getSaraHudModel, updateSaraHudRegion, renderSaraEndBattleButton } from "./render/sara-hud.js";
 import { resetSceneUi } from "./battle/scene-ui-state.js";
 import {
   clearCharacterRollDraft,
@@ -826,6 +826,10 @@ function renderApp() {
   renderSidebarSummary(state);
 
   if (state.profile?.id === "sara-velaris") {
+    const owner = getSessionContext();
+    const controls = document.querySelector("[data-sara-task-scene-controls]");
+    const controlMarkup = renderSaraEndBattleButton(state, owner);
+    if (controls && controls.innerHTML !== controlMarkup) controls.innerHTML = controlMarkup;
     updateSaraHudRegion(
       document.querySelector("[data-sara-task-dock] [data-sara-task-hud]"),
       getSaraHudModel(state, derived),
@@ -836,6 +840,8 @@ function renderApp() {
     initPortraitControls();
     return;
   }
+  const sceneControls = document.querySelector("[data-sara-task-scene-controls]");
+  if (sceneControls) sceneControls.replaceChildren();
 
   renderProfile(profilePanel, state, derived);
   renderMeleePanel(state, derived);
@@ -1537,7 +1543,18 @@ subscribe((_state, metadata) => {
   renderApp();
 });
 
-document.addEventListener("action-workspace-visibility-changed", () => {
+document.addEventListener("action-workspace-visibility-changed", (event) => {
+  if (event.detail?.verificationRequired) {
+    showPersistenceWarning("Не удалось подтвердить завершение боя. Повторное выполнение не выполнялось.");
+  }
+  if (event.detail?.reason === "battle-ended") {
+    const panel = document.getElementById("meleePanel");
+    clearBattleConsolePresentation(panel);
+    resetSceneUi(panel);
+    if (event.detail.persistenceFailed || event.detail.persistenceUnconfirmed) {
+      showPersistenceWarning("Бой завершён в памяти. Повторите сохранение.");
+    }
+  }
   if (isSheetVisible) renderApp();
 });
 

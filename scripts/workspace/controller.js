@@ -1,5 +1,5 @@
 import { getDerivedStats } from "../calculations.js";
-import { getSaraHudModel, updateSaraHudRegion } from "../render/sara-hud.js";
+import { getSaraHudModel, updateSaraHudRegion, renderSaraEndBattleButton } from "../render/sara-hud.js";
 import {
   buildRestReplacementCommandId,
   parseRestCommandId,
@@ -45,6 +45,7 @@ import {
 } from "../actions/sara-combat.js";
 import { getSaraBattleCommandRegistry } from "../battle/command-registry.js";
 import { getActiveBattle } from "../battle/model.js";
+import { executeBattleCommand } from "../battle/commands.js";
 import {
   amendCharacterRoll,
   correctCharacterRollOutcome,
@@ -103,6 +104,101 @@ import {
 const appInstanceId = createId("workspace-app");
 let session = null;
 const suspendedSessions = [];
+const endBattleRequests = new Set();
+const uncertainEndBattles = new Set();
+const END_BATTLE_CONFIRMATION = "Завершить бой? Неприменённый ввод будет отменён. Уже записанные результаты сохранятся.";
+
+function reportEndBattleVerificationRequired() {
+  document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed", {
+    detail: { verificationRequired: true },
+  }));
+}
+
+function ownerMatches(owner, context = getSessionContext()) {
+  return owner?.characterId === context.characterId &&
+    owner?.sessionGeneration === context.sessionGeneration &&
+    owner.characterId === "sara-velaris";
+}
+
+function endBattleEvidence(owner, battleId) {
+  if (!ownerMatches(owner)) return "verification-required";
+  const state = getState();
+  const current = state.battleConsole?.current;
+  const ended = state.battleConsole?.history?.some((entry) =>
+    entry.id === battleId && entry.phase === "ended");
+  if (ended && current?.id !== battleId) return "ended";
+  if (current?.id === battleId && ["waiting", "own-turn", "paused"].includes(current.phase) && !ended) {
+    return "not-applied";
+  }
+  return "verification-required";
+}
+
+export function requestEndBattle({ owner, battleId }, { confirm = (message) =>
+  window.confirm(message) } = {}) {
+  const key = JSON.stringify([owner?.characterId, owner?.sessionGeneration, battleId]);
+  const validate = () => {
+    if (!ownerMatches(owner)) return "Владелец боя изменился.";
+    const battle = getState().battleConsole?.current;
+    if (!battle || battle.id !== battleId ||
+        !["waiting", "own-turn", "paused"].includes(battle.phase)) return "Этот бой больше не активен.";
+    return "";
+  };
+  if (uncertainEndBattles.has(key)) {
+    const evidence = endBattleEvidence(owner, battleId);
+    if (evidence === "ended") {
+      disposeWorkspaceOwner(owner, "battle-ended");
+      document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed", {
+        detail: { reason: "battle-ended", persistenceUnconfirmed: true },
+      }));
+      return { status: "applied", persistenceUnconfirmed: true };
+    }
+    if (evidence === "not-applied") {
+      uncertainEndBattles.delete(key);
+      return { status: "rejected", reason: "Бой не был завершён. Проверьте состояние и повторите запрос." };
+    }
+    reportEndBattleVerificationRequired();
+    return { status: "verification-required" };
+  }
+  const invalid = validate();
+  if (invalid) return { status: "rejected", reason: invalid };
+  if (endBattleRequests.has(key)) return { status: "rejected", reason: "Завершение боя уже выполняется." };
+  endBattleRequests.add(key);
+  try {
+    if (!confirm(END_BATTLE_CONFIRMATION)) return { status: "cancelled" };
+    const changed = validate();
+    if (changed) return { status: "rejected", reason: changed };
+    if (session && owner.characterId === session.owner.characterId &&
+        owner.sessionGeneration === session.owner.sessionGeneration && session.submitting) {
+      return { status: "rejected", reason: "Дождитесь завершения текущей операции." };
+    }
+    let result;
+    try {
+      result = executeBattleCommand("end-battle");
+    } catch (error) {
+      uncertainEndBattles.add(key);
+      if (endBattleEvidence(owner, battleId) === "ended") {
+        disposeWorkspaceOwner(owner, "battle-ended");
+        document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed", {
+          detail: { reason: "battle-ended", persistenceUnconfirmed: true },
+        }));
+        return { status: "applied", persistenceUnconfirmed: true, warning: error instanceof Error ? error.message : String(error) };
+      }
+      reportEndBattleVerificationRequired();
+      return { status: "verification-required" };
+    }
+    if (result.status !== "applied" || result.changed === false) {
+      return { status: "rejected", reason: result.reason ?? "Бой не был завершён." };
+    }
+    const persistence = result.persistence ?? result.persistenceResult ?? { ok: true };
+    disposeWorkspaceOwner(owner, "battle-ended");
+    document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed", {
+      detail: { reason: "battle-ended", persistenceFailed: persistence.ok === false },
+    }));
+    return { status: "applied", persistence };
+  } finally {
+    endBattleRequests.delete(key);
+  }
+}
 
 function createId(prefix) {
   return globalThis.crypto?.randomUUID?.() ??
@@ -420,6 +516,9 @@ function setStep(step, attackId = session.attackId, customKey = null) {
 function render() {
   if (!session) return;
   const state = getState();
+  const sceneControls = document.querySelector("[data-sara-task-scene-controls]");
+  const sceneMarkup = renderSaraEndBattleButton(state, session.owner);
+  if (sceneControls && sceneControls.innerHTML !== sceneMarkup) sceneControls.innerHTML = sceneMarkup;
   const parent = [...suspendedSessions].reverse().find((entry) =>
     isWorkspaceOwnerCurrent(entry.owner) && entry.owner.appInstanceId === appInstanceId);
   session.completionLabel = parent
@@ -2761,6 +2860,30 @@ function submitRollFollowup() {
 }
 
 function handleAction(action, button = null) {
+  if (action === "end-battle") {
+    let owner;
+    try {
+      const identity = JSON.parse(button?.dataset.battleOwner ?? "");
+      if (!Array.isArray(identity) || identity.length !== 2 ||
+          typeof identity[0] !== "string" || !Number.isInteger(identity[1])) throw new Error();
+      owner = { characterId: identity[0], sessionGeneration: identity[1] };
+    } catch {
+      const error = getWorkspaceHost()?.querySelector("[data-workspace-error]");
+      if (error) { error.hidden = false; error.textContent = "Не удалось проверить владельца кнопки завершения боя."; }
+      return;
+    }
+    const result = requestEndBattle({ owner, battleId: button?.dataset.battleId });
+    if (result.status === "rejected" || result.status === "verification-required") {
+      const error = getWorkspaceHost()?.querySelector("[data-workspace-error]");
+      if (error) {
+        error.hidden = false;
+        error.textContent = result.status === "verification-required"
+          ? "Не удалось подтвердить завершение боя. Повторное выполнение не выполнялось."
+          : result.reason;
+      }
+    }
+    return;
+  }
   if (!session) return;
   if (action === "minimize") {
     minimizeWorkspace();
@@ -3041,8 +3164,8 @@ export function disposeWorkspaceOwner(owner, reason = "disposed") {
     session.status = reason;
     session = null;
     closeWorkspaceHost({
-      restoreFocus: !["session-changed", "character-transition", "character-picker", "character-reset"].includes(reason),
-      discardEmbedded: ["session-changed", "character-transition", "character-picker", "character-reset"].includes(reason),
+      restoreFocus: !["session-changed", "character-transition", "character-picker", "character-reset", "battle-ended"].includes(reason),
+      discardEmbedded: ["session-changed", "character-transition", "character-picker", "character-reset", "battle-ended"].includes(reason),
     });
   }
   return before !== suspendedSessions.length + (session ? 1 : 0);

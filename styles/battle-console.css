@@ -113,6 +113,28 @@
   border-bottom: 1px solid var(--sara-line);
 }
 
+.sara-app-head__title,
+.battle-console-init-form > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sara-app-head__title [data-sara-end-battle],
+.battle-console-init-form > header [data-sara-end-battle],
+[data-sara-task-scene-controls] [data-sara-end-battle] {
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--sara-accent, #87c9b3);
+  border-radius: 8px;
+  color: var(--sara-ink, #e5edf2);
+  background: var(--sara-active, #294c48);
+  font: inherit;
+  cursor: pointer;
+}
+
 .sara-app-head__title {
   display: flex;
   min-width: 0;
@@ -818,6 +840,7 @@ html[data-combat-entry-active="true"] .combat-workspace-host .workspace-entry-he
 .sara-hud__effects li { display: grid; gap: .2rem; }
 .sara-hud--compact .sara-hud__secondary,
 .sara-hud--compact .sara-hud__effects { display: none; }
+[data-sara-task-dock] [data-sara-task-scene-controls] { flex: 0 0 auto; }
 [data-sara-task-dock] [data-sara-task-hud] { flex: 0 0 auto; }
 [data-sara-task-dock][data-entry-active="true"] .sara-hud__secondary,
 [data-sara-task-dock][data-entry-active="true"] .sara-hud__effects,

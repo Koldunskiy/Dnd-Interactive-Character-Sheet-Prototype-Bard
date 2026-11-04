@@ -120,6 +120,7 @@ class FixtureForm extends FixtureElement {
 function installBrowserFixture() {
   const memory = new Map();
   globalThis.window = {
+    confirm: () => true,
     localStorage: {
       getItem: (key) => memory.get(key) ?? null,
       setItem: (key, value) => memory.set(key, String(value)),
@@ -129,6 +130,7 @@ function installBrowserFixture() {
   globalThis.document = {
     activeElement: null,
     querySelector: () => null,
+    dispatchEvent: () => true,
   };
   globalThis.Element = FixtureElement;
   globalThis.HTMLFormElement = FixtureForm;
@@ -417,7 +419,7 @@ test("focused initiative submit immediately replaces outside controls through th
   assert.match(root.shell.querySelector("[data-sara-turn-controls]").innerHTML,
     /data-battle-command="begin-own-turn"/);
   assert.match(root.shell.querySelector("[data-sara-hud-heading]").innerHTML,
-    /data-battle-command="end-battle"/);
+    /data-sara-end-battle/);
 
   fireCommand(root, "begin-own-turn", "[data-sara-turn-controls]");
   assert.equal(getState().battleConsole.current.phase, "own-turn");
@@ -613,15 +615,15 @@ test("legacy paused contexts remain resumable or safely endable without a normal
   startBattle(character, { rawD20: "10" }, { id: "paused-render-battle" });
   character.battleConsole.current.phase = "paused";
   character.battleConsole.current.phaseBeforePause = "waiting";
-  let markup = renderBattleConsole(character);
+  let markup = renderBattleConsole(character, { panel: "home", ownerKey: '["sara-velaris",1]' });
   assert.match(markup, /data-battle-command="resume-battle"/);
-  assert.match(markup, /data-battle-command="end-battle"/);
+  assert.match(markup, /data-sara-end-battle/);
   assert.doesNotMatch(markup, /data-battle-command="pause-battle"/);
 
   character.battleConsole.current.phaseBeforePause = "unknown";
-  markup = renderBattleConsole(character);
+  markup = renderBattleConsole(character, { panel: "home", ownerKey: '["sara-velaris",1]' });
   assert.match(markup, /контекст приостановленной сцены повреждён/i);
-  assert.match(markup, /data-battle-command="end-battle"/);
+  assert.match(markup, /data-sara-end-battle/);
   assert.doesNotMatch(markup, /data-battle-command="resume-battle"/);
 
   const waiting = structuredClone(sara);

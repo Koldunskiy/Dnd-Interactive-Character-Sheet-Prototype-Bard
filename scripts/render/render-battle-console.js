@@ -7,6 +7,7 @@ import {
   openSaraBattleCommand,
   resumeWorkspace,
   discardWorkspaceDraft,
+  requestEndBattle,
 } from "../workspace/controller.js";
 import {
   BATTLE_CATEGORIES,
@@ -23,6 +24,7 @@ import {
   getSaraHudModel,
   renderSaraHud,
   updateSaraHudRegion,
+  renderSaraEndBattleButton,
 } from "./sara-hud.js";
 import {
   dispatchSceneUi,
@@ -113,6 +115,14 @@ function renderPlayerWork(work) {
 }
 
 function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: { rawD20: "", battleId: null }, error: "" }) {
+  let endBattleOwner = null;
+  try {
+    const identity = JSON.parse(uiState.ownerKey ?? "");
+    if (Array.isArray(identity) && identity.length === 2) {
+      endBattleOwner = { characterId: identity[0], sessionGeneration: identity[1] };
+    }
+  } catch {}
+  const endBattleButton = renderSaraEndBattleButton(state, endBattleOwner);
   const workspaceSessions = getWorkspaceSessions();
   const activeWorkspace = workspaceSessions.find((entry) =>
     !entry.minimized && !entry.suspended);
@@ -161,7 +171,6 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     ${view.phase !== "outside" ? `<button type="button" data-battle-scene-action="correct-initiative">Исправить инициативу</button>` : ""}
     ${view.phase === "outside" ? "" : `<button type="button" data-battle-scene-action="initiative-info">Инициатива</button>`}
     <button type="button" data-battle-scene-action="tools">Дополнительные инструменты</button>
-    ${view.phase === "outside" ? "" : `<button type="button" data-battle-command="end-battle">Завершить бой</button>`}
   </details>`;
   const initiativeSources = uiState.panel === "initiative-correct"
     ? view.battle?.initiative?.sources ?? []
@@ -175,7 +184,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     data-battle-form="${mode === "start" ? "start" : "correct-initiative"}"
     data-owner="${escapeHtml(uiState.ownerKey ?? "")}" data-scene="${escapeHtml(uiState.sceneKey ?? "")}"
     data-battle-id="${escapeHtml(view.battle?.id ?? "")}">
-    <header><strong>${mode === "start" ? "Начало боя" : "Исправление инициативы"}</strong></header>
+    <header><strong>${mode === "start" ? "Начало боя" : "Исправление инициативы"}</strong>${endBattleButton}</header>
     <div class="battle-console-init-fields"><label>Физический к20 инициативы<input name="rawD20" type="number" min="1" max="20"
       step="1" required inputmode="numeric" data-initiative-entry data-modifier="${initiativeModifier}"
       value="${escapeHtml(uiState.initiativeDraft?.rawD20 ?? "")}"></label></div>
@@ -251,8 +260,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     </section>`}${toolsPanel}`;
     primaryFooter = uiState.panel === "initiative-correct" ? "" : `${resumable ? `<button type="button" class="btn btn--primary"
       data-battle-command="resume-battle">Продолжить прежний ход</button>` : ""}
-      <button type="button" class="btn btn--utility"
-        data-battle-command="end-battle">Закончить бой</button>`;
+      `;
   }
 
   const minimizedIds = new Set(minimized.map((entry) => entry.workspaceSessionId));
@@ -295,7 +303,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     activeWorkspace: Boolean(activeWorkspace),
     hud: `<header class="sara-app-head">
       <div class="sara-app-head__title"><h2 id="battleConsoleTitle" tabindex="-1">
-        ${escapeHtml(phaseLabels[view.phase])}</h2></div>
+        ${escapeHtml(phaseLabels[view.phase])}</h2>${endBattleButton}</div>
     </header>${sceneMenu}`,
     metrics: saraHud,
     budget,
@@ -588,6 +596,18 @@ export function bindBattleConsole(root = document, { onNavigate } = {}) {
     if (status) status.textContent = message;
   };
   const runBattleCommand = (command) => {
+    if (command === "end-battle") {
+      const state = getState();
+      const context = getSessionContext();
+      const result = requestEndBattle({
+        owner: { characterId: context.characterId, sessionGeneration: context.sessionGeneration },
+        battleId: state.battleConsole?.current?.id,
+      });
+      if (result.status === "rejected") reportFailure(result.reason);
+      else if (result.status === "verification-required") reportFailure("Не удалось подтвердить завершение боя. Повторное выполнение не выполнялось.");
+      if (result.status === "applied") rerender();
+      return result.status === "applied";
+    }
     const result = executeBattleCommand(command);
     if (result.status !== "applied") {
       reportFailure(`Действие не выполнено: ${result.reason ?? "ошибка сохранения"}.`);
@@ -599,6 +619,24 @@ export function bindBattleConsole(root = document, { onNavigate } = {}) {
   root.addEventListener("click", (event) => {
     if (!(event.target instanceof Element)) return;
     if (!root.contains(event.target)) return;
+    const endButton = event.target.closest("[data-sara-end-battle]");
+    if (endButton && root.contains(endButton)) {
+      if (endButton.disabled || endButton.closest("[hidden]")) return;
+      let owner;
+      try {
+        const identity = JSON.parse(endButton.dataset.battleOwner);
+        if (!Array.isArray(identity) || identity.length !== 2 ||
+            typeof identity[0] !== "string" || !Number.isInteger(identity[1])) throw new Error();
+        owner = { characterId: identity[0], sessionGeneration: identity[1] };
+      } catch {
+        reportFailure("Не удалось проверить владельца кнопки завершения боя.");
+        return;
+      }
+      const result = requestEndBattle({ owner, battleId: endButton.dataset.battleId });
+      if (result.status === "rejected") reportFailure(result.reason);
+      else if (result.status === "verification-required") reportFailure("Не удалось подтвердить завершение боя. Повторное выполнение не выполнялось.");
+      return;
+    }
     const shell = root.querySelector(".sara-combat-shell");
     const liveContext = context();
     const liveOwnerKey = JSON.stringify([
