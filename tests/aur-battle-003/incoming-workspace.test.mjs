@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  disposeWorkspaceOwner,
   getWorkspaceSessionForTests,
   getWorkspaceSessions,
   openIncomingAttack,
@@ -203,6 +204,7 @@ test("Ebb cannot manufacture a receipt when a different action spent the reactio
   assert.equal(session.incomingDraft.stage, "miss-response");
   assert.equal(session.appliedUnsaved, false);
   assert.equal(session.incomingDraft.pendingOperationId, undefined);
+  assert.equal(session.incomingDraft.error, "Реакция уже использована в этом ходу.");
   assert.deepEqual(getState(), before);
   assert.deepEqual(window.localStorage.values, storageBefore);
   assert.equal(getState().monk.combatAssistant.recentlyCompletedSummaries.some((entry) =>
@@ -226,9 +228,105 @@ test("Ebb pre-commit refusal restores its editable stage without state or storag
   assert.equal(session.incomingDraft.stage, "miss-response");
   assert.equal(session.appliedUnsaved, false);
   assert.equal(session.incomingDraft.pendingOperationId, undefined);
+  assert.equal(session.incomingDraft.error, "Ebb & Flow доступна с 6 уровня.");
   assert.deepEqual(getState(), before);
   assert.deepEqual(window.localStorage.values, storageBefore);
   unsubscribe();
+});
+
+test("incoming commit subscriber replacing the workspace cannot be touched by the old handler", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  startBattle();
+  assert.equal(openIncomingAttack(null, { mode: "direct-damage" }).ok, true);
+  typeIncoming(dialog, "incomingDamage", "3");
+  const hpBefore = getState().combat.hp.current;
+  let replacement;
+  let replacementMarkup;
+  let switched = false;
+  const openReplacement = subscribe(() => {
+    if (switched || getState().combat.hp.current === hpBefore) return;
+    switched = true;
+    disposeWorkspaceOwner(getWorkspaceSessionForTests().owner, "test-replacement");
+    assert.equal(openNormalAttack().ok, true);
+    replacement = getWorkspaceSessionForTests();
+    replacementMarkup = dialog.body.innerHTML;
+  });
+  fireWorkspaceAction(dialog, "incoming-apply-damage");
+  openReplacement();
+  assert.ok(switched);
+  assert.equal(getWorkspaceSessionForTests().workspaceSessionId, replacement.workspaceSessionId);
+  assert.equal(getWorkspaceSessionForTests().workspaceType, "attack");
+  assert.deepEqual(getWorkspaceSessionForTests(), replacement);
+  assert.equal(dialog.body.innerHTML, replacementMarkup);
+  unsubscribe();
+});
+
+test("incoming commit owner-generation change prevents receipt inspection in the replacement owner", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  startBattle();
+  assert.equal(openIncomingAttack(null, { mode: "direct-damage" }).ok, true);
+  typeIncoming(dialog, "incomingDamage", "3");
+  const hpBefore = getState().combat.hp.current;
+  let reads = 0;
+  let switched = false;
+  const replaceOwner = subscribe(() => {
+    if (switched || getState().combat.hp.current === hpBefore) return;
+    switched = true;
+    openCharacterSession("aurelia", () => ({ status: "missing" }));
+    const newState = getState();
+    newState.monk = {
+      combatAssistant: {
+        get recentlyCompletedSummaries() {
+          reads += 1;
+          throw new Error("old handler inspected replacement owner");
+        },
+      },
+    };
+    throw new Error("owner changed after commit");
+  });
+  try {
+    fireWorkspaceAction(dialog, "incoming-apply-damage");
+  } finally {
+    replaceOwner();
+  }
+  assert.equal(switched, true);
+  assert.equal(reads, 0);
+  assert.equal(getSessionContext().characterId, "aurelia");
+  assert.equal(getWorkspaceSessionForTests(), null);
+  unsubscribe();
+});
+
+test("same-owner revision is refreshed; changed incoming preview requires another explicit apply", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  startBattle();
+  assert.equal(openIncomingAttack(null, { mode: "direct-damage" }).ok, true);
+  typeIncoming(dialog, "incomingDamage", "4");
+  updateState((draft) => {
+    draft.ui.turn.bonusActionUsed = !draft.ui.turn.bonusActionUsed;
+    return draft;
+  });
+  const hpBefore = getState().combat.hp.current;
+  fireWorkspaceAction(dialog, "incoming-apply-damage");
+  assert.equal(getState().combat.hp.current, hpBefore - 4);
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "result");
+  unsubscribe();
+
+  const changed = installWorkspaceFixture({ embeddedHost: true });
+  startBattle();
+  assert.equal(openIncomingAttack(null, { mode: "direct-damage" }).ok, true);
+  typeIncoming(changed.dialog, "incomingDamage", "4");
+  updateState((draft) => {
+    draft.combat.hp.current -= 1;
+    return draft;
+  });
+  const hpAfterRevision = getState().combat.hp.current;
+  fireWorkspaceAction(changed.dialog, "incoming-apply-damage");
+  assert.equal(getState().combat.hp.current, hpAfterRevision);
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "damage");
+  assert.match(getWorkspaceSessionForTests().incomingDraft.error, /предварительный результат изменился/i);
+  fireWorkspaceAction(changed.dialog, "incoming-apply-damage");
+  assert.equal(getState().combat.hp.current, hpAfterRevision - 4);
+  changed.unsubscribe();
 });
 
 test("production structural changes preserve incoming fields and focus the changed control", () => {

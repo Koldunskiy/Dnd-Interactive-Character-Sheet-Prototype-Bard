@@ -597,6 +597,9 @@ function setStep(step, attackId = session.attackId, customKey = null) {
 function render() {
   if (!session) return;
   const state = getState();
+  if (session.workspaceType === "incoming") {
+    syncIncomingPreviewFingerprint(session.incomingDraft, state);
+  }
   const sceneControls = document.querySelector("[data-sara-task-scene-controls]");
   const sceneMarkup = renderSaraEndBattleButton(state, session.owner);
   if (sceneControls && sceneControls.innerHTML !== sceneMarkup) sceneControls.innerHTML = sceneMarkup;
@@ -662,6 +665,101 @@ function incomingReceiptEvidence(state, operationId, normalizedRequest, provenNo
   return { status: "applied", receipt };
 }
 
+function captureIncomingOperation(active, draft) {
+  return {
+    session: active,
+    draft,
+    eventId: draft.eventId,
+    owner: {
+      characterId: active.owner.characterId,
+      sessionGeneration: active.owner.sessionGeneration,
+    },
+  };
+}
+
+function incomingOperationIsCurrent(captured) {
+  const currentOwner = getSessionContext();
+  return session === captured.session &&
+    session?.incomingDraft === captured.draft &&
+    captured.draft.eventId === captured.eventId &&
+    session.owner.characterId === captured.owner.characterId &&
+    session.owner.sessionGeneration === captured.owner.sessionGeneration &&
+    currentOwner.characterId === captured.owner.characterId &&
+    currentOwner.sessionGeneration === captured.owner.sessionGeneration &&
+    isCurrentSession(captured.owner);
+}
+
+function incomingRequestForDraft(draft) {
+  const identity = {
+    battleId: draft.battleId,
+    eventId: draft.eventId,
+    phaseAtOpen: draft.phaseAtOpen,
+    ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
+  };
+  if (draft.stage === "damage") {
+    return {
+      kind: "direct-damage",
+      damage: draft.rawDamage,
+      ...identity,
+    };
+  }
+  if (draft.stage === "deflect") {
+    return {
+      kind: "deflection",
+      damage: draft.rawDamage,
+      deflectRoll: draft.rawDeflectRoll,
+      source: draft.source,
+      catchChoice: draft.catchChoice,
+      ...identity,
+    };
+  }
+  if (draft.stage === "save-consequence") {
+    return {
+      kind: "completed-save",
+      ...identity,
+      outcome: draft.outcome,
+      hasDamage: draft.outcome !== "unknown" && draft.rollDraft.hasDamage === true,
+      damage: draft.rollDraft.damage,
+      damageBasis: draft.rollDraft.damageBasis ?? "dm-final",
+      effectProfile: draft.rollDraft.effectProfile,
+      spellSaveSource: draft.source === "spell",
+      roll: {
+        id: draft.rollDraft.ability,
+        firstD20: draft.rollDraft.firstD20,
+        secondD20: draft.rollDraft.secondD20,
+        rollMode: draft.rollDraft.rollMode,
+        dc: draft.rollDraft.dc,
+      },
+    };
+  }
+  if (draft.stage === "miss-response" && draft.outcome === "miss") {
+    return {
+      kind: "ebb-and-flow",
+      mode: "dexterity-save",
+      triggerConfirmed: true,
+      ...identity,
+    };
+  }
+  return null;
+}
+
+function incomingPreviewFingerprint(draft, state) {
+  const request = incomingRequestForDraft(draft);
+  if (!request) return null;
+  const preview = previewIncomingEvent(state, request);
+  return JSON.stringify(preview);
+}
+
+function syncIncomingPreviewFingerprint(draft, state, requireConfirmation = false) {
+  const fingerprint = incomingPreviewFingerprint(draft, state);
+  if (requireConfirmation && draft.previewFingerprint &&
+      fingerprint !== draft.previewFingerprint) {
+    draft.previewConfirmationRequired = true;
+  }
+  draft.previewFingerprint = fingerprint;
+  return fingerprint;
+}
+
 function clearIncomingPending(draft, active) {
   delete draft.pendingOperationId;
   delete draft.pendingNormalizedRequest;
@@ -670,29 +768,79 @@ function clearIncomingPending(draft, active) {
 }
 
 function commitIncomingRequest(active, draft, request, operationId, returnStage) {
+  const captured = captureIncomingOperation(active, draft);
+  if (!incomingOperationIsCurrent(captured)) return true;
+  const initialContext = getSessionContext();
   const state = getState();
+  if (!incomingContextIsCurrent(draft, state, initialContext)) {
+    if (incomingOperationIsCurrent(captured)) {
+      draft.stage = "expired";
+      draft.error = "Контекст боя изменился.";
+      render();
+    }
+    return true;
+  }
   const preview = previewIncomingEvent(state, request);
+  if (!incomingOperationIsCurrent(captured)) return true;
   if (!preview.ok) {
     draft.error = preview.reason;
-    render();
+    if (incomingOperationIsCurrent(captured)) render();
+    return true;
+  }
+  const fingerprint = JSON.stringify(preview);
+  if (draft.previewConfirmationRequired ||
+      draft.previewFingerprint && draft.previewFingerprint !== fingerprint) {
+    draft.previewConfirmationRequired = false;
+    draft.previewFingerprint = fingerprint;
+    draft.error = "Предварительный результат изменился. Проверьте обновлённый расчёт и подтвердите ещё раз.";
+    if (incomingOperationIsCurrent(captured)) render();
     return true;
   }
   const normalized = normalizeIncomingEventRequest(request, state);
+  if (!incomingOperationIsCurrent(captured)) return true;
   if (!normalized.ok) {
     draft.error = normalized.reason;
+    if (incomingOperationIsCurrent(captured)) render();
+    return true;
+  }
+  const commitContext = getSessionContext();
+  const commitState = getState();
+  if (!incomingOperationIsCurrent(captured) ||
+      commitContext.characterId !== captured.owner.characterId ||
+      commitContext.sessionGeneration !== captured.owner.sessionGeneration ||
+      !incomingContextIsCurrent(draft, commitState, commitContext)) return true;
+  if (commitContext.stateRevision !== initialContext.stateRevision) {
+    const refreshedPreview = previewIncomingEvent(commitState, request);
+    if (!incomingOperationIsCurrent(captured)) return true;
+    if (!refreshedPreview.ok || JSON.stringify(refreshedPreview) !== fingerprint) {
+      draft.previewConfirmationRequired = false;
+      draft.previewFingerprint = JSON.stringify(refreshedPreview);
+      draft.error = refreshedPreview.reason ??
+        "Предварительный результат изменился. Проверьте обновлённый расчёт и подтвердите ещё раз.";
+      if (incomingOperationIsCurrent(captured)) render();
+      return true;
+    }
+  }
+  const commitNormalized = normalizeIncomingEventRequest(request, commitState);
+  if (!incomingOperationIsCurrent(captured)) return true;
+  if (!commitNormalized.ok) {
+    draft.error = commitNormalized.reason;
     render();
     return true;
   }
   draft.pendingOperationId = operationId;
-  draft.pendingNormalizedRequest = structuredClone(normalized.request);
+  draft.pendingNormalizedRequest = structuredClone(commitNormalized.request);
   draft.pendingReturnStage = returnStage;
   active.submitting = true;
   try {
-    const result = commitIncomingEvent(active.owner, request, operationId);
+    const result = commitIncomingEvent(commitContext, request, operationId);
+    if (!incomingOperationIsCurrent(captured)) return true;
     if (result.status === "applied" || result.status === "replayed") {
+      if (!incomingOperationIsCurrent(captured)) return true;
       const evidence = incomingReceiptEvidence(
         getState(), operationId, draft.pendingNormalizedRequest,
       );
+      if (!incomingOperationIsCurrent(captured)) return true;
       if (evidence.status === "applied") {
         draft.appliedReceipt = evidence.receipt;
         draft.stage = result.persistence?.ok === false ? "save-recovery" : "result";
@@ -710,16 +858,15 @@ function commitIncomingRequest(active, draft, request, operationId, returnStage)
       draft.error = result.reason;
       active.appliedUnsaved = true;
     } else if (result.code === "operation-id-collision") {
-      clearIncomingPending(draft, active);
-      if (request.kind === "completed-save") draft.operationIds.save = createId("incoming-save");
-      else if (request.kind === "ebb-and-flow") draft.operationIds.reply = createId("incoming-reply");
-      else draft.operationIds.apply = createId("incoming-apply");
-      draft.stage = returnStage;
+      draft.stage = "verification";
+      active.appliedUnsaved = true;
       draft.error = result.reason;
     } else {
+      if (!incomingOperationIsCurrent(captured)) return true;
       const evidence = incomingReceiptEvidence(
         getState(), operationId, draft.pendingNormalizedRequest, true,
       );
+      if (!incomingOperationIsCurrent(captured)) return true;
       if (evidence.status === "applied") {
         draft.appliedReceipt = evidence.receipt;
         draft.stage = result.persistence?.ok === false ? "save-recovery" : "result";
@@ -731,15 +878,19 @@ function commitIncomingRequest(active, draft, request, operationId, returnStage)
       }
     }
   } catch (error) {
+    if (!incomingOperationIsCurrent(captured)) return true;
     let evidence = { status: "unknown" };
     let inspectionError = null;
     try {
+      if (!incomingOperationIsCurrent(captured)) return true;
       evidence = incomingReceiptEvidence(
         getState(), operationId, draft.pendingNormalizedRequest,
       );
+      if (!incomingOperationIsCurrent(captured)) return true;
     } catch (verificationError) {
       inspectionError = verificationError;
     }
+    if (!incomingOperationIsCurrent(captured)) return true;
     if (evidence.status === "applied") {
       draft.appliedReceipt = evidence.receipt;
       draft.stage = "save-recovery";
@@ -751,9 +902,9 @@ function commitIncomingRequest(active, draft, request, operationId, returnStage)
     const reason = inspectionError ?? evidence.reason ?? error;
     draft.error = reason instanceof Error ? reason.message : String(reason);
   } finally {
-    active.submitting = false;
+    if (incomingOperationIsCurrent(captured)) active.submitting = false;
   }
-  render();
+  if (incomingOperationIsCurrent(captured)) render();
   return true;
 }
 
@@ -797,77 +948,108 @@ function handleIncomingAction(action) {
   if (action === "incoming-retry-save") {
     if (draft.stage !== "save-recovery" || !draft.pendingOperationId ||
         !draft.pendingNormalizedRequest) return true;
-    const evidence = incomingReceiptEvidence(
-      getState(), draft.pendingOperationId, draft.pendingNormalizedRequest,
-    );
+    const captured = captureIncomingOperation(active, draft);
+    if (!incomingOperationIsCurrent(captured)) return true;
+    let evidence;
+    try {
+      evidence = incomingReceiptEvidence(
+        getState(), draft.pendingOperationId, draft.pendingNormalizedRequest,
+      );
+    } catch (error) {
+      if (!incomingOperationIsCurrent(captured)) return true;
+      draft.error = error instanceof Error ? error.message : String(error);
+      if (incomingOperationIsCurrent(captured)) render();
+      return true;
+    }
+    if (!incomingOperationIsCurrent(captured)) return true;
     if (evidence.status !== "applied") {
       draft.stage = "verification";
       draft.error = evidence.reason ?? "Не удалось подтвердить receipt применённой операции.";
-      render();
+      if (incomingOperationIsCurrent(captured)) render();
       return true;
     }
     draft.appliedReceipt = evidence.receipt;
-    const saved = retryPersistedState();
-    if (!saved.ok) {
-      draft.error = saved.reason ?? "Не удалось сохранить результат.";
-      render();
-      return true;
+    active.submitting = true;
+    try {
+      const saved = retryPersistedState();
+      if (!incomingOperationIsCurrent(captured)) return true;
+      if (!saved.ok) {
+        draft.error = saved.reason ?? "Не удалось сохранить результат.";
+      } else {
+        if (!incomingOperationIsCurrent(captured)) return true;
+        const savedEvidence = incomingReceiptEvidence(
+          getState(), draft.pendingOperationId, draft.pendingNormalizedRequest,
+        );
+        if (!incomingOperationIsCurrent(captured)) return true;
+        if (savedEvidence.status !== "applied") {
+          active.appliedUnsaved = false;
+          draft.stage = "verification";
+          draft.error = savedEvidence.reason ??
+            "Сохранение выполнено, но применение не подтверждено.";
+        } else {
+          draft.appliedReceipt = savedEvidence.receipt;
+          active.appliedUnsaved = false;
+          draft.stage = "result";
+          active.status = "Сохранение выполнено.";
+        }
+      }
+    } catch (error) {
+      if (!incomingOperationIsCurrent(captured)) return true;
+      draft.error = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (incomingOperationIsCurrent(captured)) active.submitting = false;
     }
-    const savedEvidence = incomingReceiptEvidence(
-      getState(), draft.pendingOperationId, draft.pendingNormalizedRequest,
-    );
-    if (savedEvidence.status !== "applied") {
-      active.appliedUnsaved = false;
-      draft.stage = "verification";
-      draft.error = savedEvidence.reason ??
-        "Сохранение выполнено, но применение не подтверждено.";
-      render();
-      return true;
-    }
-    draft.appliedReceipt = savedEvidence.receipt;
-    active.appliedUnsaved = false;
-    draft.stage = "result";
-    active.status = "Сохранение выполнено.";
-    render();
+    if (incomingOperationIsCurrent(captured)) render();
     return true;
   }
   if (action === "incoming-verify") {
+    const captured = captureIncomingOperation(active, draft);
+    if (!incomingOperationIsCurrent(captured)) return true;
     try {
       const evidence = draft.pendingOperationId && draft.pendingNormalizedRequest
         ? incomingReceiptEvidence(
           getState(), draft.pendingOperationId, draft.pendingNormalizedRequest,
         )
         : { status: "unknown", reason: "Нет сохранённого запроса для проверки." };
+      if (!incomingOperationIsCurrent(captured)) return true;
       if (evidence.status === "applied") {
         draft.appliedReceipt = evidence.receipt;
         draft.stage = "save-recovery";
         active.appliedUnsaved = true;
-        const saved = retryPersistedState();
-        if (saved.ok) {
-          const savedEvidence = incomingReceiptEvidence(
-            getState(), draft.pendingOperationId, draft.pendingNormalizedRequest,
-          );
-          if (savedEvidence.status === "applied") {
-            draft.appliedReceipt = savedEvidence.receipt;
-            active.appliedUnsaved = false;
-            draft.stage = "result";
+        active.submitting = true;
+        try {
+          const saved = retryPersistedState();
+          if (!incomingOperationIsCurrent(captured)) return true;
+          if (saved.ok) {
+            const savedEvidence = incomingReceiptEvidence(
+              getState(), draft.pendingOperationId, draft.pendingNormalizedRequest,
+            );
+            if (!incomingOperationIsCurrent(captured)) return true;
+            if (savedEvidence.status === "applied") {
+              draft.appliedReceipt = savedEvidence.receipt;
+              active.appliedUnsaved = false;
+              draft.stage = "result";
+            } else {
+              active.appliedUnsaved = false;
+              draft.stage = "verification";
+              draft.error = savedEvidence.reason ??
+                "Сохранение выполнено, но применение не подтверждено.";
+            }
           } else {
-            active.appliedUnsaved = false;
-            draft.stage = "verification";
-            draft.error = savedEvidence.reason ??
-              "Сохранение выполнено, но применение не подтверждено.";
+            draft.error = saved.reason ?? "Не удалось сохранить результат.";
           }
-        } else {
-          draft.error = saved.reason ?? "Не удалось сохранить результат.";
+        } finally {
+          if (incomingOperationIsCurrent(captured)) active.submitting = false;
         }
       } else {
         draft.stage = "verification";
         draft.error = evidence.reason ?? "Receipt отсутствует; исход операции неизвестен.";
       }
     } catch (error) {
+      if (!incomingOperationIsCurrent(captured)) return true;
       draft.error = error instanceof Error ? error.message : String(error);
     }
-    render();
+    if (incomingOperationIsCurrent(captured)) render();
     return true;
   }
   if (action === "incoming-save-success" || action === "incoming-save-failure") {
@@ -1030,6 +1212,7 @@ function updateInput(field) {
     draft.error = "";
     const preview = getWorkspaceHost()?.querySelector("[data-incoming-preview]");
     if (preview) preview.innerHTML = renderIncomingPreview(session, getState());
+    syncIncomingPreviewFingerprint(draft, getState());
     const catchControls = getWorkspaceHost()?.querySelector("[data-incoming-catch-controls]");
     if (catchControls) catchControls.innerHTML = renderIncomingCatchControls(session, getState());
     return;
@@ -3612,6 +3795,9 @@ export function reconcileWorkspaceAfterStateChange(state, metadata = null) {
     return;
   }
   if (session.workspaceType === "incoming") {
+    if (!session.submitting) {
+      syncIncomingPreviewFingerprint(session.incomingDraft, state, true);
+    }
     if (metadata?.kind === "persistence-retry" && metadata.persistenceResult?.ok &&
         session.appliedUnsaved && session.incomingDraft.pendingOperationId &&
         session.incomingDraft.pendingNormalizedRequest) {
