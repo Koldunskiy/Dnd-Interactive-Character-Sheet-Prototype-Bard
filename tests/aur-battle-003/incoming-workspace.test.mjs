@@ -10,6 +10,7 @@ import {
 import {
   getState,
   getSessionContext,
+  openCharacterSession,
   retryPersistedState,
   subscribe,
   updateState,
@@ -267,12 +268,24 @@ test("incoming commit owner-generation change prevents receipt inspection in the
   assert.equal(openIncomingAttack(null, { mode: "direct-damage" }).ok, true);
   typeIncoming(dialog, "incomingDamage", "3");
   const hpBefore = getState().combat.hp.current;
+  const sourceOwner = getSessionContext();
   let reads = 0;
-  let switched = false;
+  let subscriberRan = false;
+  let ownerChanged = false;
+  let setupError = null;
   const replaceOwner = subscribe(() => {
-    if (switched || getState().combat.hp.current === hpBefore) return;
-    switched = true;
-    openCharacterSession("aurelia", () => ({ status: "missing" }));
+    if (subscriberRan || getState().combat.hp.current === hpBefore) return;
+    subscriberRan = true;
+    try {
+      openCharacterSession("aurelia", () => ({ status: "missing" }));
+      const newOwner = getSessionContext();
+      assert.equal(newOwner.characterId, "aurelia");
+      assert.notEqual(newOwner.sessionGeneration, sourceOwner.sessionGeneration);
+      ownerChanged = true;
+    } catch (error) {
+      setupError = error;
+      return;
+    }
     const newState = getState();
     newState.monk = {
       combatAssistant: {
@@ -289,7 +302,11 @@ test("incoming commit owner-generation change prevents receipt inspection in the
   } finally {
     replaceOwner();
   }
-  assert.equal(switched, true);
+  if (setupError) {
+    assert.fail(`${setupError.message}\n${setupError.stack}`);
+  }
+  assert.equal(subscriberRan, true);
+  assert.equal(ownerChanged, true);
   assert.equal(reads, 0);
   assert.equal(getSessionContext().characterId, "aurelia");
   assert.equal(getWorkspaceSessionForTests(), null);
