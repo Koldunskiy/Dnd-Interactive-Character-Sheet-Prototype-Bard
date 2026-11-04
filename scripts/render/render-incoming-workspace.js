@@ -44,6 +44,27 @@ function buildIncomingReplyPreviewRequest(draft, reply) {
   };
 }
 
+export function renderIncomingReplyDamageControls(session, state) {
+  const draft = session.incomingDraft;
+  const reply = draft.replyDraft;
+  if (draft.stage !== "reply-damage" || !reply) return "";
+  const preview = previewIncomingReplyAttack(
+    state, buildIncomingReplyPreviewRequest(draft, reply),
+  );
+  if (!preview.ok || !preview.attack.hitResult) return "";
+  return Array.from({ length: preview.requiredDamageDice }, (_, index) =>
+    field(index ? "replyDamage2" : "replyDamage1",
+      index ? "Дополнительная кость критического урона" : "Физический урон",
+      reply.damageRolls?.[index] ?? "", 'type="number" min="1" step="1"')).join("");
+}
+
+export function renderIncomingReplyHitControls(session) {
+  const reply = session.incomingDraft.replyDraft;
+  return reply?.attack.targetArmorClass == null || reply?.attack.targetArmorClass === ""
+    ? `${button("incoming-reply-hit", "Попадание")}
+      ${button("incoming-reply-miss", "Промах")}` : "";
+}
+
 export function renderIncomingPreview(session, state) {
   const draft = session.incomingDraft;
   const derived = getDerivedStats(state);
@@ -269,22 +290,19 @@ export function renderIncomingWorkspace(session, state) {
       );
       const showDamageInputs = draft.stage === "reply-damage" &&
         attackPreview.ok && attackPreview.attack.hitResult;
-      body = `<label>Режим броска<select data-workspace-field name="replyRollMode">
+      body = `<section data-incoming-stage="${draft.stage}">
+        <label>Режим броска<select data-workspace-field name="replyRollMode">
         ${Object.entries(modeLabel).map(([key, label]) =>
           `<option value="${key}" ${reply.attack.rollMode === key ? "selected" : ""}>${label}</option>`).join("")}</select></label>
         ${field("replyFirstD20", "Первый физический к20", reply.attack.firstD20 ?? "", 'type="number" min="1" max="20" step="1"')}
         ${reply.attack.rollMode !== "normal" ? field("replySecondD20", "Второй физический к20", reply.attack.secondD20 ?? "", 'type="number" min="1" max="20" step="1"') : ""}
         ${field("replyTargetArmorClass", "КД цели (если известна)", reply.attack.targetArmorClass ?? "", 'type="number" min="1" max="99" step="1"')}
-        ${reply.attack.targetArmorClass == null || reply.attack.targetArmorClass === "" ? `
-          ${button("incoming-reply-hit", "Попадание")}
-          ${button("incoming-reply-miss", "Промах")}` : ""}
+        <div data-incoming-reply-hit-controls>${renderIncomingReplyHitControls(session)}</div>
         ${field("replyTargetLabel", "Цель", reply.attack.targetLabel ?? "")}
-        ${showDamageInputs ? `
-          ${Array.from({ length: attackPreview.requiredDamageDice }, (_, index) =>
-            field(index ? "replyDamage2" : "replyDamage1",
-              index ? "Дополнительная кость критического урона" : "Физический урон",
-              reply.damageRolls?.[index] ?? "", 'type="number" min="1" step="1"')).join("")}` : ""}
-        <div data-incoming-preview>${renderIncomingPreview(session, state)}</div>`;
+        <div data-incoming-reply-damage>${showDamageInputs
+          ? renderIncomingReplyDamageControls(session, state) : ""}</div>
+        <div data-incoming-preview>${renderIncomingPreview(session, state)}</div>
+        </section>`;
       footer = `${button("incoming-reply-submit",
         reply.replyKind === "missile-return" ? "Вернуть снаряд · 1 ци" : "Записать ответный удар",
         'class="btn btn--primary"')}

@@ -37,10 +37,64 @@ export class FixtureNode {
 
   set innerHTML(markup) {
     if (this._innerHTML !== markup) {
+      if (globalThis.document?.activeElement &&
+          this.childNodes.some((child) => child.contains(globalThis.document.activeElement))) {
+        globalThis.document.activeElement = null;
+      }
       for (const child of this.childNodes) child.parentElement = null;
       this.childNodes = [];
     }
     this._innerHTML = markup;
+    if (this.dataset.fixtureBody && this.childNodes.length === 0) {
+      for (const match of markup.matchAll(/<input\b([^>]*)>/g)) {
+        const name = match[1].match(/\bname="([^"]*)"/)?.[1];
+        if (!name) continue;
+        const value = match[1].match(/\bvalue="([^"]*)"/)?.[1] ?? "";
+        const input = new FixtureInput(name, value);
+        input.dataset.workspaceField = name;
+        this.appendChild(input);
+      }
+      for (const [attribute, selector] of [
+        ["data-incoming-stage", "stage"],
+        ["data-incoming-reply-damage", "damage"],
+        ["data-incoming-reply-hit-controls", "hit-controls"],
+        ["data-incoming-preview", "preview"],
+      ]) {
+        const match = markup.match(new RegExp(`<[^>]+${attribute}(?:="([^"]*)")?[^>]*>([\\s\\S]*?)<\\/[^>]+>`));
+        if (match) {
+          const region = new FixtureNode();
+          region.dataset.fixtureRegion = selector;
+          region.dataset.incomingStage = match[1] ?? "";
+          region.innerHTML = match[2];
+          this.appendChild(region);
+        }
+      }
+    } else if (this.dataset.fixtureRegion && this.parentElement) {
+      const marker = this.dataset.fixtureRegion === "damage" ? "data-incoming-reply-damage"
+        : this.dataset.fixtureRegion === "hit-controls" ? "data-incoming-reply-hit-controls"
+          : this.dataset.fixtureRegion === "preview" ? "data-incoming-preview" : null;
+      if (marker) {
+        const expression = new RegExp(`(<div[^>]*${marker}[^>]*>)[\\s\\S]*?(<\\/div>)`);
+        this.parentElement._innerHTML = this.parentElement._innerHTML.replace(
+          expression, `$1${markup}$2`,
+        );
+        if (marker === "data-incoming-reply-damage") {
+          for (const child of [...this.parentElement.childNodes]) {
+            if (child.name === "replyDamage1" || child.name === "replyDamage2") {
+              this.parentElement.removeChild(child);
+            }
+          }
+          for (const match of markup.matchAll(/<input\b([^>]*)>/g)) {
+            const name = match[1].match(/\bname="([^"]*)"/)?.[1];
+            if (!name) continue;
+            const value = match[1].match(/\bvalue="([^"]*)"/)?.[1] ?? "";
+            const input = new FixtureInput(name, value);
+            input.dataset.workspaceField = name;
+            this.parentElement.appendChild(input);
+          }
+        }
+      }
+    }
   }
 
   fire(type, event) {
@@ -56,6 +110,7 @@ export class FixtureNode {
 
   removeChild(node) {
     this.childNodes = this.childNodes.filter((child) => child !== node);
+    if (globalThis.document?.activeElement === node) globalThis.document.activeElement = null;
     node.parentElement = null;
   }
 
@@ -65,6 +120,20 @@ export class FixtureNode {
       if (current === this) return true;
     }
     return false;
+  }
+  querySelector(selector) {
+    const name = selector.match(/name="([^"]+)"/)?.[1];
+    if (name) return this.childNodes.find((node) => node.name === name) ?? null;
+    const markers = {
+      "[data-incoming-stage]": "stage",
+      "[data-incoming-reply-damage]": "damage",
+      "[data-incoming-reply-hit-controls]": "hit-controls",
+      "[data-incoming-preview]": "preview",
+    };
+    const marker = markers[selector];
+    return marker
+      ? this.childNodes.find((node) => node.dataset.fixtureRegion === marker) ?? null
+      : null;
   }
   closest(selector) {
     if (selector === "[data-workspace-form]" && this.dataset.workspaceForm) return this;
@@ -119,6 +188,7 @@ class FixtureDialog extends FixtureNode {
     this.open = false;
     this.header = new FixtureNode();
     this.body = new FixtureNode();
+    this.body.dataset.fixtureBody = true;
     this.footer = new FixtureNode();
     this.status = new FixtureNode();
     this.error = new FixtureNode();
@@ -186,7 +256,7 @@ class FixtureDialog extends FixtureNode {
       '[data-workspace-field="cantrip2"]': this.cantrip2,
       "[data-rest-replacement-subchoices]": this.restReplacementSubchoices,
     };
-    return nodes[selector] ?? null;
+    return nodes[selector] ?? this.body.querySelector(selector);
   }
 
   fire(type, event) {
@@ -232,6 +302,7 @@ export function installWorkspaceFixture({ embeddedHost = false } = {}) {
   const dialog = reusableDialog ??= new FixtureDialog();
   const fallbackDialog = embeddedHost ? new FixtureDialog() : dialog;
   dialog.embeddedHost = embeddedHost;
+  dialog.documentRoot = true;
   dialog.contains = FixtureNode.prototype.contains;
   dialog.showModalCount = 0;
   dialog.closeCount = 0;

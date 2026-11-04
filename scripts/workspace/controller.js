@@ -56,6 +56,8 @@ import {
 } from "../battle/incoming-event-draft.js";
 import {
   renderIncomingCatchControls,
+  renderIncomingReplyDamageControls,
+  renderIncomingReplyHitControls,
   renderIncomingPreview,
   renderIncomingWorkspace,
 } from "../render/render-incoming-workspace.js";
@@ -1427,13 +1429,25 @@ function updateInput(field) {
       draft.replyDraft.damageRolls = [];
       draft.stage = "reply-input";
       draft.error = "";
-      render();
-      const focusName = field.name;
-      const control = getWorkspaceHost()?.querySelector(
-        `[data-workspace-field][name="${focusName}"]`,
-      );
-      if (control?.isConnected) control.focus({ preventScroll: true });
-      else focusWorkspaceHeading();
+      session.dirty = true;
+      if (field.name === "replyRollMode") {
+        render();
+        const control = getWorkspaceHost()?.querySelector(
+          `[data-workspace-field][name="${field.name}"]`,
+        );
+        if (control?.isConnected) control.focus({ preventScroll: true });
+        else focusWorkspaceHeading();
+      } else {
+        const root = getWorkspaceHost();
+        const stage = root?.querySelector("[data-incoming-stage]");
+        if (stage) stage.dataset.incomingStage = draft.stage;
+        const damage = root?.querySelector("[data-incoming-reply-damage]");
+        if (damage) damage.innerHTML = renderIncomingReplyDamageControls(session, getState());
+        const hitControls = root?.querySelector("[data-incoming-reply-hit-controls]");
+        if (hitControls) hitControls.innerHTML = renderIncomingReplyHitControls(session);
+        const preview = root?.querySelector("[data-incoming-preview]");
+        if (preview) preview.innerHTML = renderIncomingPreview(session, getState());
+      }
       syncIncomingPreviewFingerprint(draft, getState());
       return;
     }

@@ -16,6 +16,13 @@ import { readIncomingEventReceipt } from "../../scripts/actions/incoming-event.j
 import { fireWorkspaceAction, installWorkspaceFixture } from "./workspace-fixture.mjs";
 
 function typeIncoming(dialog, name, value) {
+  const control = dialog.body.querySelector?.(`[data-workspace-field][name="${name}"]`);
+  if (control) {
+    control.value = value;
+    globalThis.document.activeElement = control;
+    dialog.fire("input", { target: control });
+    return control;
+  }
   const field = {
     name,
     value,
@@ -25,6 +32,14 @@ function typeIncoming(dialog, name, value) {
   };
   field.parentElement = dialog.body;
   dialog.fire("input", { target: field });
+}
+
+function assertStableReplyInput(dialog, name) {
+  const field = dialog.body.querySelector(`[data-workspace-field][name="${name}"]`);
+  assert.ok(field, `${name} control exists`);
+  assert.equal(field.isConnected, true, `${name} remains connected`);
+  assert.equal(globalThis.document.activeElement, field, `${name} remains active`);
+  return field;
 }
 
 function startCaughtProjectile(dialog) {
@@ -169,23 +184,12 @@ test("target label is informational; attack edits after damage clear rolls and r
   assert.equal(draft.stage, "reply-damage");
   assert.deepEqual(draft.replyDraft.damageRolls, ["5", "4"]);
 
-  let focusedControl = null;
-  const querySelector = dialog.querySelector.bind(dialog);
-  dialog.querySelector = (selector) => {
-    const match = selector.match(/name="(reply[^"]+)"/);
-    if (match) {
-      return {
-        isConnected: true,
-        focus() { focusedControl = match[1]; },
-      };
-    }
-    return querySelector(selector);
-  };
-  typeIncoming(dialog, "replyFirstD20", "19");
+  const firstD20 = typeIncoming(dialog, "replyFirstD20", "19");
   draft = getWorkspaceSessionForTests().incomingDraft;
-  dialog.querySelector = querySelector;
   assert.equal(draft.stage, "reply-input");
-  assert.equal(focusedControl, "replyFirstD20");
+  assert.equal(dialog.body.querySelector('[data-workspace-field][name="replyFirstD20"]'), firstD20);
+  assert.equal(globalThis.document.activeElement, firstD20);
+  assert.equal(firstD20.isConnected, true);
   assert.equal(draft.replyDraft.attack.firstD20, "19");
   assert.deepEqual(draft.replyDraft.damageRolls, []);
   assert.doesNotMatch(dialog.body.innerHTML, /name="replyDamage1"/);
@@ -193,6 +197,51 @@ test("target label is informational; attack edits after damage clear rolls and r
   assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "reply-damage");
   assert.match(dialog.body.innerHTML, /name="replyDamage1"/);
   assert.doesNotMatch(dialog.body.innerHTML, /name="replyDamage2"/);
+  unsubscribe();
+});
+
+test("reply numeric input preserves DOM identity and focus across typing, clearing, and damage invalidation", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  startCaughtProjectile(dialog);
+  fireWorkspaceAction(dialog, "incoming-open-return");
+
+  let firstD20 = typeIncoming(dialog, "replyFirstD20", "1");
+  assert.equal(assertStableReplyInput(dialog, "replyFirstD20"), firstD20);
+  typeIncoming(dialog, "replyFirstD20", "19");
+  assert.equal(assertStableReplyInput(dialog, "replyFirstD20"), firstD20);
+  assert.equal(firstD20.value, "19");
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.replyDraft.attack.firstD20, "19");
+
+  typeIncoming(dialog, "replyRollMode", "advantage");
+  firstD20 = dialog.body.querySelector('[data-workspace-field][name="replyFirstD20"]');
+  const second = dialog.body.querySelector('[data-workspace-field][name="replySecondD20"]');
+  typeIncoming(dialog, "replySecondD20", "1");
+  assert.equal(assertStableReplyInput(dialog, "replySecondD20"), second);
+  typeIncoming(dialog, "replySecondD20", "19");
+  assert.equal(assertStableReplyInput(dialog, "replySecondD20"), second);
+  assert.equal(second.value, "19");
+
+  const armorClass = typeIncoming(dialog, "replyTargetArmorClass", "1");
+  typeIncoming(dialog, "replyTargetArmorClass", "19");
+  assert.equal(assertStableReplyInput(dialog, "replyTargetArmorClass"), armorClass);
+  assert.equal(armorClass.value, "19");
+
+  typeIncoming(dialog, "replyFirstD20", "");
+  typeIncoming(dialog, "replyFirstD20", "2");
+  assert.equal(assertStableReplyInput(dialog, "replyFirstD20"), firstD20);
+  assert.equal(firstD20.value, "2");
+
+  fireWorkspaceAction(dialog, "incoming-reply-hit");
+  typeIncoming(dialog, "replyDamage1", "5");
+  const fieldBeforeEdit = dialog.body.querySelector(
+    '[data-workspace-field][name="replyFirstD20"]',
+  );
+  assert.equal(fieldBeforeEdit.isConnected, true);
+  typeIncoming(dialog, "replyFirstD20", "3");
+  assert.equal(assertStableReplyInput(dialog, "replyFirstD20"), fieldBeforeEdit);
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.replyDraft.damageRolls.length, 0);
+  assert.equal(dialog.body.querySelector('[data-workspace-field][name="replyDamage1"]'), null);
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "reply-input");
   unsubscribe();
 });
 
