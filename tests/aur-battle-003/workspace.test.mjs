@@ -275,6 +275,15 @@ test("production normal attack workspace records one action, snapshot damage and
     targetArmorClass: "99", dmHitResult: "miss", confirmSeparateAction: false,
   });
   fireAction(dialog, "attack-hit");
+  assert.equal(getState().monk.combatAssistant.activeSequences.some((item) =>
+    item.id === getWorkspaceSessionForTests().sequenceId), false);
+  assert.equal(getState().ui.turn.actionUsed, false);
+  assert.equal(getWorkspaceSessionForTests().currentStep, "damage-input");
+  assert.match(dialog.footer.innerHTML, /Отмена текущего удара/);
+  dialog.forms.damage = new FakeForm("damage", { damage1: "3" });
+  globalThis.workspaceStorageFailures = true;
+  fireAction(dialog, "submit-damage");
+  globalThis.workspaceStorageFailures = false;
   const sequence = getState().monk.combatAssistant.activeSequences.find((item) =>
     item.id === getWorkspaceSessionForTests().sequenceId);
   const firstAttack = sequence.resolvedAttacks[0];
@@ -284,48 +293,11 @@ test("production normal attack workspace records one action, snapshot damage and
   assert.equal(firstAttack.hitResult, "hit");
   assert.equal(firstAttack.hitResolutionSource, "dm");
   assert.equal(firstAttack.optionalTargetLabel, "");
-  assert.equal(firstAttack.damageStatus, "awaiting-damage");
+  assert.equal(firstAttack.damageStatus, "recorded");
   assert.equal(getState().ui.turn.actionUsed, true);
-  assert.equal(getWorkspaceSessionForTests().currentStep, "damage-input");
-  assert.match(dialog.body.innerHTML, /data-workspace-form="damage"/);
+  assert.equal(getWorkspaceSessionForTests().currentStep, "checkpoint");
+  assert.equal(firstAttack.damageRolls[0], 3);
   assert.doesNotMatch(dialog.body.innerHTML, /data-sara-damage-submit/);
-  const invalidAttackTarget = openNormalAttack({
-    sequenceId: sequence.id, attackId: "missing-attack",
-  });
-  assert.equal(invalidAttackTarget.ok, false);
-  assert.equal(getWorkspaceSessionForTests().workspaceSessionId, opened.sessionId);
-  const exactTarget = openNormalAttack({
-    sequenceId: sequence.id, attackId: firstAttack.id,
-  });
-  assert.equal(exactTarget.ok, true);
-  assert.equal(exactTarget.sessionId, opened.sessionId);
-  assert.equal(getWorkspaceSessionForTests().attackId, firstAttack.id);
-  const historicalTarget = openNormalAttack({
-    sequenceId: sequence.id, attackId: firstAttack.id, mode: "historical-damage",
-  });
-  assert.equal(historicalTarget.ok, true);
-  assert.notEqual(historicalTarget.sessionId, opened.sessionId);
-  assert.equal(getWorkspaceSessionForTests().historicalOnly, true);
-
-  const kiBeforeTechnique = getState().combat.ki.current;
-  minimizeWorkspace();
-  const technique = applyTechniqueToHit(
-    getSessionContext(),
-    sequence.id,
-    firstAttack.id,
-    "ll-monk:empowered-strike",
-    { confirmed: true, paymentMode: "ki" },
-    "workspace-technique-op",
-  );
-  assert.equal(technique.status, "applied");
-  assert.equal(getState().combat.ki.current, kiBeforeTechnique - 1);
-  assert.equal(resumeWorkspace(historicalTarget.sessionId).ok, true);
-  assert.match(dialog.body.innerHTML, /К этому удару уже применена техника/);
-
-  dialog.forms.damage = new FakeForm("damage", { damage1: "3" });
-  globalThis.workspaceStorageFailures = true;
-  fireAction(dialog, "submit-damage");
-  globalThis.workspaceStorageFailures = false;
   assert.equal(getState().monk.combatAssistant.activeSequences[0]
     .resolvedAttacks[0].damageTotalBeforeTargetModifiers,
   3 + firstAttack.profileSnapshot.damageModifier);
@@ -347,6 +319,7 @@ test("production normal attack workspace records one action, snapshot damage and
   const currentContinuation = openNormalAttack({ sequenceId: sequence.id, mode: "current" });
   assert.equal(currentContinuation.ok, true);
   assert.equal(getWorkspaceSessionForTests().historicalOnly, false);
+  fireAction(dialog, "next-attack");
   assert.equal(getWorkspaceSessionForTests().currentStep, "attack-input");
 
   const sequenceId = sequence.id;
@@ -384,17 +357,17 @@ test("production normal attack workspace records one action, snapshot damage and
   });
   fireAction(dialog, "attack-hit");
   const completed = getState().monk.combatAssistant.activeSequences[0];
-  assert.equal(completed.status, "complete");
-  assert.equal(completed.resolvedAttacks[1].hitResult, "hit");
-  assert.equal(completed.resolvedAttacks[1].critical, true);
-  assert.equal(completed.resolvedAttacks[1].damageStatus, "awaiting-damage");
-  assert.equal(completed.resolvedAttacks.length, 2);
+  assert.equal(completed.status, "open");
+  assert.equal(completed.resolvedAttacks.length, 1);
   assert.equal(getWorkspaceSessionForTests().currentStep, "damage-input");
   assert.match(dialog.body.innerHTML, /damage2/);
   dialog.forms.damage = new FakeForm("damage", { damage1: "3", damage2: "8" });
   fireAction(dialog, "submit-damage");
   const finalSequence = getState().monk.combatAssistant.activeSequences.find((item) =>
     item.id === sequenceId);
+  assert.equal(finalSequence.resolvedAttacks[1].hitResult, "hit");
+  assert.equal(finalSequence.resolvedAttacks[1].critical, true);
+  assert.equal(finalSequence.resolvedAttacks[1].damageStatus, "recorded");
   assert.equal(finalSequence.resolvedAttacks[1].damageTotalBeforeTargetModifiers,
     3 + 8 + finalSequence.resolvedAttacks[1].profileSnapshot.damageModifier);
   assert.equal(finalSequence.status, "complete");

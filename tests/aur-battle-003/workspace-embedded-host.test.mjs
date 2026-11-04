@@ -429,6 +429,9 @@ test("equipped dart profile records the weapon snapshot and spends exactly one d
     firstD20: "15",
   });
   fireWorkspaceAction(dialog, "attack-hit");
+  assert.equal(getState().inventory.items.find((item) => item.id === "darts").quantity, 20);
+  dialog.forms.damage = new FixtureForm("damage", { damage1: "3" });
+  fireWorkspaceAction(dialog, "submit-damage");
   const sequence = getState().monk.combatAssistant.activeSequences
     .find((entry) => entry.id === getWorkspaceSessionForTests().sequenceId);
   const attack = sequence.resolvedAttacks[0];
@@ -436,6 +439,7 @@ test("equipped dart profile records the weapon snapshot and spends exactly one d
   assert.equal(attack.profileSnapshot.attackKind, "weapon");
   assert.equal(attack.ammunitionSpend.itemId, "darts");
   assert.equal(attack.hitResult, "hit");
+  assert.equal(attack.damageStatus, "recorded");
   assert.equal(getState().inventory.items.find((item) => item.id === "darts").quantity, 19);
   unsubscribe();
 });

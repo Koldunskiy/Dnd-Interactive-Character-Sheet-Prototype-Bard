@@ -26,6 +26,8 @@ test("W-01 preserves a dirty second-attack intent across minimize and resume", (
   fireWorkspaceAction(dialog, "no-technique-continue");
 
   const before = getWorkspaceSessionForTests();
+  const expectedAttackId = before.attackId;
+  const expectedStepKey = before.currentStepKey;
   const revision = getSessionContext().stateRevision;
   fireWorkspaceInput(dialog, "firstD20", "13");
   const draft = getWorkspaceSessionForTests();
@@ -33,8 +35,8 @@ test("W-01 preserves a dirty second-attack intent across minimize and resume", (
   assert.equal(resumeWorkspace(opened.sessionId).ok, true);
 
   const resumed = getWorkspaceSessionForTests();
-  assert.equal(resumed.attackId, before.attackId);
-  assert.equal(resumed.currentStepKey, before.currentStepKey);
+  assert.equal(resumed.attackId, expectedAttackId);
+  assert.equal(resumed.currentStepKey, expectedStepKey);
   assert.equal(resumed.rawInputsByStep[resumed.currentStepKey].firstD20, "13");
   assert.equal(getState().monk.combatAssistant.activeSequences[0].resolvedAttacks.length, 1);
   assert.equal(getSessionContext().stateRevision, revision);

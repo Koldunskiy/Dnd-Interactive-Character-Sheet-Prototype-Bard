@@ -81,6 +81,10 @@ test("player-first attacks, natural exceptions, damage, and optional techniques 
     assert.equal((getState().monk?.combatAssistant?.activeSequences ?? []).length, 0);
     assert.match(dialog.body.innerHTML, /Выберите «Попадание» или «Промах»/);
     fireWorkspaceAction(dialog, "attack-hit");
+    assert.equal((getState().monk?.combatAssistant?.activeSequences ?? []).length, 0);
+    assert.equal(getState().ui.turn.actionUsed, false);
+    dialog.forms.damage = new FixtureForm("damage", { damage1: "3" });
+    fireWorkspaceAction(dialog, "submit-damage");
     const sequence = getState().monk.combatAssistant.activeSequences.find((entry) =>
       entry.id === getWorkspaceSessionForTests().sequenceId);
     assert.equal(sequence.resolvedAttacks.length, 1);
@@ -89,15 +93,10 @@ test("player-first attacks, natural exceptions, damage, and optional techniques 
     assert.equal(sequence.resolvedAttacks[0].optionalTargetLabel, "");
     assert.equal(getState().ui.turn.actionUsed, true);
 
-    const oldAction = {
-      dataset: { workspaceAction: "attack-miss", workspaceAttackId: attackId },
-      closest(selector) { return selector === "[data-workspace-action]" ? this : null; },
-    };
-    dialog.fire("click", { target: oldAction });
-    assert.equal(sequence.resolvedAttacks.length, 1);
-    assert.equal(sequence.resolvedAttacks[0].hitResult, "hit");
+    assert.notEqual(attackId, "");
+    assert.equal(sequence.resolvedAttacks[0].damageStatus, "recorded");
     assert.doesNotMatch(dialog.body.innerHTML, /name="(?:techniqueId|paymentMode|effect|practicedConditions)"/);
-    assert.match(dialog.body.innerHTML, /data-damage-total/);
+    assert.match(dialog.body.innerHTML, /Урон записан/);
 
     dialog.forms.damage = new FixtureForm("damage", { damage1: "3" });
     fireWorkspaceAction(dialog, "submit-damage");
@@ -151,16 +150,19 @@ test("player-first attacks, natural exceptions, damage, and optional techniques 
       confirmSeparateAction: true,
     });
     fireWorkspaceAction(dialog, "attack-hit");
+    assert.equal(getState().monk.combatAssistant.activeSequences
+      .find((entry) => entry.id === exceptionSequenceId), undefined);
+    assert.equal(getWorkspaceSessionForTests().currentStep, "damage-input");
+
+    const exceptionAttackId = getWorkspaceSessionForTests().attackId;
+    dialog.forms.damage = new FixtureForm("damage", { damage1: "3" });
+    fireWorkspaceAction(dialog, "submit-damage");
     activeSequence = getState().monk.combatAssistant.activeSequences
       .find((entry) => entry.id === exceptionSequenceId);
     assert.equal(activeSequence.resolvedAttacks[0].hitResult, "hit");
     assert.equal(activeSequence.resolvedAttacks[0].critical, false);
     assert.equal(activeSequence.resolvedAttacks[0].hitResolutionSource, "dm");
-    assert.equal(activeSequence.resolvedAttacks[0].damageStatus, "awaiting-damage");
-
-    const exceptionAttackId = getWorkspaceSessionForTests().attackId;
-    dialog.forms.damage = new FixtureForm("damage", { damage1: "3" });
-    fireWorkspaceAction(dialog, "submit-damage");
+    assert.equal(activeSequence.resolvedAttacks[0].damageStatus, "recorded");
     assert.deepEqual(getWorkspaceSessionForTests().strikeParent, {
       sequenceId: exceptionSequenceId,
       attackId: exceptionAttackId,
@@ -204,10 +206,8 @@ test("player-first attacks, natural exceptions, damage, and optional techniques 
     fireWorkspaceAction(dialog, "attack-hit");
     const completedSequence = getState().monk.combatAssistant.activeSequences
       .find((entry) => entry.id === exceptionSequenceId);
-    assert.equal(completedSequence.resolvedAttacks.length, 2);
-    assert.equal(completedSequence.resolvedAttacks[1].id, criticalAttackId);
-    assert.equal(completedSequence.resolvedAttacks[1].critical, true);
-    assert.equal(completedSequence.resolvedAttacks[1].damageStatus, "awaiting-damage");
+    assert.equal(completedSequence.resolvedAttacks.length, 1);
+    assert.equal(getWorkspaceSessionForTests().currentStep, "damage-input");
     dialog.forms.damage = new FixtureForm("damage", { damage1: "3", damage2: "8" });
     fireWorkspaceInput(dialog, "damage1", "3");
     fireWorkspaceInput(dialog, "damage2", "8");
@@ -216,6 +216,8 @@ test("player-first attacks, natural exceptions, damage, and optional techniques 
     fireWorkspaceAction(dialog, "submit-damage");
     const damagedSequence = getState().monk.combatAssistant.activeSequences
       .find((entry) => entry.id === exceptionSequenceId);
+    assert.equal(damagedSequence.resolvedAttacks[1].id, criticalAttackId);
+    assert.equal(damagedSequence.resolvedAttacks[1].critical, true);
     assert.equal(damagedSequence.resolvedAttacks[1].damageTotalBeforeTargetModifiers, 17);
     assert.equal(getState().ui.turn.actionUsed, actionUsedBeforeSecondAttack);
     assert.match(dialog.footer.innerHTML, /Завершить без техники/);

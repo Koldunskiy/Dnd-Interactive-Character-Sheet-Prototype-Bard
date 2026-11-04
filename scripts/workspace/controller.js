@@ -16,6 +16,8 @@ import {
   isWorkspaceOwnerCurrent,
   calculateWorkspaceAttackPreview,
   calculateWorkspaceDamagePreview,
+  previewWorkspaceCompletedNormalAttack,
+  submitWorkspaceCompletedNormalAttack,
   submitWorkspaceAttack,
   submitWorkspaceSequenceAttack,
   submitWorkspaceDamage,
@@ -1668,6 +1670,7 @@ function updateInput(field) {
     render();
   } else if (session.currentStep === "damage-input") {
     renderWorkspaceDamagePreview(session);
+    updateWorkspaceFooter(renderAttackWorkspace(session, getState()).footer);
   } else if (session.workspaceType === "command" &&
       session.scenarioId === "character-roll" && session.currentStep === "command-input" &&
       ["kind", "spellSaveSource"].includes(field.name)) {
@@ -2467,6 +2470,8 @@ function submitAttack(outcome, button = null) {
     rollMode: raw.rollMode,
     firstD20: raw.firstD20,
     secondD20: raw.secondD20,
+    targetArmorClass: "",
+    targetLabel: "",
     dmHitResult: outcome,
     confirmSeparateAction: raw.confirmSeparateAction,
   };
@@ -2520,7 +2525,76 @@ function submitAttack(outcome, button = null) {
     session.confirmationRequired = false;
   }
   const currentAttackId = session.attackId;
+  const submittingSessionId = session.workspaceSessionId;
+  const submittingOwner = session.owner;
   const intent = `attack:${currentAttackId}`;
+  if (session.sequenceKind === "attack-action") {
+    const request = {
+      sequenceId: session.sequenceId,
+      attackId: currentAttackId,
+      battleId: state.battleConsole?.current?.id ?? null,
+      ownTurnId: state.battleConsole?.current?.phase === "own-turn"
+        ? state.battleConsole.current.ownTurnId : null,
+      turnMarker: Number(state.ui?.turn?.turnNumber ?? 1),
+      expectedUsedSlots: getUsedAttackSlots(getSequence(state)),
+      attack: { ...values, dmHitResult: outcome, dmExceptionConfirmed: raw.dmExceptionConfirmed },
+      damageRolls: [],
+    };
+    const completedPreview = previewWorkspaceCompletedNormalAttack(state, request);
+    if (!completedPreview.ok) {
+      setError(completedPreview.reason);
+      render();
+      return;
+    }
+    if (outcome === "hit") {
+      session.pendingAttackIntent = {
+        operationId: operationId(intent),
+        request,
+        previewFingerprint: nextFingerprint,
+        workspaceSessionId: session.workspaceSessionId,
+        owner: { ...session.owner },
+      };
+      session.dirty = true;
+      session.selectedDamage = {
+        sequence: getSequence(state),
+        attack: {
+          id: currentAttackId,
+          hitResult: "hit",
+          critical: completedPreview.attack.critical,
+          profileSnapshot: structuredClone(completedPreview.attack.profile),
+        },
+      };
+      setStep("damage-input", currentAttackId);
+      return;
+    }
+    request.damageRolls = [];
+    session.submitting = true;
+    const result = submitWorkspaceCompletedNormalAttack(
+      session.owner, request, operationId(intent),
+    );
+    if (session?.workspaceSessionId !== submittingSessionId ||
+        !isWorkspaceOwnerCurrent(submittingOwner)) return;
+    session.submitting = false;
+    if (result.status !== "applied" && result.status !== "replayed") {
+      setError(result.reason);
+      render();
+      return;
+    }
+    refreshWorkspaceOwnerRevision();
+    session.dirty = false;
+    session.firstAttempt = false;
+    session.isExistingSequence = true;
+    session.appliedUnsaved = result.persistence?.ok === false;
+    const savedSequence = getWorkspaceAttackSequence(getState(), session.sequenceId);
+    const savedAttack = savedSequence?.resolvedAttacks?.find((entry) => entry.id === currentAttackId);
+    session.selectedDamage = null;
+    session.capabilities.canContinueSequence = Boolean(savedSequence &&
+      savedSequence.status === "open" &&
+      getUsedAttackSlots(savedSequence) < savedSequence.maximumAttacks);
+    session.capabilities.canRecordAttack = session.capabilities.canContinueSequence;
+    setStep("checkpoint", currentAttackId);
+    return;
+  }
   session.submitting = true;
   session.deferredReconcile = false;
   const result = session.sequenceKind === "attack-action"
@@ -2576,6 +2650,65 @@ function submitDamage() {
   session.rawInputsByStep[session.currentStepKey] = values;
   session.dirty = true;
   const { sequence, attack } = session.selectedDamage;
+  if (session.pendingAttackIntent && session.sequenceKind === "attack-action") {
+    const rolls = attack.critical
+      ? [values.damage1 ?? "", values.damage2 ?? ""]
+      : [values.damage1 ?? ""];
+    const intent = session.pendingAttackIntent;
+    const request = { ...intent.request, damageRolls: rolls };
+    const currentFingerprint = getRelevantFingerprint(
+      getState(), request.sequenceId, session.firstAttempt,
+    );
+    if (currentFingerprint !== intent.previewFingerprint) {
+      session.pendingAttackIntent = null;
+      session.selectedDamage = null;
+      session.currentStep = "attack-input";
+      session.currentStepKey = stepKey("attack-input", session.attackId);
+      session.relevantPreviewFingerprint = currentFingerprint;
+      session.confirmationRequired = true;
+      session.dirty = true;
+      setError("Профиль или боевой контекст изменился. Проверьте атаку и подтвердите исход заново.");
+      render();
+      return;
+    }
+    const preview = previewWorkspaceCompletedNormalAttack(getState(), request);
+    if (!preview.ok || preview.stage !== "complete") {
+      setError(preview.reason ?? "Полный результат атаки ещё не готов.");
+      render();
+      return;
+    }
+    session.submitting = true;
+    const result = submitWorkspaceCompletedNormalAttack(
+      session.owner, request, intent.operationId,
+    );
+    if (session?.workspaceSessionId !== intent.workspaceSessionId ||
+        !isWorkspaceOwnerCurrent(intent.owner)) return;
+    session.submitting = false;
+    if (result.status !== "applied" && result.status !== "replayed") {
+      setError(result.reason);
+      render();
+      return;
+    }
+    refreshWorkspaceOwnerRevision();
+    const after = getState();
+    const committedSequence = getWorkspaceAttackSequence(after, request.sequenceId);
+    const committedAttack = committedSequence?.resolvedAttacks?.find((entry) =>
+      entry.id === request.attackId);
+    const canContinue = Boolean(committedSequence &&
+      committedSequence.status === "open" &&
+      getUsedAttackSlots(committedSequence) < committedSequence.maximumAttacks);
+    session.capabilities.canContinueSequence = canContinue;
+    session.capabilities.canRecordAttack = canContinue;
+    session.pendingAttackIntent = null;
+    session.selectedDamage = null;
+    session.dirty = false;
+    session.appliedUnsaved = result.persistence?.ok === false;
+    session.strikeParent = committedAttack
+      ? { sequenceId: committedSequence.id, attackId: committedAttack.id } : null;
+    session.status = "Атака и урон записаны атомарно.";
+    setStep("checkpoint", request.attackId);
+    return;
+  }
   if (attack.damageStatus !== "awaiting-damage") {
     setError("Этот урон уже разрешён; повторная запись не выполняется.");
     render();
@@ -4086,6 +4219,20 @@ function handleAction(action, button = null) {
     minimizeWorkspace();
   } else if (action === "submit-damage") {
     submitDamage();
+  } else if (action === "cancel-attack-draft" &&
+      session.workspaceType === "attack" && session.pendingAttackIntent &&
+      !session.submitting && !session.appliedUnsaved) {
+    const savedSlots = getUsedAttackSlots(getSequence());
+    session.pendingAttackIntent = null;
+    session.selectedDamage = null;
+    session.dirty = false;
+    if (savedSlots > 0) {
+      session.currentStep = "checkpoint";
+      session.currentStepKey = stepKey("checkpoint", session.attackId);
+      render();
+    } else {
+      finishCurrentSession();
+    }
   } else if (action === "apply-command") {
     submitCommand();
   } else if (action === "edit-rest-replacement" &&
@@ -4203,7 +4350,13 @@ function handleAction(action, button = null) {
   } else if (action === "retry-save") {
     retrySave();
   } else if (action === "back") {
-    if (session.currentStep === "damage-input" || session.currentStep === "attack-input") {
+    if (session.currentStep === "damage-input" && session.pendingAttackIntent) {
+      session.currentStep = "attack-input";
+      session.currentStepKey = stepKey("attack-input", session.attackId);
+      session.selectedDamage = null;
+      session.dirty = true;
+      render();
+    } else if (session.currentStep === "damage-input" || session.currentStep === "attack-input") {
       minimizeWorkspace();
     } else if (session.currentStep === "checkpoint") {
       minimizeWorkspace();

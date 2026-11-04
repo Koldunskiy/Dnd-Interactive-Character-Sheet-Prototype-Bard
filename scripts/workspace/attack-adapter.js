@@ -1,8 +1,11 @@
 import { getDerivedStats } from "../calculations.js";
 import {
   closeAttackSequence,
+  commitCompletedNormalAttack,
   getSaraAttackCount,
   markAttackDamageOutside,
+  previewCompletedNormalAttack,
+  readCompletedNormalAttackReceipt,
   recordAttackDamage,
   recordAttackOutcome,
 } from "../actions/sara-combat.js";
@@ -139,6 +142,19 @@ export function calculateWorkspaceAttackPreview(state, input) {
 
 export function calculateWorkspaceDamagePreview(profile, rolls, critical) {
   return calculateAttackDamage(profile, rolls, critical);
+}
+
+export function previewWorkspaceCompletedNormalAttack(state, request) {
+  return previewCompletedNormalAttack(state, request);
+}
+
+export function submitWorkspaceCompletedNormalAttack(owner, request, operationId) {
+  if (!isWorkspaceOwnerCurrent(owner)) return { status: "rejected", reason: "stale-session" };
+  return commitCompletedNormalAttack(getWorkspaceAttackContext(), request, operationId);
+}
+
+export function readWorkspaceCompletedNormalAttackReceipt(state, operationId) {
+  return readCompletedNormalAttackReceipt(state, operationId);
 }
 
 export function submitWorkspaceAttack(owner, sequenceId, attackId, input, operationId) {

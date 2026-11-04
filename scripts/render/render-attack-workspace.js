@@ -398,7 +398,7 @@ export function renderAttackWorkspace(session, state) {
   const header = session.workspaceType === "attack"
     ? `<div class="workspace-task-heading"><h2 id="workspaceDialogTitle" tabindex="-1"
         data-workspace-title>${escapeHtml(heading)}</h2>
-        <button type="button" class="workspace-defer" data-workspace-action="minimize">Отложить</button></div>`
+        ${session.pendingAttackIntent ? "" : `<button type="button" class="workspace-defer" data-workspace-action="minimize">Отложить</button>`}</div>`
     : `<div class="workspace-nav">
       <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
       <button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>
@@ -418,6 +418,9 @@ export function renderAttackWorkspace(session, state) {
       <button type="button" class="primary" data-workspace-action="attack-hit" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: попадание" : "Попадание"}</button>
       <button type="button" data-workspace-action="attack-miss" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: промах" : "Промах"}</button>
     </div>`;
+    if (session.pendingAttackIntent) {
+      footer += `<button type="button" class="btn btn--utility" data-workspace-action="cancel-attack-draft">Отмена текущего удара</button>`;
+    }
     const canBeginGentling = getEffectiveSelectedTechniqueIds(state)
       .has("ll-monk:gentling-touch") && session.sequenceKind === "attack-action" &&
       Number(state.combat?.ki?.current) >= 1 &&
@@ -429,16 +432,23 @@ export function renderAttackWorkspace(session, state) {
     }
   } else if (session.currentStep === "damage-input") {
     body = renderDamageForm(session, state);
-    const snapshot = session.selectedDamage?.attack?.profileSnapshot;
-    const dieSides = Number(String(snapshot?.damageDice ?? "").match(/d(\d+)/)?.[1]);
-    const trustedSnapshot = Number.isInteger(dieSides) && dieSides > 0 &&
-      Number.isFinite(Number(snapshot?.damageModifier));
+    const attack = session.selectedDamage?.attack;
+    const snapshot = attack?.profileSnapshot;
+    const damageInputs = currentInputs(session);
+    const damageRolls = attack?.critical
+      ? [damageInputs.damage1 ?? "", damageInputs.damage2 ?? ""]
+      : [damageInputs.damage1 ?? ""];
+    const validDamage = Boolean(attack && snapshot &&
+      calculateWorkspaceDamagePreview(snapshot, damageRolls, attack.critical).ok);
     footer = `<div class="workspace-task-actions">
       <button type="button" class="primary" data-workspace-action="submit-damage"
-        ${session.submitting || session.appliedUnsaved || !trustedSnapshot ? "disabled" : ""}>Записать урон</button>
-      <button type="button" data-workspace-action="outside-damage"
-        ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Урон учтён вне приложения</button>
+        ${session.submitting || session.appliedUnsaved || !validDamage ? "disabled" : ""}>${session.pendingAttackIntent ? "Записать атаку и урон" : "Записать урон"}</button>
+      ${session.pendingAttackIntent ? "" : `<button type="button" data-workspace-action="outside-damage"
+        ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Урон учтён вне приложения</button>`}
     </div>`;
+    if (session.pendingAttackIntent) {
+      footer += `<button type="button" class="btn btn--utility" data-workspace-action="cancel-attack-draft">Отмена текущего удара</button>`;
+    }
   } else if (session.currentStep === "seeking-input") {
     body = renderSeekingForm(session);
     footer = `<button type="button" class="primary" data-workspace-action="submit-seeking"
