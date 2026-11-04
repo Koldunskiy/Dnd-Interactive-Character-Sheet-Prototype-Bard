@@ -8,6 +8,7 @@ import {
   resumeWorkspace,
   discardWorkspaceDraft,
   requestEndBattle,
+  openIncomingAttack,
 } from "../workspace/controller.js";
 import {
   BATTLE_CATEGORIES,
@@ -194,6 +195,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     <button type="button" data-battle-menu="home">Отмена</button></div></form>`;
   const toolsPanel = uiState.panel === "tools" ? `<section class="battle-secondary-tools">
     ${renderInitiative(view.battle)}
+    <button type="button" data-battle-incoming-direct>Получить урон</button>
     <button type="button" data-battle-command-open="completed-rest">Записать завершённый отдых</button>
     ${restResumeId ? `<button type="button" data-battle-command-open="${escapeHtml(restResumeId)}">Продолжить сохранённое восстановление</button>` : ""}
     <button type="button" data-battle-roll-shortcut="all">Проверка или спасбросок</button>
@@ -222,13 +224,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
       <button type="button" data-battle-menu="incoming">По мне атакуют</button>
       <button type="button" data-roll-preset="saving-throw">Спасбросок</button>
       <button type="button" data-roll-preset="ability-check">Проверка</button>
-      <button type="button" data-battle-menu="other-events">Другое событие</button></div>
-      ${uiState.panel === "incoming" ? renderIncomingEvents(commands) : ""}
-      ${uiState.panel === "other-events" ? `<section class="battle-incoming-events">
-        <button type="button" data-battle-command-open="opportunity-unarmed">Провоцированная атака</button>
-        <button type="button" data-battle-command-open="incoming-damage">Получить урон</button>
-        <button type="button" data-battle-roll-shortcut="all">Общий бросок</button>
-        <button type="button" data-battle-menu="home">Назад</button></section>` : ""}
+      <button type="button" data-battle-command-open="opportunity-unarmed">Провоцированная атака</button></div>
       ${toolsPanel}`}`;
     primaryFooter = uiState.panel === "initiative-correct" ? "" : `<button type="button" class="btn btn--primary"
       data-battle-command="begin-own-turn">Мой ход</button>`;
@@ -241,10 +237,10 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
       <button type="button" data-battle-command-open="normal-attack">Атаковать</button>
       <button type="button" data-battle-menu="action">Другое действие</button>
       <button type="button" data-battle-menu="bonus">Бонусное действие</button>
-      <button type="button" data-battle-menu="incoming">Входящее событие</button></div>`;
+      <button type="button" data-battle-menu="incoming">По мне атакуют</button>
+      <button type="button" data-battle-command-open="opportunity-unarmed">Провоцированная атака</button></div>`;
     phaseBody = `${uiState.panel === "initiative-correct" ? initiativeForm("correct")
       : uiState.panel === "home" ? home : panel}
-      ${uiState.panel === "incoming" ? renderIncomingEvents(commands) : ""}
       ${toolsPanel}`;
     primaryFooter = uiState.panel === "initiative-correct" ? "" : `<button type="button" class="btn btn--primary"
       data-battle-command="end-own-turn">Завершить ход</button>`;
@@ -540,29 +536,6 @@ function flushDeferredBattleRegions(root) {
   }
 }
 
-function renderIncomingEvents(commands) {
-  const choices = [
-    ["deflect-strike", "Попадание вблизи", "Подходящее рукопашное попадание"],
-    ["deflect-missile", "Попадание снарядом", "Подходящая дальнобойная атака"],
-    ["ebb-and-flow", "Промах вблизи", "Прилив и отлив"],
-    ["opportunity-unarmed", "Цель покинула досягаемость", "Провоцированная атака"],
-  ];
-  return `<section class="battle-incoming-events" aria-label="Выбор входящего события">
-    <h4>Какое событие произошло?</h4>
-    <div class="battle-quick-rolls">${choices.map(([id, label, detail]) => {
-      const command = commands.find((entry) => entry.id === id);
-      return `<button type="button" class="btn btn--utility" data-battle-command-open="${id}"
-        ${command?.availability.enabled ? "" : "disabled"}>${label}<small>${detail}</small></button>`;
-    }).join("")}
-      <button type="button" class="btn btn--utility" data-battle-roll-shortcut="saving-throw"
-        data-roll-id="dexterity">Записать спасбросок</button>
-      <button type="button" class="btn btn--utility" data-battle-command-open="incoming-damage">
-        Записать полученный урон без реакции</button>
-      <button type="button" class="btn btn--utility" data-battle-menu="home">Назад</button>
-    </div>
-  </section>`;
-}
-
 export function bindBattleConsole(root = document, { onNavigate } = {}) {
   if (typeof onNavigate === "function") navigationCallbacks.set(root, onNavigate);
   const sessionContext = getSessionContext();
@@ -651,8 +624,19 @@ export function bindBattleConsole(root = document, { onNavigate } = {}) {
       rerender();
       return;
     }
+    const directDamageButton = event.target.closest("[data-battle-incoming-direct]");
+    if (directDamageButton && root.contains(directDamageButton)) {
+      const result = openIncomingAttack(directDamageButton, { mode: "direct-damage" });
+      if (!result.ok) reportFailure(result.reason);
+      return;
+    }
     const menuButton = event.target.closest("[data-battle-menu]");
     if (menuButton && root.contains(menuButton) && !menuButton.disabled) {
+      if (menuButton.dataset.battleMenu === "incoming") {
+        const result = openIncomingAttack(menuButton);
+        if (!result.ok) reportFailure(result.reason);
+        return;
+      }
       changePanel(menuButton.dataset.battleMenu);
       return;
     }

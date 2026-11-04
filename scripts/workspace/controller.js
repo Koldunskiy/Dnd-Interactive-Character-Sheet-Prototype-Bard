@@ -47,6 +47,16 @@ import { getSaraBattleCommandRegistry } from "../battle/command-registry.js";
 import { getActiveBattle } from "../battle/model.js";
 import { executeBattleCommand } from "../battle/commands.js";
 import {
+  createIncomingEventDraft,
+  incomingContextIsCurrent,
+} from "../battle/incoming-event-draft.js";
+import { renderIncomingPreview, renderIncomingWorkspace } from "../render/render-incoming-workspace.js";
+import {
+  commitIncomingEvent,
+  previewIncomingEvent,
+  readIncomingEventReceipt,
+} from "../actions/incoming-event.js";
+import {
   amendCharacterRoll,
   correctCharacterRollOutcome,
   isRollConsequencePending,
@@ -270,11 +280,16 @@ function suspendCurrentSession() {
   return true;
 }
 
-function restoreParentSession() {
+function restoreParentSession({ validateBattleContext = false } = {}) {
   while (suspendedSessions.length) {
     const parent = suspendedSessions.pop();
     if (!isWorkspaceOwnerCurrent(parent.owner) ||
         parent.owner.appInstanceId !== appInstanceId) continue;
+    if (validateBattleContext && parent.workspaceType === "attack" && parent.battleContext) {
+      const currentBattle = getState().battleConsole?.current ?? null;
+      if ((parent.battleContext.battleId ?? null) !== (currentBattle?.id ?? null) ||
+          parent.battleContext.ownTurnId !== currentBattle?.ownTurnId) continue;
+    }
     session = parent;
     if (session.workspaceType === "attack") rehydrateFromState(getState());
     session.suspended = false;
@@ -292,9 +307,9 @@ function restoreParentSession() {
   return false;
 }
 
-function finishCurrentSession() {
+function finishCurrentSession(options = {}) {
   session = null;
-  if (restoreParentSession()) return;
+  if (restoreParentSession(options)) return;
   closeWorkspaceHost();
   document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
 }
@@ -575,9 +590,11 @@ function render() {
   session.completionLabel = parent
     ? `Вернуться к ${parent.command?.titleRu ?? "рабочей панели"}`
     : "Готово";
-  const view = session.workspaceType === "command"
-    ? renderCommandWorkspace(session, state)
-    : renderAttackWorkspace(session, state);
+  const view = session.workspaceType === "incoming"
+    ? renderIncomingWorkspace(session, state)
+    : session.workspaceType === "command"
+      ? renderCommandWorkspace(session, state)
+      : renderAttackWorkspace(session, state);
   renderWorkspaceHost({
     ...view,
     status: session.status ?? "",
@@ -602,6 +619,10 @@ function render() {
   if (ki) ki.textContent = String(state.combat?.ki?.current ?? "—");
   if (session.currentStep === "attack-input") renderWorkspaceAttackPreview(session, state);
   if (session.currentStep === "damage-input") renderWorkspaceDamagePreview(session);
+  if (session.workspaceType === "incoming") {
+    const preview = getWorkspaceHost()?.querySelector("[data-incoming-preview]");
+    if (preview) preview.innerHTML = renderIncomingPreview(session, state);
+  }
   if (session.workspaceType === "command" && session.scenarioId === "character-roll" &&
       session.currentStep === "command-input") renderWorkspaceRollPreview(session, state);
   if (session.workspaceType === "command" && session.scenarioId?.startsWith("potion-use:") &&
@@ -609,6 +630,235 @@ function render() {
   if (session.workspaceType === "command" && session.currentStep === "roll-result") {
     renderWorkspaceConsequencePreview(session, state);
   }
+}
+
+function handleIncomingAction(action) {
+  const active = session;
+  const draft = active.incomingDraft;
+  const state = getState();
+  if (!draft || active.workspaceType !== "incoming") return false;
+  if (action === "incoming-cancel") {
+    if (draft.appliedReceipt) return true;
+    session = null;
+    if (!restoreParentSession({ validateBattleContext: true })) {
+      closeWorkspaceHost({ restoreFocus: false });
+      document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
+    }
+    return true;
+  }
+  if (action === "incoming-close") {
+    if (draft.appliedReceipt && active.appliedUnsaved) return true;
+    finishCurrentSession({ validateBattleContext: true });
+    return true;
+  }
+  if (action === "incoming-back") {
+    if (draft.appliedReceipt) return true;
+    const previous = {
+      source: "outcome",
+      damage: draft.source === "spell" ? "spell-choice" : "source",
+      deflect: "damage",
+      "spell-choice": "source",
+      "save-input": "spell-choice",
+      "save-consequence": "save-input",
+    }[draft.stage];
+    if (previous) draft.stage = previous;
+    draft.error = "";
+    render();
+    return true;
+  }
+  if (action === "incoming-retry-save") {
+    const saved = retryPersistedState();
+    if (!saved.ok) {
+      draft.error = saved.reason ?? "Не удалось сохранить результат.";
+      render();
+      return true;
+    }
+    active.appliedUnsaved = false;
+    draft.stage = "result";
+    active.status = "Сохранение выполнено.";
+    render();
+    return true;
+  }
+  if (action === "incoming-save-success" || action === "incoming-save-failure") {
+    draft.outcome = action === "incoming-save-success" ? "success" : "failure";
+    draft.rollDraft.hasDamage = false;
+    draft.stage = "save-consequence";
+  } else if (action === "incoming-save-unknown") {
+    draft.outcome = "unknown";
+    draft.rollDraft.hasDamage = false;
+    draft.stage = "save-consequence";
+  } else if (action === "incoming-set-has-damage") {
+    draft.rollDraft.hasDamage = true;
+  } else if (action === "incoming-set-no-damage") {
+    draft.rollDraft.hasDamage = false;
+  }
+  else if (action === "incoming-hit") draft.stage = "source";
+  else if (action === "incoming-miss") {
+    draft.outcome = "miss";
+    draft.stage = "miss-response";
+  } else if (action === "incoming-finish-miss") {
+    finishCurrentSession();
+    return true;
+  } else if (action === "incoming-ebb-save") {
+    if (!incomingContextIsCurrent(draft, state, active.owner)) {
+      draft.stage = "expired";
+      draft.error = "Контекст боя изменился.";
+    } else {
+      const capturedSession = active;
+      active.submitting = true;
+      try {
+        const result = applySaraCombatAction(getSessionContext(), "ebb-and-flow", {
+          confirmed: true,
+          triggerConfirmed: true,
+          mode: "dexterity-save",
+          operationId: draft.operationIds.reply,
+        });
+        if (result.status === "applied" && session === capturedSession) {
+          draft.appliedReceipt = {
+            id: draft.operationIds.reply,
+            kind: "incoming-ebb-and-flow",
+            eventId: draft.eventId,
+            outcome: result.outcome,
+          };
+          draft.stage = result.persistence?.ok === false ? "save-recovery" : "result";
+          active.appliedUnsaved = result.persistence?.ok === false;
+        } else if (session === capturedSession) {
+          draft.error = result.reason ?? "Ответ не применён.";
+        }
+      } catch (error) {
+        if (session === capturedSession) {
+          draft.stage = "verification";
+          draft.error = error instanceof Error ? error.message : String(error);
+          active.appliedUnsaved = true;
+        }
+      } finally {
+        if (session === capturedSession) active.submitting = false;
+      }
+    }
+  } else if (action.startsWith("incoming-source-")) {
+    const source = action.slice("incoming-source-".length);
+    if (!["melee", "projectile", "spell"].includes(source)) return true;
+    draft.source = source;
+    draft.stage = source === "spell" ? "spell-choice" : "damage";
+  } else if (action === "incoming-spell-damage") {
+    draft.source = "spell";
+    draft.stage = "damage";
+  } else if (action === "incoming-spell-save") {
+    draft.source = "spell";
+    draft.rollDraft = {
+      ...draft.rollDraft,
+      kind: "saving-throw",
+      ability: draft.rollDraft.ability ?? "dexterity",
+      rollMode: draft.rollDraft.rollMode ?? "advantage",
+      firstD20: draft.rollDraft.firstD20 ?? "",
+    };
+    draft.stage = "save-input";
+  } else if (action === "incoming-open-deflect") {
+    draft.stage = "deflect";
+  } else if (action === "incoming-catch") {
+    draft.catchChoice = "catch";
+  } else if (action === "incoming-skip-catch") {
+    draft.catchChoice = "skip";
+  } else if (action === "incoming-apply-damage" ||
+      action === "incoming-apply-deflection" || action === "incoming-apply-save") {
+    if (active.submitting) return true;
+    if (!incomingContextIsCurrent(draft, state, active.owner)) {
+      draft.stage = "expired";
+      draft.error = "Контекст боя или владельца изменился.";
+      render();
+      return true;
+    }
+    const captured = {
+      session: active,
+      draft,
+      eventId: draft.eventId,
+      owner: { characterId: active.owner.characterId,
+        sessionGeneration: active.owner.sessionGeneration },
+      battleId: draft.battleId,
+      operationId: action === "incoming-apply-save"
+        ? draft.operationIds.save : draft.operationIds.apply,
+    };
+    const request = action === "incoming-apply-save"
+      ? {
+        kind: "completed-save",
+        battleId: draft.battleId,
+        eventId: draft.eventId,
+        outcome: draft.outcome,
+        hasDamage: draft.outcome !== "unknown" && draft.rollDraft.hasDamage === true,
+        damage: draft.rollDraft.damage,
+        damageBasis: draft.rollDraft.damageBasis ?? "dm-final",
+        effectProfile: draft.rollDraft.effectProfile,
+        spellSaveSource: draft.source === "spell",
+        roll: {
+          id: draft.rollDraft.ability,
+          firstD20: draft.rollDraft.firstD20,
+          secondD20: draft.rollDraft.secondD20,
+          rollMode: draft.rollDraft.rollMode,
+          dc: draft.rollDraft.dc,
+        },
+      }
+      : action === "incoming-apply-damage" ? {
+        kind: "direct-damage", damage: draft.rawDamage,
+        battleId: draft.battleId, eventId: draft.eventId,
+      }
+      : {
+        kind: "deflection", damage: draft.rawDamage,
+        deflectRoll: draft.rawDeflectRoll, source: draft.source,
+        catchChoice: draft.catchChoice, battleId: draft.battleId,
+        eventId: draft.eventId,
+      };
+    const preview = previewIncomingEvent(state, request);
+    if (!preview.ok) {
+      draft.error = preview.reason;
+      render();
+      return true;
+    }
+    active.submitting = true;
+    try {
+      const result = commitIncomingEvent(getSessionContext(), request, captured.operationId);
+      if (result.status === "applied" || result.status === "replayed") {
+        if (session === captured.session && session.incomingDraft?.eventId === captured.eventId) {
+          draft.appliedReceipt = result.receipt;
+          draft.stage = result.persistence?.ok === false ? "save-recovery" : "result";
+          active.appliedUnsaved = result.persistence?.ok === false;
+          active.submitting = false;
+          active.status = active.appliedUnsaved
+            ? "Применено в памяти; повторите сохранение."
+            : "Входящее событие записано.";
+          render();
+        }
+      } else if (session === captured.session && session.incomingDraft?.eventId === captured.eventId) {
+        draft.error = result.reason ?? "Входящее событие не применено.";
+        active.submitting = false;
+        render();
+      }
+    } catch (error) {
+      const receipt = readIncomingEventReceipt(getState(), captured.operationId);
+      if (session === captured.session && session.incomingDraft?.eventId === captured.eventId) {
+        active.submitting = false;
+        if (receipt) {
+          draft.appliedReceipt = receipt;
+          draft.stage = "save-recovery";
+          active.appliedUnsaved = true;
+          active.status = "Применено в памяти; повторите сохранение.";
+        } else {
+          draft.stage = "verification";
+          draft.error = error instanceof Error ? error.message : String(error);
+          active.appliedUnsaved = true;
+        }
+        render();
+      }
+    } finally {
+      if (session === captured.session &&
+          session.incomingDraft?.eventId === captured.eventId) {
+        active.submitting = false;
+      }
+    }
+    return true;
+  }
+  draft.error = "";
+  render();
+  return true;
 }
 
 function clearAttackInputFeedback({ hideNaturalException = false } = {}) {
@@ -626,6 +876,22 @@ function clearAttackInputFeedback({ hideNaturalException = false } = {}) {
 
 function updateInput(field) {
   if (!session || session.submitting) return;
+  if (session.workspaceType === "incoming") {
+    const draft = session.incomingDraft;
+    if (field.name === "incomingDamage") draft.rawDamage = field.value;
+    else if (field.name === "deflectRoll") draft.rawDeflectRoll = field.value;
+    else if (field.name === "saveDamage") draft.rollDraft.damage = field.value;
+    else if (["saveAbility", "firstD20", "secondD20", "rollMode", "dc",
+      "saveDamage", "damageBasis", "effectProfile"].includes(field.name)) {
+      draft.rollDraft[field.name] = field.type === "checkbox" ? field.checked : field.value;
+      if (field.name === "saveAbility") draft.rollDraft.ability = field.value;
+    }
+    session.dirty = true;
+    draft.error = "";
+    const preview = getWorkspaceHost()?.querySelector("[data-incoming-preview]");
+    if (preview) preview.innerHTML = renderIncomingPreview(session, getState());
+    return;
+  }
   const draft = getStepDraft();
   const previousValue = draft[field.name];
   draft[field.name] = field.type === "checkbox" ? field.checked : field.value;
@@ -945,7 +1211,66 @@ export function openNormalAttack({ sequenceId = null, attackId = null, mode = "c
   return { ok: true, sessionId: session.workspaceSessionId };
 }
 
+export function openIncomingAttack(invoker = null, options = {}) {
+  const state = getState();
+  const owner = getSessionContext();
+  if (state.profile?.id !== "sara-velaris" || !isWorkspaceOwnerCurrent(owner)) {
+    return { ok: false, reason: "Входящее событие доступно только в активном сеансе Сары." };
+  }
+  const battle = state.battleConsole?.current ?? null;
+  if (battle && !["waiting", "own-turn"].includes(battle.phase)) {
+    return { ok: false, reason: "Входящее событие недоступно в этой фазе боя." };
+  }
+  const allowed = {
+    source: ["melee", "projectile", "spell"].includes(options.source) ? options.source : null,
+    mode: options.mode === "direct-damage" ? "direct-damage" : null,
+  };
+  if (session?.appliedUnsaved) {
+    return { ok: false, reason: "Сначала повторите сохранение уже применённого результата." };
+  }
+  if (session && !suspendCurrentSession()) {
+    return { ok: false, reason: "Сначала завершите сохранение текущего результата." };
+  }
+  if (!initWorkspaceHost({ onAction: handleAction, onInput: updateInput, onSubmit: handleSubmit })) {
+    if (session) restoreParentSession();
+    return { ok: false, reason: "Рабочая панель не смонтирована." };
+  }
+  const draft = createIncomingEventDraft(state, owner, allowed);
+  if (allowed.source) draft.stage = "damage";
+  session = {
+    workspaceSessionId: createId("incoming-event"),
+    workspaceType: "incoming",
+    owner: { ...owner, appInstanceId },
+    incomingDraft: draft,
+    currentStep: "incoming",
+    currentStepKey: `incoming:${draft.eventId}`,
+    rawInputsByStep: {},
+    operationIdsByIntent: {},
+    dirty: false,
+    submitting: false,
+    minimized: false,
+    appliedUnsaved: false,
+    internalScrollByStep: {},
+    returnTarget: invoker ? { key: "incoming-event" } : null,
+  };
+  render();
+  if (!openWorkspaceHost(invoker)) {
+    session = null;
+    restoreParentSession();
+    return { ok: false, reason: "Не удалось открыть входящее событие." };
+  }
+  return { ok: true, sessionId: session.workspaceSessionId };
+}
+
 export function openSaraBattleCommand(commandId, invoker = null, options = {}) {
+  if (commandId === "deflect-strike" || commandId === "deflect-missile") {
+    return openIncomingAttack(invoker, {
+      source: commandId === "deflect-missile" ? "projectile" : "melee",
+    });
+  }
+  if (commandId === "incoming-damage") {
+    return openIncomingAttack(invoker, { mode: "direct-damage" });
+  }
   if (commandId === "normal-attack") {
     return openNormalAttack({ sequenceId: options.sequenceId ?? null, invoker });
   }
@@ -2238,6 +2563,11 @@ function markDamageOutside() {
 
 function handleSubmit(form) {
   if (!session) return;
+  if (session.workspaceType === "incoming") {
+    session.incomingDraft.error = "Используйте кнопки входящего процесса.";
+    render();
+    return;
+  }
   if (form.dataset.workspaceForm === "attack") {
     session.error = "Итог рассчитан. Выберите «Попадание» или «Промах» после ответа ведущего.";
     render();
@@ -2935,6 +3265,10 @@ function handleAction(action, button = null) {
     }
     return;
   }
+  if (session?.workspaceType === "incoming" && action.startsWith("incoming-")) {
+    handleIncomingAction(action, button);
+    return;
+  }
   if (!session) return;
   if (action === "minimize") {
     minimizeWorkspace();
@@ -3135,6 +3469,19 @@ export function reconcileWorkspaceAfterStateChange(state, metadata = null) {
     updateWorkspaceResources(state, getDerivedStats(state).maxHitPoints);
     return;
   }
+  if (session.workspaceType === "incoming") {
+    if (metadata?.kind === "persistence-retry" && metadata.persistenceResult?.ok &&
+        session.appliedUnsaved && session.incomingDraft.appliedReceipt) {
+      session.appliedUnsaved = false;
+      session.incomingDraft.stage = "result";
+      session.status = "Сохранение выполнено.";
+    } else if (!session.incomingDraft.appliedReceipt &&
+        !incomingContextIsCurrent(session.incomingDraft, state, session.owner)) {
+      session.incomingDraft.stage = "expired";
+    }
+    if (workspaceHostIsOpen()) render();
+    return;
+  }
   if (session.workspaceType === "attack") rehydrateFromState(state);
   if (metadata?.kind === "persistence-retry" && metadata.persistenceResult?.ok) {
     session.appliedUnsaved = false;
@@ -3249,6 +3596,7 @@ function getAllWorkspaceSessions() {
 }
 
 function isUnrecordedWorkspaceDraft(entry) {
+  if (entry.workspaceType === "incoming") return false;
   return entry.dirty === true && !entry.appliedUnsaved && !entry.submitting &&
     ["attack-input", "damage-input", "command-input", "strike-input",
       "seeking-input", "gentling-input"].includes(entry.currentStep);
@@ -3278,7 +3626,7 @@ export function discardWorkspaceDraft(workspaceSessionId) {
 }
 
 export function getWorkspaceSessions() {
-  return getAllWorkspaceSessions().map((entry) => ({
+  return getAllWorkspaceSessions().filter((entry) => entry.workspaceType !== "incoming").map((entry) => ({
     workspaceSessionId: entry.workspaceSessionId,
     label: getWorkspaceSessionLabel(entry),
     workspaceType: entry.workspaceType,
@@ -3300,6 +3648,7 @@ export function getWorkspaceSessions() {
 
 export function getMinimizedWorkspaceSessions() {
   return getAllWorkspaceSessions()
+    .filter((entry) => entry.workspaceType !== "incoming")
     .filter((entry) => entry.minimized || entry.suspended)
     .map((entry) => ({
       workspaceSessionId: entry.workspaceSessionId,

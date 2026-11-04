@@ -148,6 +148,31 @@
   display: inline-flex;
 }
 
+.incoming-workspace {
+  display: grid;
+  gap: 12px;
+}
+
+.incoming-workspace__heading,
+.incoming-workspace__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.incoming-workspace__heading {
+  justify-content: space-between;
+}
+
+.incoming-workspace .incoming-event__armor-class {
+  font-size: 1.35rem;
+}
+
+.incoming-workspace .incoming-event__armor-class strong {
+  font-size: 2rem;
+}
+
 .sara-app-head__title {
   display: flex;
   min-width: 0;

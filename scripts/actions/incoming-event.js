@@ -1,0 +1,287 @@
+import { getDerivedStats } from "../calculations.js";
+import { applyDamagePools } from "../combat/damage-pools.js";
+import { calculateDeflectionPreview, parsePhysicalInteger } from "../combat/sara-combat.js";
+import { applyMonkTechnique } from "./monk.js";
+import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
+import { closeRestWindow } from "../sara-functional.js";
+import { getSessionContext, getState, isCurrentSession, updateSessionState } from "../state.js";
+import { getSaraRollBreakdown } from "../rolls/providers/sara.js";
+import { calculateCharacterRoll } from "../rolls/calculations.js";
+import { calculateRollConsequencePreview } from "../rolls/consequences.js";
+
+function normalizeRequest(request, state = getState()) {
+  if (!request || !["direct-damage", "deflection", "completed-save"].includes(request.kind)) {
+    return { ok: false, reason: "Неизвестное входящее применение." };
+  }
+  const damage = request.kind === "completed-save" && request.hasDamage !== true
+    ? { ok: true, value: null }
+    : parsePhysicalInteger(request.damage, 0, Number.MAX_SAFE_INTEGER,
+      request.kind === "completed-save" ? "Урон эффекта" : "Полученный урон");
+  if (!damage.ok) return damage;
+  if (request.kind === "direct-damage") {
+    return { ok: true, request: { kind: request.kind, damage: damage.value, battleId: request.battleId ?? null } };
+  }
+  if (request.kind === "completed-save") {
+    const roll = request.roll;
+    if (!roll || !["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"].includes(roll.id) ||
+        !["success", "failure", "unknown"].includes(request.outcome)) {
+      return { ok: false, reason: "Выберите характеристику и допустимый исход спасброска." };
+    }
+    if (request.outcome !== "unknown" && request.hasDamage === true &&
+        !["dm-final", "full-effect"].includes(request.damageBasis)) {
+      return { ok: false, reason: "Уточните основу урона спасброска." };
+    }
+    if (request.damageBasis === "full-effect" &&
+        !["failure-full", "save-half"].includes(request.effectProfile)) {
+      return { ok: false, reason: "Выберите профиль полного урона эффекта." };
+    }
+    const breakdown = getSaraRollBreakdown(state, "saving-throw", roll.id);
+    if (!breakdown.ok) return breakdown;
+    const calculated = calculateCharacterRoll({
+      kind: "saving-throw",
+      id: roll.id,
+      firstD20: roll.firstD20,
+      secondD20: roll.secondD20,
+      rollMode: roll.rollMode,
+      dc: roll.dc,
+      spellSaveSource: request.spellSaveSource === true,
+      consequenceProfile: "none",
+    }, breakdown);
+    if (!calculated.ok) return calculated;
+    return {
+      ok: true,
+      calculated,
+      request: {
+        kind: "completed-save",
+        battleId: request.battleId ?? null,
+        outcome: request.outcome,
+        hasDamage: request.hasDamage === true,
+        damage: damage.value,
+        damageBasis: request.damageBasis ?? null,
+        effectProfile: request.effectProfile ?? null,
+        roll: {
+          id: roll.id,
+          firstD20: String(roll.firstD20),
+          secondD20: roll.secondD20 == null ? null : String(roll.secondD20),
+          rollMode: roll.rollMode,
+          dc: roll.dc == null || String(roll.dc).trim() === "" ? null : String(roll.dc),
+        },
+        spellSaveSource: request.spellSaveSource === true,
+      },
+    };
+  }
+  const derived = getDerivedStats(state);
+  const die = parsePhysicalInteger(request.deflectRoll, 1, derived.monk.martialDieSides, "Результат кости Боевых искусств");
+  if (!die.ok) return die;
+  if (!["melee", "projectile"].includes(request.source)) {
+    return { ok: false, reason: "Источник отражаемой атаки недопустим." };
+  }
+  const catchChoice = request.catchChoice ?? null;
+  if (catchChoice != null && !["catch", "skip"].includes(catchChoice)) {
+    return { ok: false, reason: "Выбор поимки недопустим." };
+  }
+  return {
+    ok: true,
+    request: {
+      kind: request.kind,
+      damage: damage.value,
+      deflectRoll: die.value,
+      source: request.source,
+      catchChoice,
+      battleId: request.battleId ?? null,
+    },
+  };
+}
+
+export function previewIncomingEvent(state, request) {
+  const normalized = normalizeRequest(request, state);
+  if (!normalized.ok) return normalized;
+  if (normalized.request.kind === "deflection") {
+    return calculateDeflectionPreview(state, {
+      kind: normalized.request.source === "projectile" ? "missile" : "strike",
+      mode: normalized.request.source === "projectile" ? "weapon" : "weapon-melee",
+      incomingDamage: normalized.request.damage,
+      deflectRoll: normalized.request.deflectRoll,
+      applyDamageToSara: true,
+    });
+  }
+  if (normalized.request.kind === "completed-save") {
+    if (normalized.request.outcome === "unknown" || !normalized.request.hasDamage) {
+      return { ok: true, finalDamage: 0 };
+    }
+    return calculateRollConsequencePreview({
+      ...normalized.calculated,
+      manualOutcome: normalized.request.outcome,
+      dcResult: normalized.request.outcome === "success",
+    }, state, {
+      damage: normalized.request.damage,
+      damageBasis: normalized.request.damageBasis,
+      effectProfile: normalized.request.effectProfile,
+    });
+  }
+  const hp = Number(state.combat?.hp?.current);
+  const tempHp = Number(state.combat?.hp?.temp ?? 0);
+  return applyDamagePools(hp, tempHp, normalized.request.damage);
+}
+
+export function readIncomingEventReceipt(state, operationId) {
+  const summaries = state?.monk?.combatAssistant?.recentlyCompletedSummaries;
+  return Array.isArray(summaries)
+    ? summaries.find((entry) => entry.id === operationId && entry.kind === "incoming-event") ?? null
+    : null;
+}
+
+export function commitIncomingEvent(context, request, operationId) {
+  if (!isCurrentSession(context)) return { status: "rejected", reason: "stale-session" };
+  if (typeof operationId !== "string" || !operationId.trim()) {
+    return { status: "rejected", reason: "Для входящего применения нужен operation ID." };
+  }
+  const normalized = normalizeRequest(request, getState());
+  if (!normalized.ok) return { status: "rejected", reason: normalized.reason };
+  const current = getState();
+  const existing = readIncomingEventReceipt(current, operationId);
+  if (existing) {
+    if (JSON.stringify(existing.request) !== JSON.stringify(normalized.request)) {
+      return { status: "rejected", reason: "ID входящего применения уже связан с другим запросом." };
+    }
+    return { status: "replayed", receipt: structuredClone(existing) };
+  }
+  const battle = current.battleConsole?.current ?? null;
+  if (normalized.request.battleId !== (battle?.id ?? null)) {
+    return { status: "rejected", reason: "Бой изменился; входящее событие устарело." };
+  }
+  let receipt = null;
+  const result = updateSessionState(context, (draft) => {
+    const active = draft.battleConsole?.current ?? null;
+    if ((active?.id ?? null) !== normalized.request.battleId ||
+        active && !["waiting", "own-turn"].includes(active.phase)) {
+      throw new Error("Сцена больше не принимает входящее событие.");
+    }
+    const hpBefore = Number(draft.combat?.hp?.current);
+    const tempHpBefore = Number(draft.combat?.hp?.temp ?? 0);
+    let outcome;
+    if (normalized.request.kind === "direct-damage") {
+      const pools = previewIncomingEvent(draft, normalized.request);
+      if (!pools.ok) throw new Error(pools.reason);
+      draft.combat.hp.current = pools.hpAfter;
+      draft.combat.hp.temp = pools.tempHpAfter;
+      closeRestWindow(draft, "incoming-damage");
+      outcome = { finalDamage: normalized.request.damage, ...pools };
+    } else if (normalized.request.kind === "completed-save") {
+      const breakdown = getSaraRollBreakdown(draft, "saving-throw", normalized.request.roll.id);
+      if (!breakdown.ok) throw new Error(breakdown.reason);
+      const calculated = calculateCharacterRoll({
+        kind: "saving-throw",
+        id: normalized.request.roll.id,
+        firstD20: normalized.request.roll.firstD20,
+        secondD20: normalized.request.roll.secondD20,
+        rollMode: normalized.request.roll.rollMode,
+        dc: normalized.request.roll.dc,
+        spellSaveSource: normalized.request.spellSaveSource,
+        consequenceProfile: "none",
+      }, breakdown);
+      if (!calculated.ok) throw new Error(calculated.reason);
+      const known = normalized.request.outcome !== "unknown";
+      const record = {
+        ...calculated,
+        id: operationId,
+        manualOutcome: known ? normalized.request.outcome : null,
+        dcResult: known ? normalized.request.outcome === "success" : null,
+        consequence: null,
+        appliedAmendments: [],
+        incomingEventId: request.eventId ?? null,
+      };
+      let saveOutcome = { finalDamage: 0 };
+      if (known && normalized.request.hasDamage) {
+        saveOutcome = calculateRollConsequencePreview(record, draft, {
+          damage: normalized.request.damage,
+          damageBasis: normalized.request.damageBasis,
+          effectProfile: normalized.request.effectProfile,
+        });
+        if (!saveOutcome.ok) throw new Error(saveOutcome.reason);
+        draft.combat.hp.current = saveOutcome.hpAfter;
+        draft.combat.hp.temp = saveOutcome.tempHpAfter;
+      }
+      draft.characterRolls ??= { records: [] };
+      draft.characterRolls.records ??= [];
+      if (draft.characterRolls.records.some((entry) => entry.id === operationId)) {
+        throw new Error("ID спасброска уже использован.");
+      }
+      const pendingStatuses = new Set([
+        "pending", "awaiting-outcome", "awaiting-damage-decision", "awaiting-damage-input",
+      ]);
+      const records = [...draft.characterRolls.records, record];
+      const pending = records.filter((entry) => pendingStatuses.has(entry.consequence?.status));
+      const completed = records.filter((entry) => !pendingStatuses.has(entry.consequence?.status))
+        .slice(-30);
+      draft.characterRolls.records = [...completed, ...pending];
+      closeRestWindow(draft, "incoming-save");
+      outcome = { rollId: record.id, roll: record, consequence: saveOutcome };
+    } else {
+      const techniqueId = normalized.request.source === "projectile"
+        ? "ll-monk:deflect-missile" : "ll-monk:deflect-strike";
+      if (!getEffectiveSelectedTechniqueIds(draft).has(techniqueId)) {
+        throw new Error("Техника отражения не выбрана или сейчас недоступна.");
+      }
+      const preview = calculateDeflectionPreview(draft, {
+        kind: normalized.request.source === "projectile" ? "missile" : "strike",
+        mode: normalized.request.source === "projectile" ? "weapon" : "weapon-melee",
+        freeHand: normalized.request.catchChoice === "catch",
+        physicalProjectile: normalized.request.source === "projectile",
+        caught: normalized.request.catchChoice === "catch",
+        incomingDamage: normalized.request.damage,
+        deflectRoll: normalized.request.deflectRoll,
+        applyDamageToSara: true,
+      });
+      if (!preview.ok) throw new Error(preview.reason);
+      const applied = applyMonkTechnique(draft, techniqueId, {
+        confirmed: true,
+        operationId,
+        sessionGeneration: context.sessionGeneration,
+        applyDamageToSara: true,
+        incomingDamage: normalized.request.damage,
+        deflectRoll: normalized.request.deflectRoll,
+        mode: normalized.request.source === "projectile" ? "weapon" : "weapon-melee",
+      });
+      if (!applied.ok) throw new Error(applied.reason);
+      draft.combat.hp.current = preview.damagePools.hpAfter;
+      draft.combat.hp.temp = preview.damagePools.tempHpAfter;
+      closeRestWindow(draft, "incoming-deflection");
+      outcome = {
+        finalDamage: preview.finalRemainder,
+        reduction: preview.reduction,
+        rawRemainder: preview.rawRemainder,
+        finalRemainder: preview.finalRemainder,
+        techniqueResult: applied.result,
+      };
+    }
+    draft.monk.combatAssistant ??= {
+      schemaVersion: 1, activeSequences: [], pendingApplications: [], recentlyCompletedSummaries: [],
+    };
+    const assistant = draft.monk.combatAssistant;
+    assistant.recentlyCompletedSummaries ??= [];
+    receipt = {
+      id: operationId,
+      kind: "incoming-event",
+      eventId: request.eventId ?? null,
+      battleId: normalized.request.battleId,
+      request: structuredClone(normalized.request),
+      outcome: {
+        hpBefore,
+        hpAfter: Number(draft.combat.hp.current),
+        tempHpBefore,
+        tempHpAfter: Number(draft.combat.hp.temp ?? 0),
+        effects: outcome,
+      },
+    };
+    assistant.recentlyCompletedSummaries =
+      [...assistant.recentlyCompletedSummaries, receipt].slice(-20);
+    return draft;
+  }, {
+    operationId,
+    metadata: { kind: "incoming-event-applied", eventId: request.eventId ?? null },
+  });
+  return result.status === "applied"
+    ? { ...result, receipt: structuredClone(receipt) }
+    : result;
+}

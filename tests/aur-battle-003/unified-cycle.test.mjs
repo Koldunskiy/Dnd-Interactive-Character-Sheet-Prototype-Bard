@@ -126,40 +126,21 @@ test("a child workflow returns to its parent's preserved dirty attack draft", ()
     const kiBeforeDeflection = getState().combat.ki.current;
     const deflect = openSaraBattleCommand("deflect-missile");
     assert.equal(deflect.ok, true);
-    fixture.dialog.forms.command = new FixtureForm("command", {
-      triggerConfirmed: true,
-      mode: "weapon",
-      incomingDamage: "12",
-      deflectRoll: "10",
-      finalAdjustedDamage: "",
-      applyDamageToSara: "false",
-      freeHand: true,
-      physicalProjectile: true,
-      caught: true,
-    });
-    fireWorkspaceAction(fixture.dialog, "apply-command");
-    assert.match(fixture.dialog.footer.innerHTML,
-      /data-workspace-action="decline-return-missile"/);
-    fireWorkspaceAction(fixture.dialog, "decline-return-missile");
-    assert.equal(getState().monk.techniqueRuntime.deflectContinuation, undefined,
-      getWorkspaceSessionForTests()?.error);
+    assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "damage");
+    fireWorkspaceAction(fixture.dialog, "incoming-cancel");
     assert.equal(getState().combat.ki.current, kiBeforeDeflection);
-    assert.equal(getState().ui.turn.reactionUsed, true);
-    assert.equal(fixture.dialog.open, false);
+    assert.equal(getState().ui.turn.reactionUsed, false);
 
     const hpBeforeDamage = getState().combat.hp.current;
     const tempBeforeDamage = getState().combat.hp.temp;
     const incoming = openSaraBattleCommand("incoming-damage");
     assert.equal(incoming.ok, true);
-    fixture.dialog.forms.command = new FixtureForm("command", {
-      damage: "5",
-      confirmed: true,
-    });
-    fireWorkspaceAction(fixture.dialog, "apply-command");
+    fireWorkspaceInput(fixture.dialog, "incomingDamage", "5");
+    fireWorkspaceAction(fixture.dialog, "incoming-apply-damage");
     assert.equal(getState().combat.hp.current,
       Math.max(0, hpBeforeDamage - Math.max(0, 5 - tempBeforeDamage)));
-    assert.equal(getState().ui.turn.reactionUsed, true);
-    fireWorkspaceAction(fixture.dialog, "done");
+    assert.equal(getState().ui.turn.reactionUsed, false);
+    fireWorkspaceAction(fixture.dialog, "incoming-close");
 
     assert.equal(executeBattleCommand("end-battle").status, "applied");
     const hpBeforeRegeneration = getState().combat.hp.current;

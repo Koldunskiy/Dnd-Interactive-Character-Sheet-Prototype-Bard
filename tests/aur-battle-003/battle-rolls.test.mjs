@@ -243,7 +243,8 @@ test("the phase hub keeps turn actions hidden while waiting and exposes turn res
   assert.match(markup, /data-battle-command-open="normal-attack">Атаковать/);
   assert.match(markup, /Другое действие/);
   assert.match(markup, /Бонусное действие/);
-  assert.match(markup, /Входящее событие/);
+  assert.match(markup, /По мне атакуют/);
+  assert.match(markup, /Провоцированная атака/);
   assert.match(markup, /data-battle-menu="action"/);
   assert.doesNotMatch(markup, /data-battle-command-open="flurry"/);
   assert.match(markup, /data-battle-command="end-own-turn"/);
@@ -263,7 +264,7 @@ test("the phase hub keeps turn actions hidden while waiting and exposes turn res
     type: "set-panel", panel: "incoming",
   });
   markup = renderBattleConsole(character, incoming);
-  assert.match(markup, /data-battle-command-open="incoming-damage"(?![^>]*disabled)/);
+  assert.doesNotMatch(markup, /data-battle-command-open="incoming-damage"/);
 });
 
 test("Dexterity-save Evasion consequence is explicit and corrections do not recalculate HP", () => {

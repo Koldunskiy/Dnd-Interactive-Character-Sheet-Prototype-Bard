@@ -188,21 +188,12 @@ test("initiative preparation and cancel leave game state unchanged", () => {
   assert.equal(JSON.stringify(getState()), before);
 });
 
-test("incoming-event selector closes through the delegated home route", () => {
+test("battle scene no longer renders the legacy incoming-event catalog", () => {
   openSara();
   assert.equal(executeBattleCommand("start-battle", { rawD20: "10" }).status, "applied");
-  const root = createConsole();
-  const incoming = new FixtureElement(root.shell.querySelector("[data-sara-phase-content]"));
-  incoming.dataset.battleMenu = "incoming";
-  root.fire("click", { target: incoming });
-  const phase = root.shell.querySelector("[data-sara-phase-content]");
-  assert.match(phase.innerHTML, /class="battle-incoming-events"/);
-  assert.match(phase.innerHTML, /data-battle-menu="home">Назад/);
-
-  const close = new FixtureElement(phase);
-  close.dataset.battleMenu = "home";
-  root.fire("click", { target: close });
-  assert.doesNotMatch(phase.innerHTML, /class="battle-incoming-events"/);
+  const markup = renderBattleConsole(getState());
+  assert.doesNotMatch(markup, /class="battle-incoming-events"/);
+  assert.match(markup, /data-battle-menu="incoming">По мне атакуют/);
 });
 
 test("initiative keyboard presentation cleanup removes viewport listeners and inline styles", () => {
