@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  commitIncomingEvent,
+  normalizeIncomingEventRequest,
+  readIncomingEventReceipt,
+} from "../../scripts/actions/incoming-event.js";
+import {
   disposeWorkspaceOwner,
   getWorkspaceSessionForTests,
   getWorkspaceSessions,
@@ -445,5 +450,124 @@ test("production handler preserves verification on receipt-inspection failure, t
   assert.ok(recovered.appliedReceipt);
   assert.equal(getState().combat.hp.current, hpAfterApply);
   assert.deepEqual(recovered.pendingNormalizedRequest, recovered.appliedReceipt.request);
+  unsubscribe();
+});
+
+test("incoming persistence retry does not touch a replacement session or replay the operation", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  startBattle();
+  assert.equal(openIncomingAttack(null, { mode: "direct-damage" }).ok, true);
+  typeIncoming(dialog, "incomingDamage", "3");
+  const originalSetItem = window.localStorage.setItem;
+  window.localStorage.setItem = () => { throw new Error("initial storage failure"); };
+  try {
+    fireWorkspaceAction(dialog, "incoming-apply-damage");
+  } finally {
+    window.localStorage.setItem = originalSetItem;
+  }
+  const oldSession = getWorkspaceSessionForTests();
+  const oldOperationId = oldSession.incomingDraft.pendingOperationId;
+  assert.equal(oldSession.incomingDraft.stage, "save-recovery");
+  assert.ok(readIncomingEventReceipt(getState(), oldOperationId));
+  const hpAfterApply = getState().combat.hp.current;
+  const receiptCountBeforeRetry = getState().monk.combatAssistant.recentlyCompletedSummaries
+    .filter((entry) => entry.id === oldOperationId).length;
+  let subscriberRan = false;
+  let setupError = null;
+  let replacement;
+  let replacementSnapshot;
+  let replacementMarkup;
+  const replaceOnPersistenceRetry = subscribe((state, metadata) => {
+    if (metadata?.kind !== "persistence-retry" || subscriberRan) return;
+    subscriberRan = true;
+    try {
+      disposeWorkspaceOwner(oldSession.owner, "session-changed");
+      const loaded = openCharacterSession("sara-velaris", () => ({
+        status: "loaded",
+        state: structuredClone(state),
+      }));
+      assert.equal(loaded.status, "loaded");
+      assert.equal(openIncomingAttack(null, { mode: "direct-damage" }).ok, true);
+      typeIncoming(dialog, "incomingDamage", "9");
+      replacement = getWorkspaceSessionForTests();
+      replacementSnapshot = structuredClone(replacement);
+      replacementMarkup = dialog.body.innerHTML;
+    } catch (error) {
+      setupError = error;
+    }
+  });
+  try {
+    fireWorkspaceAction(dialog, "incoming-retry-save");
+  } finally {
+    replaceOnPersistenceRetry();
+  }
+  if (setupError) assert.fail(`${setupError.message}\n${setupError.stack}`);
+  assert.equal(subscriberRan, true);
+  assert.ok(replacement);
+  assert.equal(replacement.incomingDraft.rawDamage, "9");
+  assert.deepEqual(getWorkspaceSessionForTests(), replacementSnapshot);
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "damage");
+  assert.equal(getWorkspaceSessionForTests().appliedUnsaved, false);
+  assert.equal(dialog.body.innerHTML, replacementMarkup);
+  assert.equal(getState().combat.hp.current, hpAfterApply);
+  assert.equal(getState().monk.combatAssistant.recentlyCompletedSummaries
+    .filter((entry) => entry.id === oldOperationId).length, receiptCountBeforeRetry);
+  unsubscribe();
+});
+
+test("incoming controller collision preserves operation identity and blocks replay", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  startBattle();
+  const originalRandomUUID = globalThis.crypto.randomUUID;
+  globalThis.crypto.randomUUID = () => "controller-collision-operation";
+  let opened;
+  try {
+    opened = openIncomingAttack(null, { mode: "direct-damage" });
+  } finally {
+    globalThis.crypto.randomUUID = originalRandomUUID;
+  }
+  assert.equal(opened.ok, true);
+  typeIncoming(dialog, "incomingDamage", "5");
+  const session = getWorkspaceSessionForTests();
+  const draft = session.incomingDraft;
+  const operationId = draft.operationIds.apply;
+  const request = {
+    kind: "direct-damage",
+    damage: "0",
+    battleId: draft.battleId,
+    eventId: draft.eventId,
+    phaseAtOpen: draft.phaseAtOpen,
+    ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
+  };
+  const seeded = commitIncomingEvent(getSessionContext(), request, operationId);
+  assert.equal(seeded.status, "applied", seeded.reason);
+  const existingReceipt = readIncomingEventReceipt(getState(), operationId);
+  assert.ok(existingReceipt);
+  const hpBeforeAttempt = getState().combat.hp.current;
+  const stateBeforeAttempt = structuredClone(getState());
+  const storageBeforeAttempt = new Map(window.localStorage.values);
+  const expectedRequest = normalizeIncomingEventRequest({
+    ...request,
+    damage: "5",
+  }, getState());
+  assert.equal(expectedRequest.ok, true);
+  fireWorkspaceAction(dialog, "incoming-apply-damage");
+  const collided = getWorkspaceSessionForTests();
+  assert.equal(collided.incomingDraft.stage, "verification");
+  assert.equal(collided.incomingDraft.pendingOperationId, operationId);
+  assert.deepEqual(collided.incomingDraft.pendingNormalizedRequest, expectedRequest.request);
+  assert.equal(collided.incomingDraft.appliedReceipt, null);
+  assert.match(collided.incomingDraft.error, /уже связан с другим запросом/);
+  assert.equal(collided.appliedUnsaved, true);
+  assert.deepEqual(getState(), stateBeforeAttempt);
+  assert.deepEqual(window.localStorage.values, storageBeforeAttempt);
+  fireWorkspaceAction(dialog, "incoming-apply-damage");
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "verification");
+  assert.deepEqual(getState(), stateBeforeAttempt);
+  assert.deepEqual(window.localStorage.values, storageBeforeAttempt);
+  assert.equal(getState().combat.hp.current, hpBeforeAttempt);
+  assert.equal(readIncomingEventReceipt(getState(), operationId), existingReceipt);
+  assert.equal(getState().monk.combatAssistant.recentlyCompletedSummaries
+    .filter((entry) => entry.id === operationId).length, 1);
   unsubscribe();
 });
