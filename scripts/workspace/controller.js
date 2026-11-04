@@ -57,6 +57,7 @@ import {
 } from "../render/render-incoming-workspace.js";
 import {
   commitIncomingEvent,
+  normalizeIncomingEventRequest,
   previewIncomingEvent,
   readIncomingEventReceipt,
 } from "../actions/incoming-event.js";
@@ -658,9 +659,10 @@ function handleIncomingAction(action) {
   const state = getState();
   if (!draft || active.workspaceType !== "incoming") return false;
   if (active.submitting || draft.stage === "verification" &&
-      !["incoming-retry-save"].includes(action)) return true;
+      !["incoming-verify"].includes(action)) return true;
+  if (!action.startsWith("incoming-ebb")) draft.error = "";
   if (action === "incoming-cancel") {
-    if (draft.appliedReceipt) return true;
+    if (draft.appliedReceipt || draft.stage === "verification" || active.appliedUnsaved) return true;
     session = null;
     if (!restoreParentSession({ validateBattleContext: true })) {
       closeWorkspaceHost({ restoreFocus: false });
@@ -669,7 +671,7 @@ function handleIncomingAction(action) {
     return true;
   }
   if (action === "incoming-close") {
-    if (draft.appliedReceipt && active.appliedUnsaved) return true;
+    if (draft.stage === "verification" || active.appliedUnsaved) return true;
     finishCurrentSession({ validateBattleContext: true });
     return true;
   }
@@ -689,6 +691,17 @@ function handleIncomingAction(action) {
     return true;
   }
   if (action === "incoming-retry-save") {
+    if (draft.stage !== "save-recovery" || !draft.appliedReceipt) return true;
+    const receipt = draft.appliedReceipt.kind === "incoming-ebb-and-flow"
+      ? draft.appliedReceipt
+      : readIncomingEventReceipt(getState(), draft.operationIds.save) ??
+        readIncomingEventReceipt(getState(), draft.operationIds.apply);
+    if (!receipt || receipt.id !== draft.appliedReceipt.id) {
+      draft.stage = "verification";
+      draft.error = "Не удалось подтвердить receipt применённой операции.";
+      render();
+      return true;
+    }
     const saved = retryPersistedState();
     if (!saved.ok) {
       draft.error = saved.reason ?? "Не удалось сохранить результат.";
@@ -698,6 +711,39 @@ function handleIncomingAction(action) {
     active.appliedUnsaved = false;
     draft.stage = "result";
     active.status = "Сохранение выполнено.";
+    render();
+    return true;
+  }
+  if (action === "incoming-verify") {
+    try {
+      const request = draft.pendingRequest;
+      const receipt = request && readIncomingEventReceipt(getState(), draft.pendingOperationId);
+      if (receipt) {
+        const normalized = normalizeIncomingEventRequest(request, getState());
+        if (!normalized.ok ||
+            JSON.stringify(receipt.request) !== JSON.stringify(normalized.request)) {
+          draft.error = "Receipt относится к другому запросу; состояние требует проверки.";
+          render();
+          return true;
+        }
+        draft.appliedReceipt = receipt;
+        draft.stage = "save-recovery";
+        active.appliedUnsaved = true;
+        const saved = retryPersistedState();
+        if (saved.ok) {
+          active.appliedUnsaved = false;
+          draft.stage = "result";
+        } else {
+          draft.error = saved.reason ?? "Не удалось сохранить результат.";
+        }
+      } else {
+        draft.stage = draft.pendingRequest?.kind === "direct-damage" ? "damage"
+          : draft.pendingRequest?.kind === "deflection" ? "deflect" : "save-input";
+        draft.error = "";
+      }
+    } catch (error) {
+      draft.error = error instanceof Error ? error.message : String(error);
+    }
     render();
     return true;
   }
@@ -731,6 +777,7 @@ function handleIncomingAction(action) {
       draft.error = "Контекст боя изменился.";
     } else {
       const capturedSession = active;
+      const reactionUsedBefore = state.ui?.turn?.reactionUsed === true;
       active.submitting = true;
       try {
         const result = applySaraCombatAction(active.owner, "ebb-and-flow", {
@@ -753,9 +800,25 @@ function handleIncomingAction(action) {
         }
       } catch (error) {
         if (session === capturedSession) {
-          draft.stage = "verification";
-          draft.error = error instanceof Error ? error.message : String(error);
-          active.appliedUnsaved = true;
+          const current = getState();
+          const applied = !reactionUsedBefore &&
+            current.ui?.turn?.reactionUsed === true &&
+            incomingContextIsCurrent(draft, current, getSessionContext());
+          if (applied) {
+            draft.error = error instanceof Error ? error.message : String(error);
+            draft.appliedReceipt = {
+              id: draft.operationIds.reply,
+              kind: "incoming-ebb-and-flow",
+              eventId: draft.eventId,
+              outcome: { response: "dexterity-save", kiSpent: 0 },
+            };
+            draft.stage = "save-recovery";
+            active.appliedUnsaved = true;
+          } else {
+            draft.stage = "verification";
+            draft.error = error instanceof Error ? error.message : String(error);
+            active.appliedUnsaved = true;
+          }
         }
       } finally {
         if (session === capturedSession) active.submitting = false;
@@ -848,6 +911,14 @@ function handleIncomingAction(action) {
       render();
       return true;
     }
+    const normalizedRequest = normalizeIncomingEventRequest(request, state);
+    if (!normalizedRequest.ok) {
+      draft.error = normalizedRequest.reason;
+      render();
+      return true;
+    }
+    draft.pendingRequest = structuredClone(request);
+    draft.pendingOperationId = captured.operationId;
     active.submitting = true;
     try {
       const result = commitIncomingEvent(captured.owner, request, captured.operationId);
@@ -868,7 +939,13 @@ function handleIncomingAction(action) {
         render();
       }
     } catch (error) {
-      const receipt = readIncomingEventReceipt(getState(), captured.operationId);
+      let receipt = null;
+      let inspectionError = null;
+      try {
+        receipt = readIncomingEventReceipt(getState(), captured.operationId);
+      } catch (verificationError) {
+        inspectionError = verificationError;
+      }
       if (session === captured.session && session.incomingDraft?.eventId === captured.eventId) {
         active.submitting = false;
         if (receipt) {
@@ -878,7 +955,8 @@ function handleIncomingAction(action) {
           active.status = "Применено в памяти; повторите сохранение.";
         } else {
           draft.stage = "verification";
-          draft.error = error instanceof Error ? error.message : String(error);
+          const reason = inspectionError ?? error;
+          draft.error = reason instanceof Error ? reason.message : String(reason);
           active.appliedUnsaved = true;
         }
         render();
@@ -891,7 +969,6 @@ function handleIncomingAction(action) {
     }
     return true;
   }
-  draft.error = "";
   render();
   return true;
 }
@@ -925,8 +1002,13 @@ function updateInput(field) {
     const structural = ["rollMode", "damageBasis", "effectProfile", "saveAbility"].includes(field.name);
     if (structural) {
       draft.error = "";
+      const fieldName = field.name;
       render();
-      focusWorkspaceHeading();
+      const control = getWorkspaceHost()?.querySelector(
+        `[data-workspace-field][name="${fieldName}"]`,
+      );
+      if (control?.isConnected) control.focus({ preventScroll: true });
+      else focusWorkspaceHeading();
       return;
     }
     draft.error = "";

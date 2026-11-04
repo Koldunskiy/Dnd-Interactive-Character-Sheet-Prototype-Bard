@@ -6,7 +6,7 @@ import {
   openIncomingAttack,
   openNormalAttack,
 } from "../../scripts/workspace/controller.js";
-import { getState, getSessionContext } from "../../scripts/state.js";
+import { getState, getSessionContext, subscribe } from "../../scripts/state.js";
 import { executeBattleCommand } from "../../scripts/battle/commands.js";
 import { fireWorkspaceAction, installWorkspaceFixture } from "./workspace-fixture.mjs";
 
@@ -90,5 +90,109 @@ test("incoming cancellation restores the same unfinished attack parent and its p
   assert.equal(restored.workspaceType, "attack");
   assert.equal(restored.rawInputsByStep[restored.currentStepKey].firstD20, "16");
   assert.equal(restored.owner.sessionGeneration, getSessionContext().sessionGeneration);
+  unsubscribe();
+});
+
+test("production Ebb handler keeps a post-commit exception visible", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  startBattle();
+  assert.equal(openIncomingAttack().ok, true);
+  fireWorkspaceAction(dialog, "incoming-miss");
+  const failAfterCommit = subscribe(() => {
+    throw new Error("Ebb persistence callback failure");
+  });
+  try {
+    fireWorkspaceAction(dialog, "incoming-ebb-save");
+  } finally {
+    failAfterCommit();
+  }
+  const draft = getWorkspaceSessionForTests().incomingDraft;
+  assert.match(draft.error, /Ebb persistence callback failure/);
+  assert.equal(draft.stage, "save-recovery");
+  assert.ok(draft.appliedReceipt);
+  assert.equal(getState().ui.turn.reactionUsed, true);
+  unsubscribe();
+});
+
+test("production structural changes preserve incoming fields and focus the changed control", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  startBattle();
+  const controls = new Map();
+  const baseQuerySelector = dialog.querySelector.bind(dialog);
+  dialog.querySelector = (selector) => {
+    const match = selector.match(/^\[data-workspace-field\]\[name="([^"]+)"\]$/);
+    return match ? controls.get(match[1]) ?? null : baseQuerySelector(selector);
+  };
+  const structuralInput = (name, value) => {
+    const control = {
+      name, value, type: "select-one", dataset: { workspaceField: name },
+      isConnected: true, focus() { this.focused = true; },
+      closest(selector) { return selector === "[data-workspace-field]" ? this : null; },
+    };
+    controls.set(name, control);
+    control.parentElement = dialog.body;
+    dialog.fire("input", { target: control });
+    assert.equal(control.focused, true);
+  };
+  const numericInput = (name, value) => {
+    const field = {
+      name, value, type: "number", dataset: { workspaceField: name },
+      closest(selector) { return selector === "[data-workspace-field]" ? this : null; },
+    };
+    field.parentElement = dialog.body;
+    dialog.fire("input", { target: field });
+  };
+  assert.equal(openIncomingAttack().ok, true);
+  fireWorkspaceAction(dialog, "incoming-hit");
+  fireWorkspaceAction(dialog, "incoming-source-spell");
+  fireWorkspaceAction(dialog, "incoming-spell-save");
+  structuralInput("rollMode", "advantage");
+  assert.match(dialog.body.innerHTML, /Второй физический к20/);
+  structuralInput("rollMode", "normal");
+  assert.doesNotMatch(dialog.body.innerHTML, /Второй физический к20/);
+  numericInput("firstD20", "16");
+  structuralInput("saveAbility", "dexterity");
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.rollDraft.firstD20, "16");
+  assert.match(dialog.body.innerHTML, /Первый физический к20/);
+  fireWorkspaceAction(dialog, "incoming-save-success");
+  fireWorkspaceAction(dialog, "incoming-set-has-damage");
+  structuralInput("damageBasis", "full-effect");
+  structuralInput("effectProfile", "save-half");
+  const draft = getWorkspaceSessionForTests().incomingDraft;
+  assert.equal(draft.rollDraft.damageBasis, "full-effect");
+  assert.equal(draft.rollDraft.effectProfile, "save-half");
+  assert.match(dialog.body.innerHTML, /Полный урон эффекта/);
+  unsubscribe();
+});
+
+test("production handler preserves verification on receipt-inspection failure, then recovers matching receipt", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  startBattle();
+  assert.equal(openIncomingAttack(null, { mode: "direct-damage" }).ok, true);
+  typeIncoming(dialog, "incomingDamage", "3");
+  let assistant;
+  let descriptor;
+  const failInspection = subscribe(() => {
+    assistant = getState().monk.combatAssistant;
+    descriptor = Object.getOwnPropertyDescriptor(assistant, "recentlyCompletedSummaries");
+    Object.defineProperty(assistant, "recentlyCompletedSummaries", {
+      configurable: true, get() { throw new Error("receipt inspection failed"); },
+    });
+    throw new Error("post-commit failure");
+  });
+  try {
+    fireWorkspaceAction(dialog, "incoming-apply-damage");
+  } finally {
+    failInspection();
+    Object.defineProperty(assistant, "recentlyCompletedSummaries", descriptor);
+  }
+  const verification = getWorkspaceSessionForTests().incomingDraft;
+  assert.equal(verification.stage, "verification");
+  assert.match(verification.error, /receipt inspection failed/);
+  assert.match(dialog.footer.innerHTML, /incoming-verify/);
+  fireWorkspaceAction(dialog, "incoming-verify");
+  const recovered = getWorkspaceSessionForTests().incomingDraft;
+  assert.equal(recovered.stage, "result");
+  assert.ok(recovered.appliedReceipt);
   unsubscribe();
 });

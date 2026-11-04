@@ -9,9 +9,22 @@ import { getSaraRollBreakdown } from "../rolls/providers/sara.js";
 import { calculateCharacterRoll } from "../rolls/calculations.js";
 import { calculateRollConsequencePreview } from "../rolls/consequences.js";
 
-function normalizeRequest(request, state = getState()) {
+export function normalizeIncomingEventRequest(request, state = getState()) {
   if (!request || !["direct-damage", "deflection", "completed-save"].includes(request.kind)) {
     return { ok: false, reason: "Неизвестное входящее применение." };
+  }
+  if (typeof request.eventId !== "string" || !request.eventId.trim()) {
+    return { ok: false, reason: "Для входящего события нужен event ID." };
+  }
+  const validBattleId = request.battleId === null ||
+    (typeof request.battleId === "string" && Boolean(request.battleId.trim()));
+  const validPhase = ["outside", "waiting", "own-turn"].includes(request.phaseAtOpen);
+  const validTurn = request.ownTurnIdAtOpen === null ||
+    (typeof request.ownTurnIdAtOpen === "string" && Boolean(request.ownTurnIdAtOpen.trim()));
+  if (!validBattleId || !validPhase || !validTurn ||
+      (request.battleId === null) !== (request.phaseAtOpen === "outside") ||
+      (request.phaseAtOpen === "own-turn") !== (request.ownTurnIdAtOpen !== null)) {
+    return { ok: false, reason: "Идентификаторы боя, фазы или хода некорректны либо несогласованы." };
   }
   const damage = request.kind === "completed-save" && request.hasDamage !== true
     ? { ok: true, value: null }
@@ -104,7 +117,7 @@ function normalizeRequest(request, state = getState()) {
 }
 
 export function previewIncomingEvent(state, request) {
-  const normalized = normalizeRequest(request, state);
+  const normalized = normalizeIncomingEventRequest(request, state);
   if (!normalized.ok) return normalized;
   if (normalized.request.kind === "deflection") {
     return calculateDeflectionPreview(state, buildDeflectionParameters(normalized.request));
@@ -155,7 +168,7 @@ export function commitIncomingEvent(context, request, operationId) {
   if (typeof operationId !== "string" || !operationId.trim()) {
     return { status: "rejected", reason: "Для входящего применения нужен operation ID." };
   }
-  const normalized = normalizeRequest(request, getState());
+  const normalized = normalizeIncomingEventRequest(request, getState());
   if (!normalized.ok) return { status: "rejected", reason: normalized.reason };
   const current = getState();
   const existing = readIncomingEventReceipt(current, operationId);
@@ -169,8 +182,8 @@ export function commitIncomingEvent(context, request, operationId) {
   if (normalized.request.battleId !== (battle?.id ?? null)) {
     return { status: "rejected", reason: "Бой изменился; входящее событие устарело." };
   }
-  if ((normalized.request.eventId ?? null) !== (request.eventId ?? null) ||
-      normalized.request.phaseAtOpen !== (battle?.phase ?? "outside") ||
+  if (normalized.request.phaseAtOpen !== (battle?.phase ?? "outside") ||
+      normalized.request.battleId !== (battle?.id ?? null) ||
       normalized.request.ownTurnIdAtOpen !== (battle?.ownTurnId ?? null)) {
     return { status: "rejected", reason: "Ход или событие изменились; входящее применение устарело." };
   }
@@ -227,18 +240,27 @@ export function commitIncomingEvent(context, request, operationId) {
         if (!saveOutcome.ok) throw new Error(saveOutcome.reason);
         draft.combat.hp.current = saveOutcome.hpAfter;
         draft.combat.hp.temp = saveOutcome.tempHpAfter;
-        if (saveOutcome.finalDamage > 0) {
-          record.consequence = {
-            status: "applied",
-            finalDamage: saveOutcome.finalDamage,
-            hpBefore: saveOutcome.hpBefore,
-            hpAfter: saveOutcome.hpAfter,
-            tempHpBefore: saveOutcome.tempHpBefore,
-            tempHpAfter: saveOutcome.tempHpAfter,
-            outcomeAtApplication: normalized.request.outcome,
-            resolvedAt: new Date().toISOString(),
-          };
-        }
+        record.consequence = {
+          status: "applied",
+          profile: saveOutcome.effectProfile,
+          damageBasis: saveOutcome.damageBasis,
+          originalDamage: saveOutcome.originalDamage,
+          finalDamage: saveOutcome.finalDamage,
+          evasionUsed: saveOutcome.evasionUsed,
+          ruleExplanation: saveOutcome.ruleExplanation,
+          hpBefore: saveOutcome.hpBefore,
+          hpAfter: saveOutcome.hpAfter,
+          tempHpBefore: saveOutcome.tempHpBefore,
+          tempHpAfter: saveOutcome.tempHpAfter,
+          outcomeAtApplication: normalized.request.outcome,
+          resolvedAt: new Date().toISOString(),
+        };
+      } else if (known) {
+        record.consequence = {
+          status: "no-damage",
+          outcomeAtApplication: normalized.request.outcome,
+          resolvedAt: new Date().toISOString(),
+        };
       }
       draft.characterRolls ??= { records: [] };
       draft.characterRolls.records ??= [];

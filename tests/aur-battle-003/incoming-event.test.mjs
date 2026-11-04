@@ -30,11 +30,11 @@ test("direct incoming damage validates physical values and applies temp HP befor
   const stateBefore = structuredClone(getState());
   for (const invalid of ["", "1.5", "-1"]) {
     assert.equal(previewIncomingEvent(stateBefore, {
-      kind: "direct-damage", damage: invalid, battleId,
+      kind: "direct-damage", damage: invalid, ...identity,
     }).ok, false);
   }
   assert.equal(previewIncomingEvent(stateBefore, {
-    kind: "direct-damage", damage: "0", battleId,
+    kind: "direct-damage", damage: "0", ...identity,
   }).ok, true);
   const hp = getState().combat.hp.current;
   const tempHp = getState().combat.hp.temp ?? 0;
@@ -151,6 +151,58 @@ test("completed save with applied damage records an applied consequence and cann
   const hpAfter = getState().combat.hp.current;
   assert.notEqual(resolveCharacterRollConsequence(record.id, "apply-to-character").status, "applied");
   assert.equal(getState().combat.hp.current, hpAfter);
+  unsubscribe();
+});
+
+test("known zero-damage save preserves calculation evidence and cannot reapply", () => {
+  const { unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  assert.equal(executeBattleCommand("start-battle", { rawD20: "12" }).status, "applied");
+  const identity = incomingIdentity("evasion-zero-save");
+  const hp = getState().combat.hp.current;
+  const result = commitIncomingEvent(getSessionContext(), {
+    kind: "completed-save", ...identity, outcome: "success", hasDamage: true,
+    damage: "20", damageBasis: "full-effect", effectProfile: "save-half",
+    roll: { id: "dexterity", firstD20: "18", secondD20: null, rollMode: "normal", dc: "12" },
+  }, "evasion-zero-operation");
+  assert.equal(result.status, "applied");
+  const record = getState().characterRolls.records.find((entry) =>
+    entry.id === "evasion-zero-operation");
+  assert.equal(record.consequence.status, "applied");
+  assert.equal(record.consequence.finalDamage, 0);
+  assert.equal(record.consequence.damageBasis, "full-effect");
+  assert.equal(record.consequence.evasionUsed, true);
+  assert.match(record.consequence.ruleExplanation, /до 0/);
+  assert.equal(getState().combat.hp.current, hp);
+  assert.notEqual(resolveCharacterRollConsequence(record.id, "apply-to-character").status, "applied");
+  assert.equal(getState().combat.hp.current, hp);
+  unsubscribe();
+});
+
+test("explicit no damage is completed and request identities are validated before mutation", () => {
+  const { unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  assert.equal(executeBattleCommand("start-battle", { rawD20: "12" }).status, "applied");
+  const identity = incomingIdentity("explicit-no-damage");
+  const before = structuredClone(getState());
+  const storageBefore = new Map(window.localStorage.values);
+  const valid = { kind: "direct-damage", damage: "2", ...identity };
+  for (const invalid of [
+    { ...valid, eventId: undefined },
+    { ...valid, eventId: "" },
+    { ...valid, eventId: 7 },
+    { ...valid, phaseAtOpen: "invalid" },
+    { ...valid, ownTurnIdAtOpen: "wrong-turn" },
+  ]) {
+    assert.equal(commitIncomingEvent(getSessionContext(), invalid, "invalid-identity").status, "rejected");
+    assert.deepEqual(getState(), before);
+    assert.deepEqual(window.localStorage.values, storageBefore);
+  }
+  const result = commitIncomingEvent(getSessionContext(), {
+    kind: "completed-save", ...identity, outcome: "failure", hasDamage: false,
+    roll: { id: "wisdom", firstD20: "10", secondD20: null, rollMode: "normal", dc: null },
+  }, "no-damage-operation");
+  assert.equal(result.status, "applied");
+  assert.equal(getState().characterRolls.records.find((entry) =>
+    entry.id === "no-damage-operation").consequence.status, "no-damage");
   unsubscribe();
 });
 

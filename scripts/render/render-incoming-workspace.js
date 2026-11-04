@@ -223,11 +223,11 @@ export function renderIncomingWorkspace(session, state) {
       break;
     case "save-recovery":
       body = "<p>Результат применён в памяти; сохранение не подтверждено.</p>";
-      footer = `${button("incoming-retry-save", "Повторить сохранение")}${button("incoming-close", "Закрыть")}`;
+      footer = `${button("incoming-retry-save", "Повторить сохранение")}`;
       break;
     case "verification":
       body = `<p role="alert">Результат не подтверждён: ${escapeHtml(draft.error || "проверьте состояние.")} Повторное применение заблокировано.</p>`;
-      footer = `${button("incoming-close", "Закрыть")}`;
+      footer = `${button("incoming-verify", "Проверить receipt")}`;
       break;
     case "expired":
       body = "<p>Контекст события изменился. Просмотр доступен, применение заблокировано.</p>";
