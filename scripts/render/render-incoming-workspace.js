@@ -312,10 +312,12 @@ export function renderIncomingWorkspace(session, state) {
             ${roll?.manualOutcome ?? "исход неизвестен"}.</p>
             ${amendment ? `<p>Дух спокойствия: +${amendment.bonus} Мудрости; уплачено 1 ци
               (${amendment.kiBefore} → ${amendment.kiAfter}).</p>` : ""}
-            <p>${effects.consequence?.status === "applied"
-              ? `Применённый урон: ${effects.consequence.finalDamage}.`
-              : effects.consequence?.status === "no-damage"
-                ? "Урон не применялся." : "Последствие не применялось."}</p>
+            <p>${receipt.request.outcome === "unknown"
+              ? "Исход неизвестен; последствия не рассчитывались."
+              : effects.consequence?.status === "applied"
+                ? `Применённый урон: ${effects.consequence.finalDamage}.`
+                : effects.consequence?.status === "no-damage"
+                  ? "Итог: без урона (выбрано явно)." : "Последствие не применялось."}</p>
             <p>Временные HP ${outcome?.tempHpBefore ?? "—"} → ${outcome?.tempHpAfter ?? "—"};
               HP ${outcome?.hpBefore ?? "—"} → ${outcome?.hpAfter ?? "—"}.</p>`;
         } else {

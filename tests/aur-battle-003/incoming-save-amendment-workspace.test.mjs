@@ -12,6 +12,7 @@ import {
   openIncomingAttack,
 } from "../../scripts/workspace/controller.js";
 import { readIncomingEventReceipt } from "../../scripts/actions/incoming-event.js";
+import { renderWorkspaceHost } from "../../scripts/workspace/host.js";
 import { fireWorkspaceAction, installWorkspaceFixture } from "./workspace-fixture.mjs";
 
 function typeIncoming(dialog, name, value, type = "number") {
@@ -98,7 +99,142 @@ test("production handler applies selected Spirit of Tranquility only after expli
   assert.equal(receipt.request.amendment.baseOutcome, "failure");
   assert.equal(receipt.request.outcome, "success");
   assert.equal(receipt.outcome.effects.amendment.kiAfter, initialKi - 1);
+  assert.deepEqual(receipt.outcome.effects.consequence, record.consequence);
   unsubscribe();
+});
+
+test("focused amendment controls update the actual host view immediately through the production handler", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  chooseFailedSave(dialog);
+
+  const keyBeforeSelection = dialog.dataset.workspaceViewKey;
+  const amendmentButton = dialog.body.querySelector(
+    '[data-workspace-action="incoming-save-amendment"]',
+  );
+  assert.ok(amendmentButton);
+  assert.equal(dialog.body.contains(amendmentButton), true);
+  const focusedFooterAction = dialog.footer.querySelector(
+    '[data-workspace-action="incoming-apply-save"]',
+  );
+  focusedFooterAction.focus();
+  renderWorkspaceHost({
+    header: dialog.header.innerHTML,
+    body: dialog.body.innerHTML,
+    footer: `${dialog.footer.innerHTML}<span data-deferred-probe>stale</span>`,
+    status: dialog.status.textContent,
+    error: dialog.error.textContent,
+    viewKey: dialog.dataset.workspaceViewKey,
+  });
+  assert.doesNotMatch(dialog.footer.innerHTML, /data-deferred-probe/);
+  amendmentButton.focus();
+  assert.equal(globalThis.document.activeElement, amendmentButton);
+  fireWorkspaceAction(dialog, "incoming-save-amendment");
+
+  assert.notEqual(dialog.dataset.workspaceViewKey, keyBeforeSelection);
+  assert.doesNotMatch(dialog.footer.innerHTML, /data-deferred-probe/);
+  assert.match(dialog.body.innerHTML, /incoming-save-success/);
+  assert.match(dialog.body.innerHTML, /incoming-save-failure/);
+  assert.equal(dialog.body.querySelector('[data-workspace-action="incoming-save-success"]') !== null, true);
+  assert.equal(dialog.footer.querySelector('[data-workspace-action="incoming-apply-save"]').disabled, true);
+
+  const keyBeforeOutcome = dialog.dataset.workspaceViewKey;
+  fireWorkspaceAction(dialog, "incoming-save-success");
+  assert.notEqual(dialog.dataset.workspaceViewKey, keyBeforeOutcome);
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.rollDraft.amendedOutcome, "success");
+  assert.equal(dialog.footer.querySelector('[data-workspace-action="incoming-apply-save"]').disabled, false);
+
+  const keyBeforeDecline = dialog.dataset.workspaceViewKey;
+  fireWorkspaceAction(dialog, "incoming-save-amendment-decline");
+  assert.notEqual(dialog.dataset.workspaceViewKey, keyBeforeDecline);
+  const rollDraft = getWorkspaceSessionForTests().incomingDraft.rollDraft;
+  assert.equal(rollDraft.amendment, null);
+  assert.equal(rollDraft.amendedOutcome, null);
+  assert.equal(rollDraft.baseOutcome, "failure");
+  assert.equal(dialog.body.querySelector('[data-workspace-action="incoming-save-success"]'), null);
+  assert.match(dialog.footer.innerHTML, /Применить результат(?! · 1 ци)/);
+  assert.equal(dialog.footer.querySelector('[data-workspace-action="incoming-apply-save"]').disabled, false);
+  unsubscribe();
+});
+
+test("production handler renders applied damage, evasion zero, explicit no-damage, and unknown distinctly", () => {
+  const cases = [
+    {
+      name: "positive applied damage",
+      setup: (dialog) => {
+        openSaveInput(dialog);
+        typeIncoming(dialog, "firstD20", "19");
+        typeIncoming(dialog, "secondD20", "19");
+        typeIncoming(dialog, "dc", "34");
+        fireWorkspaceAction(dialog, "incoming-save-failure");
+        fireWorkspaceAction(dialog, "incoming-save-amendment");
+        fireWorkspaceAction(dialog, "incoming-save-failure");
+        fireWorkspaceAction(dialog, "incoming-set-has-damage");
+        typeIncoming(dialog, "saveDamage", "20");
+        typeIncoming(dialog, "damageBasis", "full-effect", "select-one");
+        typeIncoming(dialog, "effectProfile", "save-half", "select-one");
+      },
+      expected: /Применённый урон: 10\./,
+      recordStatus: "applied",
+    },
+    {
+      name: "evasion with zero applied damage",
+      setup: (dialog) => {
+        openSaveInput(dialog);
+        typeIncoming(dialog, "firstD20", "1");
+        typeIncoming(dialog, "secondD20", "1");
+        typeIncoming(dialog, "dc", "10");
+        fireWorkspaceAction(dialog, "incoming-save-failure");
+        fireWorkspaceAction(dialog, "incoming-save-amendment");
+        fireWorkspaceAction(dialog, "incoming-save-success");
+        fireWorkspaceAction(dialog, "incoming-set-has-damage");
+        typeIncoming(dialog, "saveDamage", "20");
+        typeIncoming(dialog, "damageBasis", "full-effect", "select-one");
+        typeIncoming(dialog, "effectProfile", "save-half", "select-one");
+      },
+      expected: /Применённый урон: 0\./,
+      recordStatus: "applied",
+    },
+    {
+      name: "explicit no-damage",
+      setup: (dialog) => {
+        chooseFailedSave(dialog);
+        fireWorkspaceAction(dialog, "incoming-set-no-damage");
+      },
+      expected: /Итог: без урона \(выбрано явно\)\./,
+      recordStatus: "no-damage",
+    },
+    {
+      name: "unknown outcome",
+      setup: (dialog) => {
+        openSaveInput(dialog);
+        typeIncoming(dialog, "firstD20", "12");
+        typeIncoming(dialog, "secondD20", "8");
+        fireWorkspaceAction(dialog, "incoming-save-unknown");
+      },
+      expected: /Исход неизвестен; последствия не рассчитывались\./,
+      recordStatus: null,
+    },
+  ];
+
+  for (const scenario of cases) {
+    const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+    scenario.setup(dialog);
+    fireWorkspaceAction(dialog, "incoming-apply-save");
+    const draft = getWorkspaceSessionForTests().incomingDraft;
+    assert.equal(draft.stage, "result", `${scenario.name}: ${draft.error}`);
+    assert.match(dialog.body.innerHTML, scenario.expected, scenario.name);
+    const record = getState().characterRolls.records.find((entry) =>
+      entry.id === draft.operationIds.save);
+    const receipt = readIncomingEventReceipt(getState(), draft.operationIds.save);
+    assert.equal(record.consequence?.status ?? null, scenario.recordStatus, scenario.name);
+    if (record.consequence) {
+      assert.deepEqual(receipt.outcome.effects.consequence, record.consequence, scenario.name);
+    } else {
+      assert.equal(receipt.outcome.effects.consequence.status, "not-applied", scenario.name);
+      assert.equal(receipt.outcome.effects.consequence.finalDamage, 0, scenario.name);
+    }
+    unsubscribe();
+  }
 });
 
 test("preview, selecting, declining, and cancelling an amendment remain free", () => {

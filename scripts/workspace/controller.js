@@ -633,8 +633,9 @@ function render() {
       session.workspaceType === "incoming" && session.incomingDraft.stage === "save-input"
         ? session.incomingDraft.rollDraft.rollMode : null,
       session.workspaceType === "incoming" && session.incomingDraft.stage === "save-consequence"
-        ? [session.incomingDraft.rollDraft.damageBasis, session.incomingDraft.rollDraft.effectProfile,
-          session.incomingDraft.rollDraft.hasDamage] : null,
+        ? [session.incomingDraft.rollDraft.amendment, session.incomingDraft.rollDraft.baseOutcome,
+          session.incomingDraft.rollDraft.amendedOutcome, session.incomingDraft.rollDraft.damageBasis,
+          session.incomingDraft.rollDraft.effectProfile, session.incomingDraft.rollDraft.hasDamage] : null,
     ]),
   });
   session.forceWorkspaceBodyRender = false;

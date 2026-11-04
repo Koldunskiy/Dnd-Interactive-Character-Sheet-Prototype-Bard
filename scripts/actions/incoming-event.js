@@ -354,7 +354,7 @@ export function commitIncomingEvent(context, request, operationId) {
         };
         record.appliedAmendments.push(appliedAmendment);
       }
-      let saveOutcome = { finalDamage: 0 };
+      let saveOutcome = { status: "not-applied", finalDamage: 0 };
       if (known && normalized.request.hasDamage) {
         saveOutcome = calculateRollConsequencePreview(record, draft, {
           damage: normalized.request.damage,
@@ -379,12 +379,15 @@ export function commitIncomingEvent(context, request, operationId) {
           outcomeAtApplication: normalized.request.outcome,
           resolvedAt: new Date().toISOString(),
         };
+        saveOutcome = record.consequence;
       } else if (known) {
         record.consequence = {
           status: "no-damage",
+          finalDamage: 0,
           outcomeAtApplication: normalized.request.outcome,
           resolvedAt: new Date().toISOString(),
         };
+        saveOutcome = record.consequence;
       }
       draft.characterRolls ??= { records: [] };
       draft.characterRolls.records ??= [];

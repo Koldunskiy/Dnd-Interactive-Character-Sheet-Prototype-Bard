@@ -39,7 +39,7 @@ export class FixtureNode {
     if (this._innerHTML !== markup) {
       if (globalThis.document?.activeElement &&
           this.childNodes.some((child) => child.contains(globalThis.document.activeElement))) {
-        globalThis.document.activeElement = null;
+        globalThis.document.activeElement = this.dataset.fixtureBody ? this : null;
       }
       for (const child of this.childNodes) child.parentElement = null;
       this.childNodes = [];
@@ -69,6 +69,16 @@ export class FixtureNode {
           this.appendChild(region);
         }
       }
+      if (this.dataset.fixtureControls) {
+        for (const match of markup.matchAll(/<button\b([^>]*)>/g)) {
+          const action = match[1].match(/\bdata-workspace-action="([^"]*)"/)?.[1];
+          if (!action) continue;
+          const button = new FixtureNode();
+          button.dataset.workspaceAction = action;
+          button.disabled = /\bdisabled\b/.test(match[1]);
+          this.appendChild(button);
+        }
+      }
     } else if (this.dataset.fixtureRegion && this.parentElement) {
       const marker = this.dataset.fixtureRegion === "damage" ? "data-incoming-reply-damage"
         : this.dataset.fixtureRegion === "hit-controls" ? "data-incoming-reply-hit-controls"
@@ -93,6 +103,15 @@ export class FixtureNode {
             this.parentElement.appendChild(input);
           }
         }
+      }
+    } else if (this.dataset.fixtureControls && this.childNodes.length === 0) {
+      for (const match of markup.matchAll(/<button\b([^>]*)>/g)) {
+        const action = match[1].match(/\bdata-workspace-action="([^"]*)"/)?.[1];
+        if (!action) continue;
+        const button = new FixtureNode();
+        button.dataset.workspaceAction = action;
+        button.disabled = /\bdisabled\b/.test(match[1]);
+        this.appendChild(button);
       }
     }
   }
@@ -124,6 +143,8 @@ export class FixtureNode {
   querySelector(selector) {
     const name = selector.match(/name="([^"]+)"/)?.[1];
     if (name) return this.childNodes.find((node) => node.name === name) ?? null;
+    const action = selector.match(/data-workspace-action="([^"]+)"/)?.[1];
+    if (action) return this.childNodes.find((node) => node.dataset.workspaceAction === action) ?? null;
     const markers = {
       "[data-incoming-stage]": "stage",
       "[data-incoming-reply-damage]": "damage",
@@ -138,12 +159,13 @@ export class FixtureNode {
   closest(selector) {
     if (selector === "[data-workspace-form]" && this.dataset.workspaceForm) return this;
     if (selector === "[data-workspace-field]" && this.dataset.workspaceField) return this;
+    if (selector === "[data-workspace-action]" && this.dataset.workspaceAction) return this;
     return null;
   }
   matches(selector) {
     return selector === 'input[type="number"]' && this.type === "number";
   }
-  focus() {}
+  focus() { globalThis.document.activeElement = this; }
   querySelectorAll() { return []; }
   setAttribute(name, value) { this.attributes ??= {}; this.attributes[name] = value; }
   getBoundingClientRect() { return { top: 200 }; }
@@ -189,7 +211,9 @@ class FixtureDialog extends FixtureNode {
     this.header = new FixtureNode();
     this.body = new FixtureNode();
     this.body.dataset.fixtureBody = true;
+    this.body.dataset.fixtureControls = true;
     this.footer = new FixtureNode();
+    this.footer.dataset.fixtureControls = true;
     this.status = new FixtureNode();
     this.error = new FixtureNode();
     this.heading = new FixtureNode();
@@ -415,16 +439,18 @@ function assertWorkspaceHostInitialized() {
 export { FixtureForm };
 
 export function fireWorkspaceAction(dialog, action, data = {}) {
-  const button = {
-    dataset: {
-      workspaceAction: action,
-      workspaceAttackId: ["attack-hit", "attack-miss"].includes(action)
-        ? getWorkspaceSessionForTests()?.attackId : undefined,
-      ...data,
-    },
-    closest(selector) { return selector === "[data-workspace-action]" ? this : null; },
+  const selector = `[data-workspace-action="${action}"]`;
+  const button = dialog.body.querySelector(selector) ?? dialog.footer.querySelector(selector) ?? {
+    dataset: { workspaceAction: action },
+    closest(match) { return match === "[data-workspace-action]" ? this : null; },
   };
-  button.parentElement = dialog;
+  Object.assign(button.dataset, {
+    workspaceAttackId: ["attack-hit", "attack-miss"].includes(action)
+      ? getWorkspaceSessionForTests()?.attackId : undefined,
+    ...data,
+  });
+  if (!button.parentElement) button.parentElement = dialog.body;
+  globalThis.document.activeElement = button;
   dialog.fire("click", { target: button });
 }
 
