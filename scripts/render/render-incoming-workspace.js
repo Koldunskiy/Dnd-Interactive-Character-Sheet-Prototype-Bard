@@ -29,18 +29,29 @@ function field(name, label, value, attrs = "") {
   return `<label>${escapeHtml(label)}<input data-workspace-field name="${escapeHtml(name)}" value="${escapeHtml(value)}" ${attrs}></label>`;
 }
 
+function buildIncomingReplyPreviewRequest(draft, reply) {
+  return {
+    eventId: draft.eventId,
+    battleId: draft.battleId,
+    phaseAtOpen: draft.phaseAtOpen,
+    ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
+    replyKind: reply.replyKind,
+    parentOperationId: reply.parentOperationId ?? null,
+    continuationId: reply.continuationId ?? null,
+    trigger: reply.trigger ?? null,
+    attack: { ...reply.attack },
+    damageRolls: [],
+  };
+}
+
 export function renderIncomingPreview(session, state) {
   const draft = session.incomingDraft;
   const derived = getDerivedStats(state);
   if (["reply-input", "reply-damage"].includes(draft.stage) && draft.replyDraft?.replyKind) {
     const reply = draft.replyDraft;
-    const result = previewIncomingReplyAttack(state, {
-      eventId: draft.eventId,
-      battleId: draft.battleId,
-      phaseAtOpen: draft.phaseAtOpen,
-      ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
-      ...reply,
-    });
+    const result = previewIncomingReplyAttack(
+      state, buildIncomingReplyPreviewRequest(draft, reply),
+    );
     return result.ok
       ? `<p>Бросок: ${result.attack.chosenD20} + ${result.attack.attackBonusSnapshot} = <strong>${result.attack.attackTotal}</strong>;
         ${result.attack.hitResult ? "попадание" : "промах"}${result.attack.critical ? " · критическое" : ""}
@@ -253,19 +264,11 @@ export function renderIncomingWorkspace(session, state) {
     case "reply-damage": {
       const reply = draft.replyDraft;
       const modeLabel = { normal: "Обычный", advantage: "Преимущество", disadvantage: "Помеха" };
-      const attackPreview = previewIncomingReplyAttack(state, {
-        ...reply.attack,
-        eventId: draft.eventId,
-        battleId: draft.battleId,
-        phaseAtOpen: draft.phaseAtOpen,
-        ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
-        replyKind: reply.replyKind,
-        parentOperationId: reply.parentOperationId,
-        continuationId: reply.continuationId,
-        trigger: reply.trigger,
-        damageRolls: [],
-      });
-      const damageDiceCount = attackPreview.ok ? Math.max(1, attackPreview.requiredDamageDice) : 1;
+      const attackPreview = previewIncomingReplyAttack(
+        state, buildIncomingReplyPreviewRequest(draft, reply),
+      );
+      const showDamageInputs = draft.stage === "reply-damage" &&
+        attackPreview.ok && attackPreview.attack.hitResult;
       body = `<label>Режим броска<select data-workspace-field name="replyRollMode">
         ${Object.entries(modeLabel).map(([key, label]) =>
           `<option value="${key}" ${reply.attack.rollMode === key ? "selected" : ""}>${label}</option>`).join("")}</select></label>
@@ -276,8 +279,8 @@ export function renderIncomingWorkspace(session, state) {
           ${button("incoming-reply-hit", "Попадание")}
           ${button("incoming-reply-miss", "Промах")}` : ""}
         ${field("replyTargetLabel", "Цель", reply.attack.targetLabel ?? "")}
-        ${draft.stage === "reply-damage" ? `
-          ${Array.from({ length: damageDiceCount }, (_, index) =>
+        ${showDamageInputs ? `
+          ${Array.from({ length: attackPreview.requiredDamageDice }, (_, index) =>
             field(index ? "replyDamage2" : "replyDamage1",
               index ? "Дополнительная кость критического урона" : "Физический урон",
               reply.damageRolls?.[index] ?? "", 'type="number" min="1" step="1"')).join("")}` : ""}

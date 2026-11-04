@@ -64,6 +64,8 @@ test("production incoming handler completes a caught projectile return atomicall
   typeIncoming(dialog, "replyTargetArmorClass", "1");
   fireWorkspaceAction(dialog, "incoming-reply-submit");
   assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "reply-damage");
+  assert.match(dialog.body.innerHTML, /name="replyDamage1"/);
+  assert.match(dialog.body.innerHTML, /name="replyDamage2"/);
   typeIncoming(dialog, "replyDamage1", "5");
   typeIncoming(dialog, "replyDamage2", "4");
   const originalSetItem = window.localStorage.setItem;
@@ -135,6 +137,21 @@ test("missile miss consumes one ki and token without asking for damage", () => {
   const sequence = getState().monk.combatAssistant.activeSequences.find((entry) =>
     entry.incomingReply?.operationId === draft.operationIds.reply);
   assert.equal(sequence.resolvedAttacks[0].damageStatus, "not-applicable");
+  unsubscribe();
+});
+
+test("invalid attack preview in reply-damage shows its reason without damage controls", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  const { ki } = startCaughtProjectile(dialog);
+  fireWorkspaceAction(dialog, "incoming-open-return");
+  fireWorkspaceAction(dialog, "incoming-reply-hit");
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "reply-damage");
+  assert.match(dialog.body.innerHTML, /role="status"/);
+  assert.doesNotMatch(dialog.body.innerHTML, /name="replyDamage1"/);
+  fireWorkspaceAction(dialog, "incoming-reply-submit");
+  assert.equal(getWorkspaceSessionForTests().incomingDraft.stage, "reply-damage");
+  assert.equal(getState().combat.ki.current, ki);
+  assert.equal(getState().monk.techniqueRuntime.deflectContinuation.consumed, undefined);
   unsubscribe();
 });
 
