@@ -9,7 +9,7 @@ import {
 import { applyHealing } from "../combat/damage-pools.js";
 import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
 import { MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
-import { getState, isCurrentSession, updateSessionState } from "../state.js";
+import { getSessionContext, getState, isCurrentSession, updateSessionState } from "../state.js";
 import { applyMonkTechnique } from "./monk.js";
 import { closeRestWindow, spendBoundDart } from "../sara-functional.js";
 import { isAttackProfileEligible } from "../combat/attack-profile-eligibility.js";
@@ -20,6 +20,7 @@ import {
   readSeekingHistory,
   writeSeekingHistory,
 } from "../combat/seeking-history.js";
+import { readIncomingEventReceipt } from "./incoming-event.js";
 
 const SAVE_ABILITIES = Object.freeze({
   "ll-monk:empowered-strike": "strength",
@@ -80,6 +81,7 @@ function pruneCombatHistory(assistant) {
     .map((entry) => entry.parentAttackId));
   const unresolvedSequences = [];
   const completedSequences = [];
+  const completedReplies = [];
   for (const sequence of assistant.activeSequences) {
     const unresolved = sequence.status === "open" ||
       sequence.resolvedAttacks?.some((attack) => {
@@ -95,10 +97,12 @@ function pruneCombatHistory(assistant) {
             attack.seekingAmendment != null;
         }
       });
-    (unresolved ? unresolvedSequences : completedSequences).push(sequence);
+    if (sequence.incomingReply) completedReplies.push(sequence);
+    else (unresolved ? unresolvedSequences : completedSequences).push(sequence);
   }
   assistant.activeSequences = [
     ...completedSequences.slice(-MAX_RECENT_COMBAT_SEQUENCES),
+    ...completedReplies,
     ...unresolvedSequences,
   ];
   const unresolvedApplications = assistant.pendingApplications.filter((entry) =>
@@ -190,6 +194,276 @@ function commit(context, operationId, metadata, updater, validate) {
   if (!operationId) return reject("Для операции требуется стабильный идентификатор.");
   if (!isCurrentSession(context)) return reject("stale-session");
   return updateSessionState(context, updater, { operationId, metadata, validate });
+}
+
+const INCOMING_REPLY_KINDS = new Set(["deflect-counter", "missile-return", "ebb-unarmed"]);
+
+function normalizeIncomingReplyRequest(request) {
+  if (!request || !INCOMING_REPLY_KINDS.has(request.replyKind) ||
+      typeof request.eventId !== "string" || !request.eventId.trim() ||
+      typeof request.battleId !== "string" || !request.battleId.trim() ||
+      !["waiting", "own-turn"].includes(request.phaseAtOpen) ||
+      (request.phaseAtOpen === "own-turn" &&
+        (typeof request.ownTurnIdAtOpen !== "string" || !request.ownTurnIdAtOpen.trim())) ||
+      (request.phaseAtOpen === "waiting" && request.ownTurnIdAtOpen != null) ||
+      (request.parentOperationId != null &&
+        (typeof request.parentOperationId !== "string" || !request.parentOperationId.trim())) ||
+      (request.continuationId != null &&
+        (typeof request.continuationId !== "string" || !request.continuationId.trim()))) {
+    return { ok: false, reason: "Идентификаторы или вид ответного удара недопустимы." };
+  }
+  const attack = request.attack;
+  if (!attack || !["normal", "advantage", "disadvantage"].includes(attack.rollMode)) {
+    return { ok: false, reason: "Выберите режим физического броска." };
+  }
+  const ac = attack.targetArmorClass == null || String(attack.targetArmorClass).trim() === ""
+    ? null : String(attack.targetArmorClass);
+  const normalized = {
+    eventId: request.eventId.trim(),
+    battleId: request.battleId.trim(),
+    phaseAtOpen: request.phaseAtOpen,
+    ownTurnIdAtOpen: request.ownTurnIdAtOpen?.trim() ?? null,
+    replyKind: request.replyKind,
+    parentOperationId: request.parentOperationId?.trim() ?? null,
+    continuationId: request.continuationId?.trim() ?? null,
+    trigger: request.trigger === "melee-miss" ? "melee-miss" : null,
+    attack: {
+      rollMode: attack.rollMode,
+      firstD20: String(attack.firstD20 ?? ""),
+      secondD20: attack.secondD20 == null ? null : String(attack.secondD20),
+      targetArmorClass: ac,
+      dmHitResult: ["hit", "miss"].includes(attack.dmHitResult) ? attack.dmHitResult : null,
+      targetLabel: String(attack.targetLabel ?? "").trim(),
+    },
+    damageRolls: Array.isArray(request.damageRolls)
+      ? request.damageRolls.map((roll) => String(roll)) : [],
+  };
+  if (normalized.replyKind === "ebb-unarmed" &&
+      (normalized.parentOperationId !== null || normalized.trigger !== "melee-miss")) {
+    return { ok: false, reason: "Для безоружного ответа Ebb & Flow требуется промах вблизи." };
+  }
+  if (normalized.replyKind !== "ebb-unarmed" && !normalized.parentOperationId ||
+      normalized.replyKind === "missile-return" && !normalized.continuationId) {
+    return { ok: false, reason: "Не найдено подтверждённое родительское продолжение." };
+  }
+  return { ok: true, request: normalized };
+}
+
+function incomingReplyEvidence(state, request) {
+  if (request.replyKind === "ebb-unarmed") {
+    const alreadySaved = state?.monk?.combatAssistant?.recentlyCompletedSummaries?.some((entry) =>
+      entry.kind === "incoming-event" && entry.eventId === request.eventId &&
+      entry.request?.kind === "ebb-and-flow");
+    const alreadyReplied = state?.monk?.combatAssistant?.activeSequences?.some((entry) =>
+      entry.incomingReply?.eventId === request.eventId);
+    return alreadySaved || alreadyReplied
+      ? { ok: false, reason: "На это входящее событие уже выбран ответ Ebb & Flow." }
+      : { ok: true };
+  }
+  const parent = readIncomingEventReceipt(state, request.parentOperationId);
+  const expectedSource = request.replyKind === "missile-return" ? "projectile" : "melee";
+  const outcome = parent?.outcome?.effects;
+  if (!parent || parent.kind !== "incoming-event" ||
+      parent.request?.kind !== "deflection" ||
+      parent.request?.source !== expectedSource ||
+      parent.eventId !== request.eventId ||
+      parent.battleId !== request.battleId ||
+      parent.request.phaseAtOpen !== request.phaseAtOpen ||
+      parent.request.ownTurnIdAtOpen !== request.ownTurnIdAtOpen ||
+      outcome?.finalRemainder !== 0 ||
+      outcome?.rawRemainder !== 0 ||
+      request.replyKind === "deflect-counter" &&
+        outcome?.techniqueResult?.canCounterattack !== true) {
+    return { ok: false, reason: "Нет подходящего завершённого отражения для этого ответа." };
+  }
+  if (request.replyKind === "missile-return") {
+    const token = state.monk?.techniqueRuntime?.deflectContinuation;
+    if (outcome?.techniqueResult?.canCatch !== true ||
+        token?.kind !== "missile-return" || token.id !== request.continuationId ||
+        token.id !== request.parentOperationId ||
+        token.sourceSessionGeneration !== getSessionContext().sessionGeneration ||
+        token.reactionAlreadyUsed !== true || token.consumed === true ||
+        token.reservedBySequence) {
+      return { ok: false, reason: "Токен поимки отсутствует или не соответствует отражению." };
+    }
+    if (token.battleId && (token.battleId !== request.battleId ||
+        token.ownTurnId && token.ownTurnId !== request.ownTurnIdAtOpen)) {
+      return { ok: false, reason: "Токен поимки устарел для этого боя или хода." };
+    }
+  }
+  return { ok: true };
+}
+
+function incomingReplyReceiptFromState(state, operationId) {
+  return state?.monk?.combatAssistant?.activeSequences?.find((sequence) =>
+    sequence.incomingReply?.operationId === operationId)?.incomingReply ?? null;
+}
+
+export function readIncomingReplyReceipt(state, operationId) {
+  return typeof operationId === "string" && operationId.trim()
+    ? incomingReplyReceiptFromState(state, operationId) : null;
+}
+
+export function previewIncomingReply(state, request) {
+  const normalized = normalizeIncomingReplyRequest(request);
+  if (!normalized.ok) return normalized;
+  const reply = normalized.request;
+  const profileId = reply.replyKind === "missile-return" ? "returnedProjectile" : "unarmed";
+  const attackInput = { ...reply.attack, profileId };
+  const preview = calculateAttackPreview(state, attackInput);
+  if (!preview.ok) return preview;
+  if (preview.hitResult == null) {
+    if (preview.naturalMiss || preview.critical) {
+      preview.hitResult = preview.critical;
+      preview.hitResolutionSource = "natural-rule";
+    } else {
+      return { ok: false, reason: "Укажите КД цели или выберите попадание/промах." };
+    }
+  }
+  const damage = preview.hitResult
+    ? calculateAttackDamage(preview.profile, reply.damageRolls, preview.critical)
+    : null;
+  if (damage && !damage.ok) return damage;
+  return { ok: true, request: reply, profileId, attack: preview, damage };
+}
+
+export function commitIncomingReply(context, request, operationId) {
+  if (typeof operationId !== "string" || !operationId.trim()) {
+    return reject("Для ответного удара требуется стабильный operation ID.");
+  }
+  if (!isCurrentSession(context)) return reject("stale-session");
+  const normalized = normalizeIncomingReplyRequest(request);
+  if (!normalized.ok) return reject(normalized.reason);
+  const saved = readIncomingReplyReceipt(getState(), operationId);
+  if (saved) {
+    return JSON.stringify(saved.request) === JSON.stringify(normalized.request)
+      ? { status: "replayed", receipt: structuredClone(saved) }
+      : { status: "rejected", code: "operation-id-collision",
+        reason: "ID ответного удара уже связан с другим запросом." };
+  }
+  const current = getState();
+  const battle = current.battleConsole?.current;
+  const phaseValid = battle?.id === normalized.request.battleId &&
+    battle.phase === normalized.request.phaseAtOpen &&
+    battle.ownTurnId === normalized.request.ownTurnIdAtOpen &&
+    ["waiting", "own-turn"].includes(battle.phase);
+  if (!phaseValid || !isSara(current)) return reject("Контекст боя или владелец изменился.");
+  const eligibility = incomingReplyEvidence(current, normalized.request);
+  if (!eligibility.ok) return reject(eligibility.reason);
+  if (normalized.request.replyKind === "ebb-unarmed" &&
+      (Number(current.profile?.level) < 6 || current.ui?.turn?.reactionUsed === true)) {
+    return reject("Безоружный ответ недоступен: проверьте уровень и реакцию.");
+  }
+  if (normalized.request.replyKind === "deflect-counter" &&
+      current.ui?.turn?.reactionUsed !== true) {
+    return reject("Контратака требует уже применённой реакции отражения.");
+  }
+  const preview = previewIncomingReply(current, normalized.request);
+  if (!preview.ok) return reject(preview.reason);
+  if (normalized.request.replyKind === "missile-return" &&
+      (!Number.isInteger(Number(current.combat?.ki?.current)) ||
+        Number(current.combat.ki.current) < 1)) return reject("Для возврата требуется 1 ци.");
+  if (normalized.request.replyKind === "missile-return" &&
+      !(Array.isArray(current.combat?.proficiencies?.weapons) &&
+        current.combat.proficiencies.weapons.includes("Simple weapons"))) {
+    return reject("Для возврата снаряда требуется владение простым оружием.");
+  }
+  let receipt = null;
+  const sequenceId = `incoming-reply:${operationId}`;
+  const attackId = `${sequenceId}:attack:1`;
+  const result = updateSessionState(context, (draft) => {
+    const active = draft.battleConsole?.current;
+    if (!isSara(draft) || active?.id !== normalized.request.battleId ||
+        active.phase !== normalized.request.phaseAtOpen ||
+        active.ownTurnId !== normalized.request.ownTurnIdAtOpen) {
+      throw new Error("Контекст ответного удара устарел.");
+    }
+    const assistant = ensureCombatAssistant(draft);
+    if (assistant.activeSequences.some((entry) => entry.id === sequenceId)) {
+      throw new Error("ID завершённой последовательности уже занят.");
+    }
+    if (assistant.activeSequences.some((entry) =>
+      entry.incomingReply?.parentOperationId === normalized.request.parentOperationId &&
+      entry.incomingReply?.replyKind === normalized.request.replyKind) &&
+      normalized.request.parentOperationId) {
+      throw new Error("На это отражение уже дан ответ.");
+    }
+    const allowed = incomingReplyEvidence(draft, normalized.request);
+    if (!allowed.ok) throw new Error(allowed.reason);
+    const fresh = previewIncomingReply(draft, normalized.request);
+    if (!fresh.ok) throw new Error(fresh.reason);
+    if (normalized.request.replyKind === "ebb-unarmed") {
+      if (draft.profile?.id !== "sara-velaris" || Number(draft.profile.level) < 6 ||
+          draft.ui?.turn?.reactionUsed === true ||
+          draft.monk?.combatAssistant?.activeSequences?.some((entry) =>
+            entry.incomingReply?.eventId === normalized.request.eventId)) {
+        throw new Error("Ответ Ebb & Flow для этого события уже недоступен.");
+      }
+      draft.ui.turn.reactionUsed = true;
+    }
+    if (normalized.request.replyKind === "missile-return") {
+      const token = draft.monk.techniqueRuntime.deflectContinuation;
+      const ki = Number(draft.combat?.ki?.current);
+      if (!Number.isInteger(ki) || ki < 1) throw new Error("Для возврата требуется 1 ци.");
+      if (!(Array.isArray(draft.combat?.proficiencies?.weapons) &&
+          draft.combat.proficiencies.weapons.includes("Simple weapons"))) {
+        throw new Error("Для возврата снаряда требуется владение простым оружием.");
+      }
+      draft.combat.ki.current = ki - 1;
+      token.consumed = true;
+    }
+    const kind = normalized.request.replyKind === "missile-return"
+      ? "returned-projectile" : "reaction-unarmed";
+    const sequence = createSequenceRecord(draft, sequenceId, kind, {
+      parentId: normalized.request.parentOperationId,
+      parentFeature: normalized.request.replyKind,
+    });
+    sequence.maximumAttacks = 1;
+    sequence.status = "complete";
+    const attack = {
+      id: attackId, slotNumber: 1, profileId: fresh.profileId,
+      profileSnapshot: structuredClone(fresh.attack.profile),
+      optionalTargetLabel: normalized.request.attack.targetLabel,
+      rawD20Rolls: fresh.attack.rawD20Rolls,
+      rollMode: fresh.attack.rollMode, chosenD20: fresh.attack.chosenD20,
+      attackBonusSnapshot: fresh.attack.attackBonusSnapshot,
+      attackTotal: fresh.attack.attackTotal,
+      targetArmorClass: normalized.request.attack.targetArmorClass == null
+        ? null : Number(normalized.request.attack.targetArmorClass),
+      hitResolutionSource: fresh.attack.hitResolutionSource,
+      hitResult: fresh.attack.hitResult ? "hit" : "miss",
+      critical: fresh.attack.critical,
+      damageRolls: fresh.damage?.damageRolls ?? null,
+      damageModifierSnapshot: fresh.damage?.damageModifierSnapshot ?? null,
+      damageTotalBeforeTargetModifiers: fresh.damage?.damageTotalBeforeTargetModifiers ?? null,
+      damageStatus: fresh.attack.hitResult ? "recorded" : "not-applicable",
+      techniqueApplicationId: null,
+    };
+    sequence.resolvedAttacks.push(attack);
+    if (normalized.request.replyKind !== "deflect-counter") closeRestWindow(draft, "incoming-reply");
+    sequence.incomingReply = {
+      eventId: normalized.request.eventId,
+      replyKind: normalized.request.replyKind,
+      parentOperationId: normalized.request.parentOperationId,
+      continuationId: normalized.request.continuationId,
+      operationId,
+      request: structuredClone(normalized.request),
+      outcome: {
+        hit: fresh.attack.hitResult,
+        critical: fresh.attack.critical,
+        attackTotal: fresh.attack.attackTotal,
+        damageTotal: fresh.damage?.damageTotalBeforeTargetModifiers ?? null,
+      },
+    };
+    assistant.activeSequences.push(sequence);
+    receipt = sequence.incomingReply;
+    return draft;
+  }, {
+    operationId,
+    metadata: { kind: "sara-incoming-reply", replyKind: normalized.request.replyKind },
+  });
+  return result.status === "applied"
+    ? { ...result, receipt: structuredClone(receipt) } : result;
 }
 
 export function startAttackSequence(context, input, operationId) {

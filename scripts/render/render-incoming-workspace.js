@@ -1,5 +1,5 @@
 import { getDerivedStats } from "../calculations.js";
-import { calculateDeflectionPreview } from "../combat/sara-combat.js";
+import { calculateAttackPreview, calculateDeflectionPreview } from "../combat/sara-combat.js";
 import { buildDeflectionParameters } from "../actions/incoming-event.js";
 import { parsePhysicalInteger } from "../combat/physical-input.js";
 import { renderSaraEndBattleButton } from "./sara-hud.js";
@@ -7,7 +7,8 @@ import { incomingContextIsCurrent } from "../battle/incoming-event-draft.js";
 import { getSaraRollBreakdown } from "../rolls/providers/sara.js";
 import { calculateCharacterRoll } from "../rolls/calculations.js";
 import { calculateRollConsequencePreview } from "../rolls/consequences.js";
-import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
+import { getEffectiveTechniqueIds } from "../selectors/techniques.js";
+import { previewIncomingReply } from "../actions/sara-combat.js";
 
 const ABILITIES = [
   ["strength", "Сила"], ["dexterity", "Ловкость"], ["constitution", "Телосложение"],
@@ -31,6 +32,21 @@ function field(name, label, value, attrs = "") {
 export function renderIncomingPreview(session, state) {
   const draft = session.incomingDraft;
   const derived = getDerivedStats(state);
+  if (["reply-input", "reply-damage"].includes(draft.stage) && draft.replyDraft?.replyKind) {
+    const reply = draft.replyDraft;
+    const result = previewIncomingReply(state, {
+      eventId: draft.eventId,
+      battleId: draft.battleId,
+      phaseAtOpen: draft.phaseAtOpen,
+      ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
+      ...reply,
+    });
+    return result.ok
+      ? `<p>Бросок: ${result.attack.chosenD20} + ${result.attack.attackBonusSnapshot} = <strong>${result.attack.attackTotal}</strong>;
+        ${result.attack.hitResult ? "попадание" : "промах"}${result.attack.critical ? " · критическое" : ""}
+        ${result.damage ? ` · урон ${result.damage.damageTotalBeforeTargetModifiers}` : ""}</p>`
+      : `<p role="status">${escapeHtml(result.reason)}</p>`;
+  }
   if (draft.stage === "outcome") {
     return `<p class="incoming-event__armor-class">КД <strong>${derived.armorClass}</strong></p>`;
   }
@@ -116,13 +132,14 @@ export function renderIncomingWorkspace(session, state) {
   const draft = session.incomingDraft;
   const derived = getDerivedStats(state);
   const title = "Входящее событие";
-  const selectedTechniques = getEffectiveSelectedTechniqueIds(state);
+  const selectedTechniques = new Set(getEffectiveTechniqueIds(state));
   const deflectAvailable = state.ui?.turn?.reactionUsed !== true &&
     (draft.source === "projectile"
       ? selectedTechniques.has("ll-monk:deflect-missile")
       : selectedTechniques.has("ll-monk:deflect-strike"));
   const ebbAvailable = Number(state.profile?.level) >= 6 &&
     state.ui?.turn?.reactionUsed !== true &&
+    selectedTechniques.has("base:ebb-and-flow") &&
     ["waiting", "own-turn"].includes(state.battleConsole?.current?.phase);
   let body = "";
   let footer = "";
@@ -149,6 +166,7 @@ export function renderIncomingWorkspace(session, state) {
       body = "<p>Промах не меняет HP.</p>";
       footer = `${button("incoming-finish-miss", "Завершить событие")}
         ${ebbAvailable ? button("incoming-ebb-save", "Ответить на промах вблизи · спасбросок цели") : ""}
+        ${ebbAvailable ? button("incoming-ebb-unarmed", "Ответить на промах вблизи · безоружный удар") : ""}
         ${button("incoming-back", "Назад")}`;
       break;
     case "damage":
@@ -220,8 +238,55 @@ export function renderIncomingWorkspace(session, state) {
           <p>Временные HP ${receipt?.tempHpBefore ?? "—"} → ${receipt?.tempHpAfter ?? "—"};
             HP ${receipt?.hpBefore ?? "—"} → ${receipt?.hpAfter ?? "—"}.</p>`;
       }
-      footer = `${button("incoming-close", "Закрыть")}`;
+      footer = `${draft.appliedReceipt?.kind === "incoming-event"
+        ? (() => {
+          const effects = draft.appliedReceipt?.outcome?.effects ?? {};
+          return `${effects?.techniqueResult?.canCounterattack === true
+            ? button("incoming-open-counter", "Контратаковать") : ""}
+            ${effects?.techniqueResult?.canCatch === true &&
+              state.monk?.techniqueRuntime?.deflectContinuation?.consumed !== true
+              ? button("incoming-open-return", "Вернуть снаряд") : ""}`;
+        })() : ""}${button("incoming-close", "Закрыть")}`;
       break;
+    case "reply-input":
+    case "reply-damage": {
+      const reply = draft.replyDraft;
+      const modeLabel = { normal: "Обычный", advantage: "Преимущество", disadvantage: "Помеха" };
+      const attackPreview = calculateAttackPreview(state, {
+        ...reply.attack,
+        profileId: reply.replyKind === "missile-return" ? "returnedProjectile" : "unarmed",
+      });
+      const damageDiceCount = attackPreview.ok && attackPreview.critical ? 2 : 1;
+      body = `<label>Режим броска<select data-workspace-field name="replyRollMode">
+        ${Object.entries(modeLabel).map(([key, label]) =>
+          `<option value="${key}" ${reply.attack.rollMode === key ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+        ${field("replyFirstD20", "Первый физический к20", reply.attack.firstD20 ?? "", 'type="number" min="1" max="20" step="1"')}
+        ${reply.attack.rollMode !== "normal" ? field("replySecondD20", "Второй физический к20", reply.attack.secondD20 ?? "", 'type="number" min="1" max="20" step="1"') : ""}
+        ${field("replyTargetArmorClass", "КД цели (если известна)", reply.attack.targetArmorClass ?? "", 'type="number" min="1" max="99" step="1"')}
+        ${reply.attack.targetArmorClass == null || reply.attack.targetArmorClass === "" ? `
+          ${button("incoming-reply-hit", "Попадание")}
+          ${button("incoming-reply-miss", "Промах")}` : ""}
+        ${field("replyTargetLabel", "Цель", reply.attack.targetLabel ?? "")}
+        ${draft.stage === "reply-damage" ? `
+          ${Array.from({ length: damageDiceCount }, (_, index) =>
+            field(index ? "replyDamage2" : "replyDamage1",
+              index ? "Дополнительная кость критического урона" : "Физический урон",
+              reply.damageRolls?.[index] ?? "", 'type="number" min="1" step="1"')).join("")}` : ""}
+        <div data-incoming-preview>${renderIncomingPreview(session, state)}</div>`;
+      footer = `${button("incoming-reply-submit",
+        reply.replyKind === "missile-return" ? "Вернуть снаряд · 1 ци" : "Записать ответный удар",
+        'class="btn btn--primary"')}
+        ${button("incoming-reply-back", "Назад")}
+        ${button("incoming-reply-cancel", "Отмена")}`;
+      break;
+    }
+    case "reply-result": {
+      const result = draft.appliedReceipt?.outcome ?? {};
+      body = `<p>Ответный удар: ${result.hit ? "попадание" : "промах"}${result.critical ? " · критическое попадание" : ""}.</p>
+        <p>Итог атаки: ${result.attackTotal ?? "—"}${result.hit ? ` · урон ${result.damageTotal}` : ""}</p>`;
+      footer = button("incoming-close", "Закрыть");
+      break;
+    }
     case "save-recovery":
       body = "<p>Результат применён в памяти; сохранение не подтверждено.</p>";
       footer = `${button("incoming-retry-save", "Повторить сохранение")}`;

@@ -42,6 +42,9 @@ import {
   beginSeekingStrike,
   resolveSeekingStrike,
   applyGentlingTouchToAttackSlot,
+  commitIncomingReply,
+  previewIncomingReply,
+  readIncomingReplyReceipt,
 } from "../actions/sara-combat.js";
 import { getSaraBattleCommandRegistry } from "../battle/command-registry.js";
 import { getActiveBattle } from "../battle/model.js";
@@ -657,6 +660,14 @@ function render() {
 }
 
 function incomingReceiptEvidence(state, operationId, normalizedRequest, provenNotApplied = false) {
+  if (normalizedRequest?.replyKind) {
+    const receipt = readIncomingReplyReceipt(state, operationId);
+    if (!receipt) return { status: provenNotApplied ? "not-applied" : "unknown" };
+    if (JSON.stringify(receipt.request) !== JSON.stringify(normalizedRequest)) {
+      return { status: "unknown", reason: "Receipt ответного удара не совпадает с исходным запросом." };
+    }
+    return { status: "applied", receipt };
+  }
   const receipt = readIncomingEventReceipt(state, operationId);
   if (!receipt) return { status: provenNotApplied ? "not-applied" : "unknown" };
   if (JSON.stringify(receipt.request) !== JSON.stringify(normalizedRequest)) {
@@ -740,7 +751,88 @@ function incomingRequestForDraft(draft) {
       ...identity,
     };
   }
+  if (["reply-input", "reply-damage"].includes(draft.stage) && draft.replyDraft?.replyKind) {
+    return {
+      ...identity,
+      replyKind: draft.replyDraft.replyKind,
+      parentOperationId: draft.replyDraft.parentOperationId ?? null,
+      continuationId: draft.replyDraft.continuationId ?? null,
+      trigger: draft.replyDraft.trigger ?? null,
+      attack: { ...draft.replyDraft.attack },
+      damageRolls: [...(draft.replyDraft.damageRolls ?? [])],
+    };
+  }
   return null;
+}
+
+function commitIncomingReplyRequest(active, draft) {
+  const captured = captureIncomingOperation(active, draft);
+  if (!incomingOperationIsCurrent(captured)) return true;
+  const context = getSessionContext();
+  const state = getState();
+  if (!incomingContextIsCurrent(draft, state, context)) {
+    draft.stage = "expired";
+    draft.error = "Контекст боя изменился.";
+    render();
+    return true;
+  }
+  const request = incomingRequestForDraft(draft);
+  const preview = previewIncomingReply(state, request);
+  if (!incomingOperationIsCurrent(captured)) return true;
+  if (!preview.ok) {
+    draft.error = preview.reason;
+    render();
+    return true;
+  }
+  const normalized = preview.request;
+  const fingerprint = JSON.stringify(preview);
+  if (draft.replyDraft.previewFingerprint &&
+      draft.replyDraft.previewFingerprint !== fingerprint) {
+    draft.replyDraft.previewFingerprint = fingerprint;
+    draft.error = "Предварительный результат изменился. Проверьте расчёт и подтвердите ещё раз.";
+    render();
+    return true;
+  }
+  draft.pendingOperationId = draft.operationIds.reply;
+  draft.pendingNormalizedRequest = structuredClone(normalized);
+  draft.pendingReturnStage = "reply-input";
+  active.submitting = true;
+  try {
+    const result = commitIncomingReply(context, normalized, draft.operationIds.reply);
+    if (!incomingOperationIsCurrent(captured)) return true;
+    const evidence = incomingReceiptEvidence(getState(), draft.operationIds.reply, normalized);
+    if (!incomingOperationIsCurrent(captured)) return true;
+    if (evidence.status === "applied") {
+      draft.appliedReceipt = evidence.receipt;
+      draft.stage = result.persistence?.ok === false ? "save-recovery" : "reply-result";
+      active.appliedUnsaved = result.persistence?.ok === false;
+      active.status = "Ответный удар записан.";
+    } else if (result.code === "operation-id-collision") {
+      draft.stage = "verification";
+      active.appliedUnsaved = true;
+      draft.error = result.reason;
+    } else {
+      clearIncomingPending(draft, active);
+      draft.stage = "reply-input";
+      draft.error = result.reason ?? evidence.reason ?? "Ответный удар не применён.";
+    }
+  } catch (error) {
+    if (!incomingOperationIsCurrent(captured)) return true;
+    const evidence = incomingReceiptEvidence(getState(), draft.operationIds.reply, normalized);
+    if (!incomingOperationIsCurrent(captured)) return true;
+    if (evidence.status === "applied") {
+      draft.appliedReceipt = evidence.receipt;
+      draft.stage = "save-recovery";
+    } else {
+      draft.stage = "verification";
+    }
+    active.appliedUnsaved = true;
+    draft.error = error instanceof Error ? error.message : String(error);
+  } finally {
+    if (incomingOperationIsCurrent(captured)) active.submitting = false;
+  }
+  if (incomingOperationIsCurrent(captured)) render();
+  return true;
 }
 
 function incomingPreviewFingerprint(draft, state) {
@@ -757,6 +849,11 @@ function syncIncomingPreviewFingerprint(draft, state, requireConfirmation = fals
     draft.previewConfirmationRequired = true;
   }
   draft.previewFingerprint = fingerprint;
+  if (draft.replyDraft) {
+    const request = incomingRequestForDraft(draft);
+    const preview = request ? previewIncomingReply(state, request) : null;
+    draft.replyDraft.previewFingerprint = preview?.ok ? JSON.stringify(preview) : null;
+  }
   return fingerprint;
 }
 
@@ -917,6 +1014,13 @@ function handleIncomingAction(action) {
       !["incoming-verify"].includes(action)) return true;
   if (!action.startsWith("incoming-ebb")) draft.error = "";
   if (action === "incoming-cancel") {
+    if (["reply-input", "reply-damage"].includes(draft.stage)) {
+      draft.stage = draft.replyDraft?.replyKind === "ebb-unarmed"
+        ? "miss-response" : "result";
+      draft.error = "";
+      render();
+      return true;
+    }
     if (draft.appliedReceipt || draft.stage === "verification" || active.appliedUnsaved) return true;
     session = null;
     if (!restoreParentSession({ validateBattleContext: true })) {
@@ -927,6 +1031,16 @@ function handleIncomingAction(action) {
   }
   if (action === "incoming-close") {
     if (draft.stage === "verification" || active.appliedUnsaved) return true;
+    const token = getState().monk?.techniqueRuntime?.deflectContinuation;
+    if (token?.kind === "missile-return" && token.consumed !== true &&
+        draft.appliedReceipt?.id === token.id) {
+      const declined = declineDeflectMissileReturn(getSessionContext(), token.id);
+      if (declined.status !== "applied" && declined.status !== "replayed") {
+        draft.error = declined.reason ?? "Не удалось закрыть продолжение возврата снаряда.";
+        render();
+        return true;
+      }
+    }
     finishCurrentSession({ validateBattleContext: true });
     return true;
   }
@@ -939,6 +1053,9 @@ function handleIncomingAction(action) {
       "spell-choice": "source",
       "save-input": "spell-choice",
       "save-consequence": "save-input",
+      "reply-damage": "reply-input",
+      "reply-input": draft.replyDraft?.replyKind === "ebb-unarmed"
+        ? "miss-response" : "result",
     }[draft.stage];
     if (previous) draft.stage = previous;
     if (!action.startsWith("incoming-ebb")) draft.error = "";
@@ -989,7 +1106,7 @@ function handleIncomingAction(action) {
         } else {
           draft.appliedReceipt = savedEvidence.receipt;
           active.appliedUnsaved = false;
-          draft.stage = "result";
+          draft.stage = draft.pendingNormalizedRequest?.replyKind ? "reply-result" : "result";
           active.status = "Сохранение выполнено.";
         }
       }
@@ -1028,7 +1145,7 @@ function handleIncomingAction(action) {
             if (savedEvidence.status === "applied") {
               draft.appliedReceipt = savedEvidence.receipt;
               active.appliedUnsaved = false;
-              draft.stage = "result";
+              draft.stage = draft.pendingNormalizedRequest?.replyKind ? "reply-result" : "result";
             } else {
               active.appliedUnsaved = false;
               draft.stage = "verification";
@@ -1092,6 +1209,65 @@ function handleIncomingAction(action) {
       };
       return commitIncomingRequest(active, draft, request, draft.operationIds.reply, "miss-response");
     }
+  } else if (action === "incoming-open-counter" || action === "incoming-open-return" ||
+      action === "incoming-ebb-unarmed") {
+    const replyKind = action === "incoming-open-counter" ? "deflect-counter"
+      : action === "incoming-open-return" ? "missile-return" : "ebb-unarmed";
+    const parentOperationId = replyKind === "ebb-unarmed" ? null : draft.appliedReceipt?.id;
+    const continuationId = replyKind === "missile-return"
+      ? state.monk?.techniqueRuntime?.deflectContinuation?.id ?? null : null;
+    draft.replyDraft = {
+      replyKind,
+      parentOperationId,
+      continuationId,
+      trigger: replyKind === "ebb-unarmed" ? "melee-miss" : null,
+      attack: {
+        rollMode: "normal",
+        firstD20: "",
+        secondD20: null,
+        targetArmorClass: "",
+        dmHitResult: null,
+        targetLabel: "",
+      },
+      damageRolls: [],
+    };
+    draft.stage = "reply-input";
+  } else if (action === "incoming-reply-hit" || action === "incoming-reply-miss") {
+    if (!draft.replyDraft) return true;
+    draft.replyDraft.attack.dmHitResult =
+      action === "incoming-reply-hit" ? "hit" : "miss";
+    draft.replyDraft.damageRolls = [];
+    draft.stage = action === "incoming-reply-hit" ? "reply-damage" : "reply-input";
+    if (action === "incoming-reply-miss") {
+      const preview = previewIncomingReply(getState(), incomingRequestForDraft(draft));
+      if (preview.ok) draft.replyDraft.previewFingerprint = JSON.stringify(preview);
+      return commitIncomingReplyRequest(active, draft);
+    }
+  } else if (action === "incoming-reply-submit") {
+    if (!draft.replyDraft) return true;
+    const request = incomingRequestForDraft(draft);
+    const preview = previewIncomingReply(state, request);
+    if (!preview.ok && preview.reason === "Введите ровно 1 физический результат кости урона.") {
+      draft.stage = "reply-damage";
+      draft.error = "";
+      render();
+      return true;
+    }
+    if (!preview.ok && preview.reason === "Введите ровно 2 физический результат кости урона.") {
+      draft.stage = "reply-damage";
+      draft.error = "";
+      render();
+      return true;
+    }
+    if (!preview.ok) {
+      draft.error = preview.reason;
+      render();
+      return true;
+    }
+    return commitIncomingReplyRequest(active, draft);
+  } else if (action === "incoming-reply-back") {
+    draft.stage = draft.stage === "reply-damage" ? "reply-input"
+      : draft.replyDraft?.replyKind === "ebb-unarmed" ? "miss-response" : "result";
   } else if (action.startsWith("incoming-source-")) {
     const source = action.slice("incoming-source-".length);
     if (!["melee", "projectile", "spell"].includes(source)) return true;
@@ -1188,6 +1364,38 @@ function updateInput(field) {
   if (!session || session.submitting) return;
   if (session.workspaceType === "incoming") {
     const draft = session.incomingDraft;
+    const replyAttackFields = {
+      replyRollMode: "rollMode",
+      replyFirstD20: "firstD20",
+      replySecondD20: "secondD20",
+      replyTargetArmorClass: "targetArmorClass",
+      replyTargetLabel: "targetLabel",
+    };
+    if (draft.replyDraft && replyAttackFields[field.name]) {
+      const key = replyAttackFields[field.name];
+      draft.replyDraft.attack[key] = field.value;
+      draft.replyDraft.damageRolls = [];
+      draft.stage = "reply-input";
+      draft.error = "";
+      if (field.name === "replyRollMode") {
+        render();
+        getWorkspaceHost()?.querySelector('[data-workspace-field][name="replyRollMode"]')
+          ?.focus({ preventScroll: true });
+        return;
+      }
+      const preview = getWorkspaceHost()?.querySelector("[data-incoming-preview]");
+      if (preview) preview.innerHTML = renderIncomingPreview(session, getState());
+      syncIncomingPreviewFingerprint(draft, getState());
+      return;
+    }
+    if (draft.replyDraft && ["replyDamage1", "replyDamage2"].includes(field.name)) {
+      draft.replyDraft.damageRolls[field.name === "replyDamage1" ? 0 : 1] = field.value;
+      draft.error = "";
+      const preview = getWorkspaceHost()?.querySelector("[data-incoming-preview]");
+      if (preview) preview.innerHTML = renderIncomingPreview(session, getState());
+      syncIncomingPreviewFingerprint(draft, getState());
+      return;
+    }
     if (field.name === "incomingDamage") draft.rawDamage = field.value;
     else if (field.name === "deflectRoll") draft.rawDeflectRoll = field.value;
     else if (field.name === "saveDamage") draft.rollDraft.damage = field.value;

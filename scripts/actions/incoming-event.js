@@ -305,6 +305,11 @@ export function commitIncomingEvent(context, request, operationId) {
       if (draft.profile?.id !== "sara-velaris" || Number(draft.profile.level) < 6) {
         throw new Error("Ebb & Flow доступна с 6 уровня.");
       }
+      if (draft.monk?.combatAssistant?.activeSequences?.some((sequence) =>
+        sequence.incomingReply?.eventId === normalized.request.eventId &&
+        sequence.incomingReply?.replyKind === "ebb-unarmed")) {
+        throw new Error("На это входящее событие уже выбран безоружный ответ Ebb & Flow.");
+      }
       if (draft.ui?.turn?.reactionUsed === true) {
         throw new Error("Реакция уже использована в этом ходу.");
       }
