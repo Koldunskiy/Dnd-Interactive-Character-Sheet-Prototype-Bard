@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getSessionContext, getState } from "../../scripts/state.js";
+import { getSessionContext, getState, updateSessionState } from "../../scripts/state.js";
 import { executeBattleCommand } from "../../scripts/battle/commands.js";
 import { commitIncomingEvent } from "../../scripts/actions/incoming-event.js";
 import {
   commitIncomingReply,
   previewIncomingReply,
   readIncomingReplyReceipt,
+  startAttackSequence,
 } from "../../scripts/actions/sara-combat.js";
 import { installWorkspaceFixture } from "./workspace-fixture.mjs";
 
@@ -159,5 +160,67 @@ test("completed Ebb save receipt excludes a later unarmed reply for the same eve
   assert.equal(result.status, "rejected");
   assert.equal(getState().monk.combatAssistant.activeSequences.some((entry) =>
     entry.incomingReply?.eventId === event.eventId), false);
+  unsubscribe();
+});
+
+test("pruning bounds old replies while preserving current parent evidence and uniqueness", () => {
+  const { unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  assert.equal(executeBattleCommand("start-battle", { rawD20: "12" }).status, "applied");
+  assert.equal(executeBattleCommand("begin-own-turn").status, "applied");
+  const event = identity("retained-parent-event");
+  const parentOperationId = "retained-parent-operation";
+  assert.equal(commitIncomingEvent(getSessionContext(), {
+    kind: "deflection", source: "melee", damage: "0", deflectRoll: "1", ...event,
+  }, parentOperationId).status, "applied");
+  const request = {
+    ...event,
+    replyKind: "deflect-counter",
+    parentOperationId,
+    continuationId: null,
+    trigger: null,
+    attack: {
+      rollMode: "normal", firstD20: "5", secondD20: null,
+      targetArmorClass: null, dmHitResult: "miss", targetLabel: "",
+    },
+    damageRolls: [],
+  };
+  assert.equal(commitIncomingReply(getSessionContext(), request, "retained-reply").status, "applied");
+  updateSessionState(getSessionContext(), (draft) => {
+    for (let index = 0; index < 40; index += 1) {
+      draft.monk.combatAssistant.activeSequences.push({
+        id: `old-reply-${index}`,
+        kind: "reaction-unarmed",
+        status: "complete",
+        resolvedAttacks: [],
+        incomingReply: {
+          eventId: `old-event-${index}`,
+          replyKind: "ebb-unarmed",
+          parentOperationId: null,
+          operationId: `old-reply-operation-${index}`,
+          request: { replyKind: "ebb-unarmed" },
+          outcome: { hit: false },
+        },
+      });
+    }
+    draft.monk.combatAssistant.activeSequences.push({
+      id: "legacy-unresolved",
+      kind: "attack-action",
+      status: "complete",
+      resolvedAttacks: [{ id: "legacy-pending-attack", damageStatus: "awaiting-damage" }],
+      incomingReply: { operationId: "legacy-unresolved-reply" },
+    });
+    return draft;
+  });
+  assert.equal(startAttackSequence(getSessionContext(), {
+    kind: "attack-action",
+    sequenceId: "prune-trigger",
+  }, "prune-trigger-operation").status, "applied");
+  const sequences = getState().monk.combatAssistant.activeSequences;
+  assert.ok(readIncomingReplyReceipt(getState(), "retained-reply"));
+  assert.equal(sequences.filter((entry) => entry.incomingReply?.eventId?.startsWith("old-event-")).length, 30);
+  assert.equal(sequences.some((entry) => entry.id === "legacy-unresolved"), true);
+  const secondReply = commitIncomingReply(getSessionContext(), request, "retained-reply-second-id");
+  assert.equal(secondReply.status, "rejected");
+  assert.equal(readIncomingReplyReceipt(getState(), "retained-reply").operationId, "retained-reply");
   unsubscribe();
 });

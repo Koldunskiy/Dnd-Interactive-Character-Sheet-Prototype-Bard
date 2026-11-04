@@ -75,13 +75,22 @@ function countUnresolvedCombatTasks(assistant) {
   return pendingSaves + pendingDamage;
 }
 
-function pruneCombatHistory(assistant) {
+function pruneCombatHistory(assistant, character) {
   const unresolvedApplicationIds = new Set(assistant.pendingApplications
     .filter((entry) => !["success", "failure"].includes(entry.targetOutcome))
     .map((entry) => entry.parentAttackId));
   const unresolvedSequences = [];
   const completedSequences = [];
   const completedReplies = [];
+  const protectedReplies = [];
+  const currentBattle = character?.battleConsole?.current;
+  const currentParentReceipts = new Set(assistant.recentlyCompletedSummaries
+    .filter((entry) => entry.kind === "incoming-event" &&
+      entry.request?.kind === "deflection" &&
+      entry.battleId === currentBattle?.id &&
+      entry.request.phaseAtOpen === currentBattle?.phase &&
+      entry.request.ownTurnIdAtOpen === (currentBattle?.ownTurnId ?? null))
+    .map((entry) => entry.id));
   for (const sequence of assistant.activeSequences) {
     const unresolved = sequence.status === "open" ||
       sequence.resolvedAttacks?.some((attack) => {
@@ -97,12 +106,18 @@ function pruneCombatHistory(assistant) {
             attack.seekingAmendment != null;
         }
       });
-    if (sequence.incomingReply) completedReplies.push(sequence);
-    else (unresolved ? unresolvedSequences : completedSequences).push(sequence);
+    if (unresolved) unresolvedSequences.push(sequence);
+    else if (sequence.incomingReply) {
+      if (currentParentReceipts.has(sequence.incomingReply.parentOperationId) &&
+          sequence.incomingReply.parentOperationId) protectedReplies.push(sequence);
+      else completedReplies.push(sequence);
+    }
+    else completedSequences.push(sequence);
   }
   assistant.activeSequences = [
     ...completedSequences.slice(-MAX_RECENT_COMBAT_SEQUENCES),
-    ...completedReplies,
+    ...completedReplies.slice(-MAX_RECENT_COMBAT_SEQUENCES),
+    ...protectedReplies,
     ...unresolvedSequences,
   ];
   const unresolvedApplications = assistant.pendingApplications.filter((entry) =>
@@ -304,7 +319,7 @@ export function readIncomingReplyReceipt(state, operationId) {
     ? incomingReplyReceiptFromState(state, operationId) : null;
 }
 
-export function previewIncomingReply(state, request) {
+export function previewIncomingReplyAttack(state, request) {
   const normalized = normalizeIncomingReplyRequest(request);
   if (!normalized.ok) return normalized;
   const reply = normalized.request;
@@ -320,11 +335,36 @@ export function previewIncomingReply(state, request) {
       return { ok: false, reason: "Укажите КД цели или выберите попадание/промах." };
     }
   }
-  const damage = preview.hitResult
-    ? calculateAttackDamage(preview.profile, reply.damageRolls, preview.critical)
-    : null;
-  if (damage && !damage.ok) return damage;
-  return { ok: true, request: reply, profileId, attack: preview, damage };
+  return {
+    ok: true,
+    request: reply,
+    profileId,
+    attack: preview,
+    requiredDamageDice: preview.hitResult ? (preview.critical ? 2 : 1) : 0,
+  };
+}
+
+export function previewIncomingReply(state, request) {
+  const attackPreview = previewIncomingReplyAttack(state, request);
+  if (!attackPreview.ok) return attackPreview;
+  if (!attackPreview.attack.hitResult) {
+    return { ...attackPreview, complete: true, damage: null };
+  }
+  const damage = calculateAttackDamage(
+    attackPreview.attack.profile,
+    attackPreview.request.damageRolls,
+    attackPreview.attack.critical,
+  );
+  if (!damage.ok) {
+    return {
+      ...attackPreview,
+      ok: false,
+      complete: false,
+      code: "invalid-damage",
+      reason: damage.reason,
+    };
+  }
+  return { ...attackPreview, complete: true, damage };
 }
 
 export function commitIncomingReply(context, request, operationId) {
@@ -456,12 +496,19 @@ export function commitIncomingReply(context, request, operationId) {
       },
     };
     assistant.activeSequences.push(sequence);
+    pruneCombatHistory(assistant, draft);
     receipt = sequence.incomingReply;
     return draft;
   }, {
     operationId,
     metadata: { kind: "sara-incoming-reply", replyKind: normalized.request.replyKind },
   });
+  if (result.reason === "duplicate-operation") {
+    return { ...result, code: "duplicate-operation" };
+  }
+  if (result.status === "rejected") {
+    return { ...result, code: "pre-commit-rejected" };
+  }
   return result.status === "applied"
     ? { ...result, receipt: structuredClone(receipt) } : result;
 }
@@ -487,7 +534,7 @@ export function startAttackSequence(context, input, operationId) {
         sequence.status === "open" && !mayRunAlongside(kind, sequence.kind))) {
         throw new Error("Сначала завершите или закройте текущую последовательность.");
       }
-      pruneCombatHistory(assistant);
+      pruneCombatHistory(assistant, draft);
       const level = Number(draft.profile.level);
       const turn = draft.ui.turn;
       if (kind === "flurry" && input.confirmed !== true) {
@@ -1121,7 +1168,7 @@ export function applyTechniqueToHit(context, actionId, attackId, techniqueId, in
           ? "Повторный спасбросок Мудрости в конце хода цели зависит от решения мастера."
           : null
       };
-      pruneCombatHistory(assistant);
+      pruneCombatHistory(assistant, draft);
       assistant.pendingApplications.push(application);
       attack.techniqueApplicationId = applicationId;
       techniqueOutcome = result.result;

@@ -1,5 +1,5 @@
 import { getDerivedStats } from "../calculations.js";
-import { calculateAttackPreview, calculateDeflectionPreview } from "../combat/sara-combat.js";
+import { calculateDeflectionPreview } from "../combat/sara-combat.js";
 import { buildDeflectionParameters } from "../actions/incoming-event.js";
 import { parsePhysicalInteger } from "../combat/physical-input.js";
 import { renderSaraEndBattleButton } from "./sara-hud.js";
@@ -8,7 +8,7 @@ import { getSaraRollBreakdown } from "../rolls/providers/sara.js";
 import { calculateCharacterRoll } from "../rolls/calculations.js";
 import { calculateRollConsequencePreview } from "../rolls/consequences.js";
 import { getEffectiveTechniqueIds } from "../selectors/techniques.js";
-import { previewIncomingReply } from "../actions/sara-combat.js";
+import { previewIncomingReplyAttack } from "../actions/sara-combat.js";
 
 const ABILITIES = [
   ["strength", "Сила"], ["dexterity", "Ловкость"], ["constitution", "Телосложение"],
@@ -34,7 +34,7 @@ export function renderIncomingPreview(session, state) {
   const derived = getDerivedStats(state);
   if (["reply-input", "reply-damage"].includes(draft.stage) && draft.replyDraft?.replyKind) {
     const reply = draft.replyDraft;
-    const result = previewIncomingReply(state, {
+    const result = previewIncomingReplyAttack(state, {
       eventId: draft.eventId,
       battleId: draft.battleId,
       phaseAtOpen: draft.phaseAtOpen,
@@ -44,7 +44,8 @@ export function renderIncomingPreview(session, state) {
     return result.ok
       ? `<p>Бросок: ${result.attack.chosenD20} + ${result.attack.attackBonusSnapshot} = <strong>${result.attack.attackTotal}</strong>;
         ${result.attack.hitResult ? "попадание" : "промах"}${result.attack.critical ? " · критическое" : ""}
-        ${result.damage ? ` · урон ${result.damage.damageTotalBeforeTargetModifiers}` : ""}</p>`
+        ${result.requiredDamageDice
+          ? ` · требуется физических костей урона: ${result.requiredDamageDice}` : ""}</p>`
       : `<p role="status">${escapeHtml(result.reason)}</p>`;
   }
   if (draft.stage === "outcome") {
@@ -252,11 +253,19 @@ export function renderIncomingWorkspace(session, state) {
     case "reply-damage": {
       const reply = draft.replyDraft;
       const modeLabel = { normal: "Обычный", advantage: "Преимущество", disadvantage: "Помеха" };
-      const attackPreview = calculateAttackPreview(state, {
+      const attackPreview = previewIncomingReplyAttack(state, {
         ...reply.attack,
-        profileId: reply.replyKind === "missile-return" ? "returnedProjectile" : "unarmed",
+        eventId: draft.eventId,
+        battleId: draft.battleId,
+        phaseAtOpen: draft.phaseAtOpen,
+        ownTurnIdAtOpen: draft.ownTurnIdAtOpen,
+        replyKind: reply.replyKind,
+        parentOperationId: reply.parentOperationId,
+        continuationId: reply.continuationId,
+        trigger: reply.trigger,
+        damageRolls: [],
       });
-      const damageDiceCount = attackPreview.ok && attackPreview.critical ? 2 : 1;
+      const damageDiceCount = attackPreview.ok ? Math.max(1, attackPreview.requiredDamageDice) : 1;
       body = `<label>Режим броска<select data-workspace-field name="replyRollMode">
         ${Object.entries(modeLabel).map(([key, label]) =>
           `<option value="${key}" ${reply.attack.rollMode === key ? "selected" : ""}>${label}</option>`).join("")}</select></label>

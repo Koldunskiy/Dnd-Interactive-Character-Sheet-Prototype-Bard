@@ -43,6 +43,7 @@ import {
   resolveSeekingStrike,
   applyGentlingTouchToAttackSlot,
   commitIncomingReply,
+  previewIncomingReplyAttack,
   previewIncomingReply,
   readIncomingReplyReceipt,
 } from "../actions/sara-combat.js";
@@ -800,25 +801,50 @@ function commitIncomingReplyRequest(active, draft) {
   try {
     const result = commitIncomingReply(context, normalized, draft.operationIds.reply);
     if (!incomingOperationIsCurrent(captured)) return true;
-    const evidence = incomingReceiptEvidence(getState(), draft.operationIds.reply, normalized);
+    let evidence;
+    let inspectionError = null;
+    try {
+      evidence = incomingReceiptEvidence(getState(), draft.operationIds.reply, normalized);
+    } catch (errorDuringInspection) {
+      inspectionError = errorDuringInspection;
+    }
     if (!incomingOperationIsCurrent(captured)) return true;
-    if (evidence.status === "applied") {
+    if (evidence?.status === "applied") {
       draft.appliedReceipt = evidence.receipt;
       draft.stage = result.persistence?.ok === false ? "save-recovery" : "reply-result";
       active.appliedUnsaved = result.persistence?.ok === false;
       active.status = "Ответный удар записан.";
-    } else if (result.code === "operation-id-collision") {
+    } else if (inspectionError) {
       draft.stage = "verification";
       active.appliedUnsaved = true;
-      draft.error = result.reason;
-    } else {
+      draft.error = inspectionError instanceof Error
+        ? inspectionError.message : String(inspectionError);
+    } else if (result.code === "operation-id-collision" ||
+        result.code === "duplicate-operation" ||
+        ["applied", "replayed"].includes(result.status)) {
+      draft.stage = "verification";
+      active.appliedUnsaved = true;
+      draft.error = result.reason ?? evidence.reason ??
+        "Не удалось подтвердить canonical receipt ответного удара.";
+    } else if (result.code === "pre-commit-rejected") {
       clearIncomingPending(draft, active);
       draft.stage = "reply-input";
-      draft.error = result.reason ?? evidence.reason ?? "Ответный удар не применён.";
+      draft.error = result.reason ?? "Ответный удар отклонён до применения.";
+    } else {
+      draft.stage = "verification";
+      active.appliedUnsaved = true;
+      draft.error = result.reason ?? evidence.reason ??
+        "Исход ответного удара неизвестен; повторное применение заблокировано.";
     }
   } catch (error) {
     if (!incomingOperationIsCurrent(captured)) return true;
-    const evidence = incomingReceiptEvidence(getState(), draft.operationIds.reply, normalized);
+    let evidence = { status: "unknown" };
+    let inspectionError = null;
+    try {
+      evidence = incomingReceiptEvidence(getState(), draft.operationIds.reply, normalized);
+    } catch (errorDuringInspection) {
+      inspectionError = errorDuringInspection;
+    }
     if (!incomingOperationIsCurrent(captured)) return true;
     if (evidence.status === "applied") {
       draft.appliedReceipt = evidence.receipt;
@@ -827,7 +853,8 @@ function commitIncomingReplyRequest(active, draft) {
       draft.stage = "verification";
     }
     active.appliedUnsaved = true;
-    draft.error = error instanceof Error ? error.message : String(error);
+    const reason = inspectionError ?? evidence.reason ?? error;
+    draft.error = reason instanceof Error ? reason.message : String(reason);
   } finally {
     if (incomingOperationIsCurrent(captured)) active.submitting = false;
   }
@@ -1013,7 +1040,7 @@ function handleIncomingAction(action) {
   if (active.submitting || draft.stage === "verification" &&
       !["incoming-verify"].includes(action)) return true;
   if (!action.startsWith("incoming-ebb")) draft.error = "";
-  if (action === "incoming-cancel") {
+  if (action === "incoming-cancel" || action === "incoming-reply-cancel") {
     if (["reply-input", "reply-damage"].includes(draft.stage)) {
       draft.stage = draft.replyDraft?.replyKind === "ebb-unarmed"
         ? "miss-response" : "result";
@@ -1246,19 +1273,35 @@ function handleIncomingAction(action) {
   } else if (action === "incoming-reply-submit") {
     if (!draft.replyDraft) return true;
     const request = incomingRequestForDraft(draft);
+    const attackPreview = previewIncomingReplyAttack(state, request);
+    if (!attackPreview.ok) {
+      draft.error = attackPreview.reason;
+      render();
+      return true;
+    }
+    if (attackPreview.attack.hitResult) {
+      if (draft.stage !== "reply-damage" ||
+          draft.replyDraft.damageRolls.length !== attackPreview.requiredDamageDice) {
+        if (draft.replyDraft.damageRolls.length !== attackPreview.requiredDamageDice) {
+          draft.replyDraft.damageRolls = [];
+        }
+        draft.stage = "reply-damage";
+        draft.error = "";
+        render();
+        getWorkspaceHost()?.querySelector(
+          '[data-workspace-field][name="replyDamage1"]',
+        )?.focus({ preventScroll: true });
+        return true;
+      }
+    } else if (draft.stage === "reply-damage") {
+      draft.replyDraft.damageRolls = [];
+      draft.stage = "reply-input";
+      draft.error = "";
+      render();
+      focusWorkspaceHeading();
+      return true;
+    }
     const preview = previewIncomingReply(state, request);
-    if (!preview.ok && preview.reason === "Введите ровно 1 физический результат кости урона.") {
-      draft.stage = "reply-damage";
-      draft.error = "";
-      render();
-      return true;
-    }
-    if (!preview.ok && preview.reason === "Введите ровно 2 физический результат кости урона.") {
-      draft.stage = "reply-damage";
-      draft.error = "";
-      render();
-      return true;
-    }
     if (!preview.ok) {
       draft.error = preview.reason;
       render();
@@ -1369,22 +1412,28 @@ function updateInput(field) {
       replyFirstD20: "firstD20",
       replySecondD20: "secondD20",
       replyTargetArmorClass: "targetArmorClass",
-      replyTargetLabel: "targetLabel",
     };
+    if (draft.replyDraft && field.name === "replyTargetLabel") {
+      draft.replyDraft.attack.targetLabel = field.value;
+      draft.error = "";
+      const preview = getWorkspaceHost()?.querySelector("[data-incoming-preview]");
+      if (preview) preview.innerHTML = renderIncomingPreview(session, getState());
+      syncIncomingPreviewFingerprint(draft, getState());
+      return;
+    }
     if (draft.replyDraft && replyAttackFields[field.name]) {
       const key = replyAttackFields[field.name];
       draft.replyDraft.attack[key] = field.value;
       draft.replyDraft.damageRolls = [];
       draft.stage = "reply-input";
       draft.error = "";
-      if (field.name === "replyRollMode") {
-        render();
-        getWorkspaceHost()?.querySelector('[data-workspace-field][name="replyRollMode"]')
-          ?.focus({ preventScroll: true });
-        return;
-      }
-      const preview = getWorkspaceHost()?.querySelector("[data-incoming-preview]");
-      if (preview) preview.innerHTML = renderIncomingPreview(session, getState());
+      render();
+      const focusName = field.name;
+      const control = getWorkspaceHost()?.querySelector(
+        `[data-workspace-field][name="${focusName}"]`,
+      );
+      if (control?.isConnected) control.focus({ preventScroll: true });
+      else focusWorkspaceHeading();
       syncIncomingPreviewFingerprint(draft, getState());
       return;
     }
