@@ -29,6 +29,15 @@ import { renderBattleConsole } from "../../scripts/render/render-battle-console.
 import { renderCommandWorkspace } from "../../scripts/render/render-command-workspace.js";
 import { renderAttackWorkspace } from "../../scripts/render/render-attack-workspace.js";
 import { getSaraInitiativeSnapshot } from "../../scripts/battle/providers/sara.js";
+
+test("end-battle controls are visible on exactly the active initiative surface", async () => {
+  const css = await readFile(
+    new URL("../../styles/battle-console.css", import.meta.url), "utf8",
+  );
+  assert.match(css, /\.battle-console-init-form > header \[data-sara-end-battle\]\s*\{\s*display:\s*none;/);
+  assert.match(css, /\.battle-console-init-form\[data-initiative-presentation="true"\] > header \[data-sara-end-battle\]\s*\{\s*display:\s*inline-flex;/);
+  assert.match(css, /\.sara-combat-shell\[data-initiative-presenting="true"\] \.sara-app-head__title \[data-sara-end-battle\]\s*\{\s*display:\s*none;\s*pointer-events:\s*none;/);
+});
 import { dispatchSceneUi } from "../../scripts/battle/scene-ui-state.js";
 import { startBattle } from "../../scripts/battle/transitions.js";
 

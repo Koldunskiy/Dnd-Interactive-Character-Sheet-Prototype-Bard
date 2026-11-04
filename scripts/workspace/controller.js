@@ -214,7 +214,13 @@ export function requestEndBattle({ owner, battleId }, { confirm = (message) =>
           reason: "battle-ended", persistenceUnconfirmed: true,
         });
         if (!cleanupPerformed) {
-          return { status: "rejected", reason: "Контекст боя изменился; новые панели не закрыты.", cleanupSkipped: true, staleContext: true };
+          return {
+            status: "applied",
+            persistenceUnconfirmed: true,
+            cleanupSkipped: true,
+            staleContext: true,
+            warning: error instanceof Error ? error.message : String(error),
+          };
         }
         return {
           status: "applied",

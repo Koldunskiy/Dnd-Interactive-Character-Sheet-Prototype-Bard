@@ -140,6 +140,14 @@
   pointer-events: none;
 }
 
+.battle-console-init-form > header [data-sara-end-battle] {
+  display: none;
+}
+
+.battle-console-init-form[data-initiative-presentation="true"] > header [data-sara-end-battle] {
+  display: inline-flex;
+}
+
 .sara-app-head__title {
   display: flex;
   min-width: 0;

@@ -291,6 +291,7 @@ test("applied A with synchronous B scene and workspace replacement skips stale c
     battleB = beginActiveBattle();
     assert.equal(openNormalAttack().ok, true);
     setAttackDraft(dialog, "15");
+    throw new Error("subscriber replaced scene then failed");
   });
 
   const result = requestEndBattle({ owner, battleId: battleA }, { confirm: () => true });
@@ -298,8 +299,10 @@ test("applied A with synchronous B scene and workspace replacement skips stale c
 
   const sessionB = getWorkspaceSessionForTests();
   assert.equal(result.status, "applied");
+  assert.equal(result.persistenceUnconfirmed, true);
   assert.equal(result.cleanupSkipped, true);
   assert.equal(result.staleContext, true);
+  assert.match(result.warning, /subscriber replaced scene then failed/);
   assert.equal(getState().battleConsole.history.filter((entry) =>
     entry.id === battleA && entry.phase === "ended").length, 1);
   assert.equal(getState().battleConsole.current.id, battleB);
