@@ -135,7 +135,9 @@ export function getWorkspaceAttackFingerprint(state, sequenceId, kind, isFirstAt
       actionUsed: state.ui?.turn?.actionUsed === true,
       bonusActionUsed: state.ui?.turn?.bonusActionUsed === true,
       reactionUsed: state.ui?.turn?.reactionUsed === true,
-      kiAvailable: Number(state.combat?.ki?.current ?? 0) >= 1,
+      ...(kind === "flurry" ? {
+        kiAvailable: Number(state.combat?.ki?.current ?? 0) >= 1,
+      } : {}),
     } : {}),
   });
 }

@@ -644,6 +644,7 @@ function render() {
       session.workspaceSessionId,
       session.currentStepKey,
       Boolean(session.appliedUnsaved),
+      session.workspaceType === "attack" ? Boolean(session.readOnly) : null,
       session.workspaceType === "incoming" ? session.incomingDraft.stage : null,
       session.workspaceType === "incoming" && session.incomingDraft.stage === "save-input"
         ? [session.incomingDraft.saveDraft.source, session.incomingDraft.saveDraft.rollMode,
@@ -2749,7 +2750,8 @@ function submitAttack(outcome, button = null) {
 
 function submitDamage() {
   if (!session || session.currentStep !== "damage-input" ||
-      session.submitting || session.appliedUnsaved || !requireOwner()) return;
+      session.submitting || session.appliedUnsaved ||
+      (session.readOnly && session.pendingAttackIntent) || !requireOwner()) return;
   const form = getWorkspaceHost()?.querySelector('[data-workspace-form="damage"]');
   if (!form || !session.selectedDamage) return;
   const values = parseForm(form);
@@ -4541,7 +4543,8 @@ function handleAction(action, button = null) {
         !session.appliedUnsaved) finishCurrentSession();
   } else if (action === "retry-save") {
     retrySave();
-  } else if (action === "back") {
+  } else if (action === "back" &&
+      !(session.readOnly && session.pendingAttackIntent)) {
     if (session.currentStep === "damage-input" && session.pendingAttackIntent &&
         !session.readOnly && !session.submitting && !session.appliedUnsaved) {
       session.pendingAttackIntent = null;

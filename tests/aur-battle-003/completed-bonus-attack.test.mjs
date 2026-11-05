@@ -4,8 +4,12 @@ import {
   getSessionContext,
   getState,
   openCharacterSession,
+  updateState,
 } from "../../scripts/state.js";
+import { getWorkspaceAttackFingerprint } from "../../scripts/workspace/attack-adapter.js";
+import { beginOwnTurn, startBattle } from "../../scripts/battle/transitions.js";
 import {
+  commitCompletedNormalAttack,
   commitCompletedBonusAttack,
   previewCompletedBonusAttack,
   readCompletedBonusAttackReceipt,
@@ -207,6 +211,299 @@ test("slot and sequence-kind conflicts reject without applying bonus payment", (
   });
   assert.equal(commitCompletedBonusAttack(
     getSessionContext(), stale, "bonus-slot-stale-op",
+  ).status, "rejected");
+  assert.deepEqual(getState(), before);
+});
+
+test("bonus fingerprint ignores ki availability while first flurry fingerprints it", () => {
+  openSara();
+  const state = getState();
+  const zeroKi = structuredClone(state);
+  zeroKi.combat.ki.current = 0;
+  assert.equal(
+    getWorkspaceAttackFingerprint(state, "unstarted", "bonus-unarmed", true),
+    getWorkspaceAttackFingerprint(zeroKi, "unstarted", "bonus-unarmed", true),
+  );
+  assert.notEqual(
+    getWorkspaceAttackFingerprint(state, "unstarted", "flurry", true),
+    getWorkspaceAttackFingerprint(zeroKi, "unstarted", "flurry", true),
+  );
+  const paidFlurry = {
+    id: "paid-flurry-fingerprint",
+    kind: "flurry",
+    status: "open",
+    maximumAttacks: 2,
+    turnMarker: state.ui.turn.turnNumber,
+    battleId: null,
+    ownTurnId: null,
+    resolvedAttacks: [],
+  };
+  const paidState = structuredClone(state);
+  paidState.monk.combatAssistant.activeSequences = [paidFlurry];
+  paidState.combat.ki.current = 1;
+  const paidZeroKi = structuredClone(paidState);
+  paidZeroKi.combat.ki.current = 0;
+  assert.equal(
+    getWorkspaceAttackFingerprint(paidState, paidFlurry.id, "flurry", false),
+    getWorkspaceAttackFingerprint(paidZeroKi, paidFlurry.id, "flurry", false),
+  );
+});
+
+test("level and resource guards reject without mutation; level 2 permits a bonus attack", () => {
+  for (const kind of ["flurry", "bonus-unarmed"]) {
+    openSara();
+    updateState((draft) => { draft.profile.level = 1; });
+    const req = request(kind);
+    const before = structuredClone(getState());
+    const revision = getSessionContext().stateRevision;
+    const result = commitCompletedBonusAttack(
+      getSessionContext(), req, `level-one-${kind}`,
+    );
+    assert.equal(result.status, "rejected");
+    assert.deepEqual(getState(), before);
+    assert.equal(getSessionContext().stateRevision, revision);
+  }
+  openSara();
+  updateState((draft) => { draft.profile.level = 2; });
+  const req = request("bonus-unarmed");
+  assert.equal(commitCompletedBonusAttack(
+    getSessionContext(), req, "level-two-bonus",
+  ).status, "applied");
+});
+
+test("flurry attack count is two at level 16 and three at 17 with one total ki payment", () => {
+  for (const [level, count] of [[16, 2], [17, 3]]) {
+    openSara();
+    updateState((draft) => {
+      draft.profile.level = level;
+      draft.combat.ki.current = 1;
+    });
+    const kiBefore = getState().combat.ki.current;
+    for (let slot = 0; slot < count; slot += 1) {
+      const req = request("flurry", {
+        attackId: `flurry-${level}-${slot}`,
+        expectedUsedSlots: slot,
+        attack: {
+          profileId: "unarmed", rollMode: "normal", firstD20: "1",
+          secondD20: "", targetArmorClass: "", dmHitResult: null,
+          targetLabel: "", confirmSeparateAction: false, dmExceptionConfirmed: false,
+        },
+        damageRolls: [],
+      });
+      assert.equal(commitCompletedBonusAttack(
+        getSessionContext(), req, `flurry-${level}-op-${slot}`,
+      ).status, "applied");
+      const sequence = getState().monk.combatAssistant.activeSequences
+        .find((entry) => entry.id === req.sequenceId);
+      assert.equal(sequence.maximumAttacks, count);
+      assert.equal(sequence.resolvedAttacks.length, slot + 1);
+      assert.equal(getState().combat.ki.current, slot === 0 ? 0 : kiBefore - 1);
+    }
+    assert.equal(getState().combat.ki.current, 0);
+  }
+});
+
+test("unavailable ki and an already-used bonus action reject first flurry without mutation", () => {
+  openSara();
+  updateState((draft) => { draft.combat.ki.current = 0; });
+  let before = structuredClone(getState());
+  let revision = getSessionContext().stateRevision;
+  assert.equal(commitCompletedBonusAttack(
+    getSessionContext(), request(), "no-ki-first-flurry",
+  ).status, "rejected");
+  assert.deepEqual(getState(), before);
+  assert.equal(getSessionContext().stateRevision, revision);
+
+  openSara();
+  updateState((draft) => { draft.ui.turn.bonusActionUsed = true; });
+  before = structuredClone(getState());
+  revision = getSessionContext().stateRevision;
+  assert.equal(commitCompletedBonusAttack(
+    getSessionContext(), request(), "used-bonus-first-flurry",
+  ).status, "rejected");
+  assert.deepEqual(getState(), before);
+  assert.equal(getSessionContext().stateRevision, revision);
+});
+
+test("hit damage rejects empty and invalid rolls with exact state, revision, and Map storage unchanged", () => {
+  const previousWindow = globalThis.window;
+  const values = new Map();
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => values.delete(key),
+    },
+  };
+  try {
+    openSara();
+    for (const [damageRolls, operationId] of [
+      [[], "empty-damage"],
+      [["999"], "invalid-damage"],
+    ]) {
+      const before = structuredClone(getState());
+      const revision = getSessionContext().stateRevision;
+      const storage = new Map(values);
+      const result = commitCompletedBonusAttack(
+        getSessionContext(), request("flurry", { damageRolls }), operationId,
+      );
+      assert.equal(result.status, "rejected");
+      assert.deepEqual(getState(), before);
+      assert.equal(getSessionContext().stateRevision, revision);
+      assert.deepEqual(values, storage);
+    }
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("stale owner, battle, own turn, and turn marker reject without mutation", () => {
+  openSara();
+  updateState((draft) => {
+    startBattle(draft, { rawD20: "10" }, { id: "bonus-stale-battle" });
+    beginOwnTurn(draft, { id: "bonus-stale-own-turn" });
+  });
+  const base = request("bonus-unarmed");
+  const wrongOwner = { ...getSessionContext(), sessionGeneration: "replaced-generation" };
+  const invalidCases = [
+    [wrongOwner, base, "stale-owner"],
+    [getSessionContext(), { ...base, battleId: "wrong-battle", ownTurnId: "bonus-stale-own-turn" }, "stale-battle"],
+    [getSessionContext(), { ...base, battleId: "bonus-stale-battle", ownTurnId: "wrong-own-turn" }, "stale-own-turn"],
+    [getSessionContext(), { ...base, battleId: "bonus-stale-battle", ownTurnId: "bonus-stale-own-turn", turnMarker: base.turnMarker + 1 }, "stale-turn-marker"],
+  ];
+  for (const [owner, req, id] of invalidCases) {
+    const before = structuredClone(getState());
+    const revision = getSessionContext().stateRevision;
+    assert.equal(commitCompletedBonusAttack(owner, req, id).status, "rejected");
+    assert.deepEqual(getState(), before);
+    assert.equal(getSessionContext().stateRevision, revision);
+  }
+});
+
+test("unsupported sequence kind and ineligible attack profile reject without mutation", () => {
+  openSara();
+  const before = structuredClone(getState());
+  const revision = getSessionContext().stateRevision;
+  assert.equal(commitCompletedBonusAttack(
+    getSessionContext(), request("reaction-unarmed"), "unsupported-bonus-kind",
+  ).status, "rejected");
+  assert.equal(commitCompletedBonusAttack(
+    getSessionContext(), request("flurry", {
+      attack: { ...request().attack, profileId: "returnedProjectile" },
+    }), "disallowed-bonus-profile",
+  ).status, "rejected");
+  assert.deepEqual(getState(), before);
+  assert.equal(getSessionContext().stateRevision, revision);
+});
+
+test("critical bonus hit records two separate physical damage dice", () => {
+  openSara();
+  const req = request("bonus-unarmed", {
+    attack: {
+      profileId: "unarmed", rollMode: "normal", firstD20: "20",
+      secondD20: "", targetArmorClass: "", dmHitResult: null,
+      targetLabel: "", confirmSeparateAction: false, dmExceptionConfirmed: false,
+    },
+    damageRolls: ["2", "3"],
+  });
+  assert.equal(commitCompletedBonusAttack(
+    getSessionContext(), req, "bonus-critical-hit",
+  ).status, "applied");
+  const attack = getState().monk.combatAssistant.activeSequences[0].resolvedAttacks[0];
+  assert.equal(attack.critical, true);
+  assert.deepEqual(attack.damageRolls, [2, 3]);
+  assert.equal(attack.damageStatus, "recorded");
+});
+
+test("confirmed DM exception for natural 1 remains attached to completed bonus result", () => {
+  openSara();
+  const req = request("bonus-unarmed", {
+    attack: {
+      profileId: "unarmed", rollMode: "normal", firstD20: "1",
+      secondD20: "", targetArmorClass: "", dmHitResult: "hit",
+      targetLabel: "", confirmSeparateAction: false, dmExceptionConfirmed: true,
+    },
+    damageRolls: ["3"],
+  });
+  assert.equal(commitCompletedBonusAttack(
+    getSessionContext(), req, "bonus-dm-exception",
+  ).status, "applied");
+  const attack = getState().monk.combatAssistant.activeSequences[0].resolvedAttacks[0];
+  assert.equal(attack.hitResult, "hit");
+  assert.equal(attack.hitResolutionSource, "dm");
+  assert.equal(attack.rawD20Rolls[0], 1);
+});
+
+test("legacy flurry with inconsistent payment flags is rejected without repair or payment", () => {
+  openSara();
+  const req = request("flurry");
+  assert.equal(startAttackSequence(getSessionContext(), {
+    kind: "flurry", sequenceId: req.sequenceId, confirmed: true,
+  }, "legacy-inconsistent-start").status, "applied");
+  updateState((draft) => {
+    const sequence = draft.monk.combatAssistant.activeSequences
+      .find((entry) => entry.id === req.sequenceId);
+    sequence.resourcePaymentApplied = false;
+  });
+  const before = structuredClone(getState());
+  const revision = getSessionContext().stateRevision;
+  assert.equal(commitCompletedBonusAttack(
+    getSessionContext(), { ...req, expectedUsedSlots: 0 }, "legacy-inconsistent-continue",
+  ).status, "rejected");
+  assert.deepEqual(getState(), before);
+  assert.equal(getSessionContext().stateRevision, revision);
+});
+
+test("bonus completion preserves existing action and reaction flags", () => {
+  openSara();
+  updateState((draft) => {
+    draft.ui.turn.actionUsed = true;
+    draft.ui.turn.reactionUsed = true;
+  });
+  const req = request("bonus-unarmed");
+  assert.equal(commitCompletedBonusAttack(
+    getSessionContext(), req, "bonus-preserve-other-flags",
+  ).status, "applied");
+  assert.equal(getState().ui.turn.actionUsed, true);
+  assert.equal(getState().ui.turn.reactionUsed, true);
+});
+
+test("bonus sequence coexists with normal Attack while competing bonus sequences are rejected", () => {
+  openSara();
+  const normal = {
+    sequenceId: "coexisting-normal-attack",
+    attackId: "coexisting-normal-hit",
+    battleId: null,
+    ownTurnId: null,
+    turnMarker: Number(getState().ui.turn.turnNumber),
+    expectedUsedSlots: 0,
+    attack: {
+      profileId: "unarmed", rollMode: "normal", firstD20: "10",
+      secondD20: "", targetArmorClass: "", dmHitResult: "hit",
+      targetLabel: "", confirmSeparateAction: false, dmExceptionConfirmed: false,
+    },
+    damageRolls: ["3"],
+  };
+  assert.equal(commitCompletedNormalAttack(
+    getSessionContext(), normal, "coexist-normal-op",
+  ).status, "applied");
+  assert.equal(getState().ui.turn.actionUsed, true);
+  const bonus = request("bonus-unarmed", {
+    sequenceId: "coexisting-bonus-sequence",
+    attackId: "coexisting-bonus-hit",
+  });
+  assert.equal(commitCompletedBonusAttack(
+    getSessionContext(), bonus, "coexist-bonus-op",
+  ).status, "applied");
+  assert.equal(getState().monk.combatAssistant.activeSequences.length, 2);
+  assert.equal(getState().ui.turn.actionUsed, true);
+  const before = structuredClone(getState());
+  const competing = request("bonus-unarmed", {
+    sequenceId: "second-bonus-sequence",
+    attackId: "second-bonus-hit",
+  });
+  assert.equal(commitCompletedBonusAttack(
+    getSessionContext(), competing, "competing-bonus-op",
   ).status, "rejected");
   assert.deepEqual(getState(), before);
 });

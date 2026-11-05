@@ -448,7 +448,8 @@ export function renderAttackWorkspace(session, state) {
       calculateWorkspaceDamagePreview(snapshot, damageRolls, attack.critical).ok);
     footer = `<div class="workspace-task-actions">
       <button type="button" class="primary" data-workspace-action="submit-damage"
-        ${session.submitting || session.appliedUnsaved || !validDamage ? "disabled" : ""}>${session.pendingAttackIntent ? "Записать атаку и урон" : "Записать урон"}</button>
+        ${session.submitting || session.appliedUnsaved ||
+          session.readOnly && session.pendingAttackIntent || !validDamage ? "disabled" : ""}>${session.pendingAttackIntent ? "Записать атаку и урон" : "Записать урон"}</button>
       ${session.pendingAttackIntent ? "" : `<button type="button" data-workspace-action="outside-damage"
         ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Урон учтён вне приложения</button>`}
     </div>`;
