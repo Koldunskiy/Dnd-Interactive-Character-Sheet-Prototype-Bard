@@ -19,6 +19,9 @@ import {
   previewWorkspaceCompletedNormalAttack,
   submitWorkspaceCompletedNormalAttack,
   readWorkspaceCompletedNormalAttackReceipt,
+  previewWorkspaceCompletedBonusAttack,
+  submitWorkspaceCompletedBonusAttack,
+  readWorkspaceCompletedBonusAttackReceipt,
   submitWorkspaceAttack,
   submitWorkspaceSequenceAttack,
   submitWorkspaceDamage,
@@ -2484,6 +2487,46 @@ function runCompletedNormalMutation(capturedSession, request, operationIdValue) 
   return { status: "verification-required", error: thrown };
 }
 
+function runCompletedBonusMutation(capturedSession, request, operationIdValue) {
+  const owner = { ...capturedSession.owner };
+  const sessionId = capturedSession.workspaceSessionId;
+  const before = previewWorkspaceCompletedBonusAttack(getState(), request);
+  if (!before.ok) return { status: "rejected", reason: before.reason };
+  const normalizedRequest = before.request;
+  let result = null;
+  let thrown = null;
+  capturedSession.submitting = true;
+  try {
+    result = submitWorkspaceCompletedBonusAttack(owner, normalizedRequest, operationIdValue);
+  } catch (error) {
+    thrown = error;
+  } finally {
+    if (session === capturedSession && session.workspaceSessionId === sessionId &&
+        isWorkspaceOwnerCurrent(owner)) {
+      session.submitting = false;
+    }
+  }
+  if (session !== capturedSession || !isWorkspaceOwnerCurrent(owner)) {
+    return { status: "replaced" };
+  }
+  if (!thrown) return result;
+  try {
+    if (!isWorkspaceOwnerCurrent(owner) || session !== capturedSession) {
+      return { status: "replaced" };
+    }
+    const receipt = readWorkspaceCompletedBonusAttackReceipt(getState(), operationIdValue);
+    if (receipt?.sequence?.id === normalizedRequest.sequenceId &&
+        receipt?.sequence?.kind === normalizedRequest.sequenceKind &&
+        receipt?.attack?.id === normalizedRequest.attackId &&
+        stableRequestString(receipt.request) === stableRequestString(normalizedRequest)) {
+      return { status: "applied", recovered: true, persistence: { ok: false } };
+    }
+  } catch {
+    return { status: "verification-required", error: thrown };
+  }
+  return { status: "verification-required", error: thrown };
+}
+
 function submitAttack(outcome, button = null) {
   if (!session || session.workspaceType !== "attack" ||
       session.currentStep !== "attack-input" ||
@@ -2574,10 +2617,14 @@ function submitAttack(outcome, button = null) {
   const submittingSessionId = session.workspaceSessionId;
   const submittingOwner = session.owner;
   const intent = `attack:${currentAttackId}`;
-  if (session.sequenceKind === "attack-action") {
+  if (["attack-action", "flurry", "bonus-unarmed"].includes(session.sequenceKind)) {
     const request = {
       sequenceId: session.sequenceId,
       attackId: currentAttackId,
+      ...(session.sequenceKind === "attack-action" ? {} : {
+        sequenceKind: session.sequenceKind,
+        start: session.bonusStart,
+      }),
       battleId: state.battleConsole?.current?.id ?? null,
       ownTurnId: state.battleConsole?.current?.phase === "own-turn"
         ? state.battleConsole.current.ownTurnId : null,
@@ -2586,7 +2633,11 @@ function submitAttack(outcome, button = null) {
       attack: { ...values, dmHitResult: outcome, dmExceptionConfirmed: raw.dmExceptionConfirmed },
       damageRolls: [],
     };
-    const completedPreview = previewWorkspaceCompletedNormalAttack(state, request);
+    const bonusSequence = session.sequenceKind === "flurry" ||
+      session.sequenceKind === "bonus-unarmed";
+    const completedPreview = bonusSequence
+      ? previewWorkspaceCompletedBonusAttack(state, request)
+      : previewWorkspaceCompletedNormalAttack(state, request);
     if (!completedPreview.ok) {
       setError(completedPreview.reason);
       render();
@@ -2614,7 +2665,9 @@ function submitAttack(outcome, button = null) {
       return;
     }
     request.damageRolls = [];
-    const result = runCompletedNormalMutation(session, request, operationId(intent));
+    const result = bonusSequence
+      ? runCompletedBonusMutation(session, request, operationId(intent))
+      : runCompletedNormalMutation(session, request, operationId(intent));
     if (result.status === "replaced" || session?.workspaceSessionId !== submittingSessionId ||
         !isWorkspaceOwnerCurrent(submittingOwner)) return;
     if (result.status === "verification-required") {
@@ -2703,7 +2756,8 @@ function submitDamage() {
   session.rawInputsByStep[session.currentStepKey] = values;
   session.dirty = true;
   const { sequence, attack } = session.selectedDamage;
-  if (session.pendingAttackIntent && session.sequenceKind === "attack-action") {
+  if (session.pendingAttackIntent &&
+      ["attack-action", "flurry", "bonus-unarmed"].includes(session.sequenceKind)) {
     const rolls = attack.critical
       ? [values.damage1 ?? "", values.damage2 ?? ""]
       : [values.damage1 ?? ""];
@@ -2724,13 +2778,19 @@ function submitDamage() {
       render();
       return;
     }
-    const preview = previewWorkspaceCompletedNormalAttack(getState(), request);
+    const bonusSequence = session.sequenceKind === "flurry" ||
+      session.sequenceKind === "bonus-unarmed";
+    const preview = bonusSequence
+      ? previewWorkspaceCompletedBonusAttack(getState(), request)
+      : previewWorkspaceCompletedNormalAttack(getState(), request);
     if (!preview.ok || preview.stage !== "complete") {
       setError(preview.reason ?? "Полный результат атаки ещё не готов.");
       render();
       return;
     }
-    const result = runCompletedNormalMutation(session, request, intent.operationId);
+    const result = bonusSequence
+      ? runCompletedBonusMutation(session, request, intent.operationId)
+      : runCompletedNormalMutation(session, request, intent.operationId);
     if (result.status === "replaced" ||
         session?.workspaceSessionId !== intent.workspaceSessionId ||
         !isWorkspaceOwnerCurrent(intent.owner)) return;
@@ -2895,6 +2955,55 @@ function applyStrikeToCurrentHit() {
 }
 
 function startCommandAttack(kind, values, { parentFeature = null } = {}) {
+  if (["flurry", "bonus-unarmed"].includes(kind)) {
+    const state = getState();
+    const level = Number(state.profile?.level);
+    if (level < 2) {
+      return { status: "rejected", reason: "Бонусные безоружные атаки доступны со 2 уровня." };
+    }
+    if (state.battleConsole?.current &&
+        state.battleConsole.current.phase !== "own-turn") {
+      return { status: "rejected", reason: "Эту боевую атаку можно начать только в свой ход." };
+    }
+    if (state.ui?.turn?.bonusActionUsed === true) {
+      return { status: "rejected", reason: "Бонусное действие уже использовано в этом ходу." };
+    }
+    if (kind === "flurry" &&
+        (values.confirmed !== true || !Number.isInteger(Number(state.combat?.ki?.current)) ||
+          Number(state.combat.ki.current) < 1)) {
+      return { status: "rejected", reason: "Подтвердите начало Шквала и наличие 1 ци." };
+    }
+    if (kind === "bonus-unarmed" && values.triggerConfirmed !== true) {
+      return { status: "rejected", reason: "Подтвердите условие бонусной атаки Боевых искусств." };
+    }
+    session.workspaceType = "attack";
+    session.sequenceKind = kind;
+    session.bonusStart = {
+      confirmed: values.confirmed === true,
+      triggerConfirmed: values.triggerConfirmed === true,
+      parentId: session.parentSequenceId ?? null,
+      parentFeature: null,
+    };
+    session.isExistingSequence = false;
+    session.firstAttempt = true;
+    session.readOnly = false;
+    session.historicalOnly = false;
+    session.pendingAttackIntent = null;
+    session.capabilities = {
+      canRecordAttack: true,
+      canRecordDamage: false,
+      canContinueSequence: false,
+    };
+    session.status = "";
+    session.appliedUnsaved = false;
+    session.relevantPreviewFingerprint = getRelevantFingerprint(
+      state, session.sequenceId, true,
+    );
+    session.rawInputsByStep[stepKey("attack-input", session.attackId)] = {};
+    session.dirty = false;
+    setStep("attack-input", session.attackId);
+    return { status: "prepared" };
+  }
   const operation = operationId(`start:${session.scenarioId}`);
   const result = startAttackSequence(session.owner, {
     kind,
@@ -3281,6 +3390,14 @@ function submitCommand() {
     });
   } else {
     result = { status: "rejected", reason: "Для этой команды ещё нет подключённого исполнителя." };
+  }
+  if (result.status === "prepared" && ["flurry", "bonus-unarmed"].includes(id)) {
+    session.submitting = false;
+    session.dirty = false;
+    session.appliedUnsaved = false;
+    session.error = "";
+    render();
+    return;
   }
   session.submitting = false;
   if (result.status !== "applied") {
@@ -4280,7 +4397,8 @@ function handleAction(action, button = null) {
   } else if (action === "submit-damage") {
     submitDamage();
   } else if (action === "cancel-attack-draft" &&
-      session.workspaceType === "attack" && session.sequenceKind === "attack-action" &&
+      session.workspaceType === "attack" &&
+      ["attack-action", "flurry", "bonus-unarmed"].includes(session.sequenceKind) &&
       !session.historicalOnly && !session.readOnly &&
       (session.pendingAttackIntent || session.currentStep === "attack-input") &&
       !session.submitting && !session.appliedUnsaved) {
@@ -4424,7 +4542,8 @@ function handleAction(action, button = null) {
   } else if (action === "retry-save") {
     retrySave();
   } else if (action === "back") {
-    if (session.currentStep === "damage-input" && session.pendingAttackIntent) {
+    if (session.currentStep === "damage-input" && session.pendingAttackIntent &&
+        !session.readOnly && !session.submitting && !session.appliedUnsaved) {
       session.pendingAttackIntent = null;
       session.currentStep = "attack-input";
       session.currentStepKey = stepKey("attack-input", session.attackId);

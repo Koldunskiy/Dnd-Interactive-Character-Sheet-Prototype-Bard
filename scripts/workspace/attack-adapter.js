@@ -1,11 +1,14 @@
 import { getDerivedStats } from "../calculations.js";
 import {
   closeAttackSequence,
+  commitCompletedBonusAttack,
   commitCompletedNormalAttack,
   getSaraAttackCount,
   markAttackDamageOutside,
   previewCompletedNormalAttack,
+  previewCompletedBonusAttack,
   readCompletedNormalAttackReceipt,
+  readCompletedBonusAttackReceipt,
   recordAttackDamage,
   recordAttackOutcome,
 } from "../actions/sara-combat.js";
@@ -132,6 +135,7 @@ export function getWorkspaceAttackFingerprint(state, sequenceId, kind, isFirstAt
       actionUsed: state.ui?.turn?.actionUsed === true,
       bonusActionUsed: state.ui?.turn?.bonusActionUsed === true,
       reactionUsed: state.ui?.turn?.reactionUsed === true,
+      kiAvailable: Number(state.combat?.ki?.current ?? 0) >= 1,
     } : {}),
   });
 }
@@ -155,6 +159,19 @@ export function submitWorkspaceCompletedNormalAttack(owner, request, operationId
 
 export function readWorkspaceCompletedNormalAttackReceipt(state, operationId) {
   return readCompletedNormalAttackReceipt(state, operationId);
+}
+
+export function previewWorkspaceCompletedBonusAttack(state, request) {
+  return previewCompletedBonusAttack(state, request);
+}
+
+export function submitWorkspaceCompletedBonusAttack(owner, request, operationId) {
+  if (!isWorkspaceOwnerCurrent(owner)) return { status: "rejected", reason: "stale-session" };
+  return commitCompletedBonusAttack(getWorkspaceAttackContext(), request, operationId);
+}
+
+export function readWorkspaceCompletedBonusAttackReceipt(state, operationId) {
+  return readCompletedBonusAttackReceipt(state, operationId);
 }
 
 export function submitWorkspaceAttack(owner, sequenceId, attackId, input, operationId) {

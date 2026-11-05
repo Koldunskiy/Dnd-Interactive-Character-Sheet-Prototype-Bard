@@ -18,6 +18,7 @@ test("shared workspace applies battle commands, explicit roll outcomes, and save
   const flurry = openSaraBattleCommand("flurry");
   assert.equal(flurry.ok, true);
   const kiBeforeFlurry = getState().combat.ki.current;
+  const revisionBeforeFlurry = getSessionContext().stateRevision;
   dialog.forms.command = new FixtureForm("command", { confirmed: true });
   fireWorkspaceAction(dialog, "apply-command");
 
@@ -27,9 +28,10 @@ test("shared workspace applies battle commands, explicit roll outcomes, and save
   assert.equal(getWorkspaceSessionForTests().workspaceType, "attack");
   assert.equal(getWorkspaceSessionForTests().sequenceKind, "flurry");
   assert.equal(getWorkspaceSessionForTests().currentStep, "attack-input");
-  assert.equal(sequence.maximumAttacks, Number(getState().profile.level) >= 17 ? 3 : 2);
-  assert.equal(getState().combat.ki.current, kiBeforeFlurry - 1);
-  assert.equal(getState().ui.turn.bonusActionUsed, true);
+  assert.equal(sequence, undefined);
+  assert.equal(getSessionContext().stateRevision, revisionBeforeFlurry);
+  assert.equal(getState().combat.ki.current, kiBeforeFlurry);
+  assert.equal(getState().ui.turn.bonusActionUsed, false);
   assert.equal(getState().ui.turn.actionUsed, false);
   disposeWorkspaceOwner(getSessionContext(), "test-complete");
 
@@ -40,7 +42,7 @@ test("shared workspace applies battle commands, explicit roll outcomes, and save
   fireWorkspaceAction(dialog, "apply-command");
 
   assert.equal(getState().ui.turn.actionUsed, true);
-  assert.equal(getState().ui.turn.bonusActionUsed, true);
+  assert.equal(getState().ui.turn.bonusActionUsed, false);
   assert.equal(getState().combat.ki.current, kiBeforeDash);
   assert.match(getState().monk.combatAssistant.recentlyCompletedSummaries.at(-1).reminder, /расстояние определяется за столом/);
   disposeWorkspaceOwner(getSessionContext(), "test-complete");

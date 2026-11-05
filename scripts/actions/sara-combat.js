@@ -813,6 +813,192 @@ function normalizeCompletedNormalAttackRequest(request) {
   return { ok: true, request: normalized };
 }
 
+function normalizeCompletedBonusAttackRequest(request) {
+  const normal = normalizeCompletedNormalAttackRequest(request);
+  if (!normal.ok || !["flurry", "bonus-unarmed"].includes(request?.sequenceKind)) {
+    return { ok: false, reason: "Запрос завершённой бонусной атаки имеет неверный формат." };
+  }
+  const start = request.start ?? {};
+  const normalized = {
+    ...normal.request,
+    sequenceKind: request.sequenceKind,
+    start: {
+      confirmed: start.confirmed === true,
+      triggerConfirmed: start.triggerConfirmed === true,
+      parentId: typeof start.parentId === "string" && start.parentId.trim()
+        ? start.parentId.trim() : null,
+      parentFeature: typeof start.parentFeature === "string" && start.parentFeature.trim()
+        ? start.parentFeature.trim() : null,
+    },
+  };
+  if (normalized.start.parentFeature != null) {
+    return { ok: false, reason: "Новый бонусный удар не может быть ответной или continuation-атакой." };
+  }
+  return { ok: true, request: normalized };
+}
+
+function completedBonusReceiptFromState(state, operationId) {
+  for (const sequence of state?.monk?.combatAssistant?.activeSequences ?? []) {
+    const attack = sequence.resolvedAttacks?.find((entry) =>
+      entry.completedOperation?.operationId === operationId);
+    if (attack) return { sequence, attack, ...attack.completedOperation };
+  }
+  return null;
+}
+
+export function readCompletedBonusAttackReceipt(state, operationId) {
+  return typeof operationId === "string" && operationId.trim()
+    ? completedBonusReceiptFromState(state, operationId) : null;
+}
+
+export function previewCompletedBonusAttack(state, request) {
+  const normalized = normalizeCompletedBonusAttackRequest(request);
+  if (!normalized.ok) return normalized;
+  const input = normalized.request;
+  const existing = (state?.monk?.combatAssistant?.activeSequences ?? [])
+    .find((entry) => entry.id === input.sequenceId);
+  if (existing && existing.kind !== input.sequenceKind) {
+    return { ok: false, reason: "Вид последовательности не совпадает с запросом." };
+  }
+  const preview = previewCompletedNormalAttack(state, input);
+  return preview.ok ? { ...preview, request: input } : preview;
+}
+
+export function commitCompletedBonusAttack(context, request, operationId) {
+  if (typeof operationId !== "string" || !operationId.trim()) {
+    return reject("Для операции требуется стабильный идентификатор.");
+  }
+  if (!isCurrentSession(context)) return reject("stale-session");
+  const normalized = normalizeCompletedBonusAttackRequest(request);
+  if (!normalized.ok) return reject(normalized.reason);
+  const input = normalized.request;
+  const prior = readCompletedBonusAttackReceipt(getState(), operationId);
+  if (prior) {
+    return JSON.stringify(prior.request) === JSON.stringify(input)
+      ? { status: "replayed", receipt: prior }
+      : reject("operation-collision");
+  }
+  const initialPreview = previewCompletedBonusAttack(getState(), input);
+  if (!initialPreview.ok || initialPreview.stage !== "complete") {
+    return reject(initialPreview.reason ?? "Завершённый результат атаки не готов.");
+  }
+  let receipt;
+  return commit(context, operationId, {
+    kind: "sara-completed-bonus-attack",
+    sequenceId: input.sequenceId,
+    attackId: input.attackId,
+    sequenceKind: input.sequenceKind,
+  }, (draft) => {
+    if (!isSara(draft)) throw new Error("Бонусная последовательность доступна только в листе Сары.");
+    const fresh = previewCompletedBonusAttack(draft, input);
+    if (!fresh.ok || fresh.stage !== "complete") {
+      throw new Error(fresh.reason ?? "Завершённый результат атаки не готов.");
+    }
+    const assistant = ensureCombatAssistant(draft);
+    let sequence = assistant.activeSequences.find((entry) => entry.id === input.sequenceId);
+    const battle = draft.battleConsole?.current;
+    if (Number(draft.ui?.turn?.turnNumber ?? 1) !== input.turnMarker ||
+        (battle?.id ?? null) !== input.battleId ||
+        (battle?.phase === "own-turn" ? battle.ownTurnId : null) !== input.ownTurnId ||
+        validateBattleActionPhase(draft, input.sequenceKind)) {
+      throw new Error("Контекст хода или боя изменился.");
+    }
+    const first = !sequence;
+    if (first) {
+      const level = Number(draft.profile?.level);
+      if (assistant.activeSequences.some((entry) => entry.id === input.sequenceId) ||
+          assistant.activeSequences.some((entry) => entry.status === "open" &&
+            !mayRunAlongside(input.sequenceKind, entry.kind)) ||
+          input.expectedUsedSlots !== 0 || level < 2 ||
+          draft.ui?.turn?.bonusActionUsed === true) {
+        throw new Error("Нельзя начать новую бонусную последовательность.");
+      }
+      if (input.sequenceKind === "flurry") {
+        const ki = Number(draft.combat?.ki?.current);
+        if (input.start.confirmed !== true || !Number.isInteger(ki) || ki < 1) {
+          throw new Error("Для Шквала подтвердите начало и наличие 1 ци.");
+        }
+        draft.combat.ki.current = ki - 1;
+      } else if (input.start.triggerConfirmed !== true) {
+        throw new Error("Подтвердите условие бонусной атаки Боевых искусств.");
+      }
+      sequence = createSequenceRecord(draft, input.sequenceId, input.sequenceKind, {
+        parentId: input.start.parentId ?? operationId,
+        parentFeature: null,
+      });
+      sequence.resourcePaymentApplied = input.sequenceKind === "flurry";
+      sequence.actionFlagApplied = true;
+      assistant.activeSequences.push(sequence);
+      draft.ui.turn.bonusActionUsed = true;
+    } else {
+      if (sequence.kind !== input.sequenceKind || sequence.status !== "open" ||
+          sequence.battleId !== input.battleId || sequence.ownTurnId !== input.ownTurnId ||
+          Number(sequence.turnMarker) !== input.turnMarker ||
+          getUsedAttackSlots(sequence) !== input.expectedUsedSlots ||
+          (input.sequenceKind === "flurry" &&
+            (!sequence.resourcePaymentApplied || !sequence.actionFlagApplied)) ||
+          (input.sequenceKind === "bonus-unarmed" &&
+            (sequence.resourcePaymentApplied || !sequence.actionFlagApplied))) {
+        throw new Error("Последовательность, оплата или ожидаемый слот устарели.");
+      }
+    }
+    if (!isAttackProfileEligible(input.sequenceKind, input.attack.profileId,
+        getDerivedStats(draft).saraAttackProfiles, draft)) {
+      throw new Error("Этот профиль атаки недопустим для бонусной последовательности.");
+    }
+    if (sequence.resolvedAttacks.some((entry) => entry.id === input.attackId) ||
+        getUsedAttackSlots(sequence) >= sequence.maximumAttacks) {
+      throw new Error("Слот атаки уже занят или последовательность завершена.");
+    }
+    const attack = {
+      id: input.attackId,
+      profileId: input.attack.profileId,
+      profileSnapshot: structuredClone(fresh.attack.profile),
+      optionalTargetLabel: input.attack.targetLabel,
+      rawD20Rolls: fresh.attack.rawD20Rolls,
+      rollMode: fresh.attack.rollMode,
+      chosenD20: fresh.attack.chosenD20,
+      attackBonusSnapshot: fresh.attack.attackBonusSnapshot,
+      targetArmorClass: input.attack.targetArmorClass.trim() === ""
+        ? null : Number(input.attack.targetArmorClass),
+      attackTotal: fresh.attack.attackTotal,
+      hitResolutionSource: fresh.attack.hitResolutionSource,
+      hitResult: fresh.attack.hitResult ? "hit" : "miss",
+      critical: fresh.attack.critical,
+      damageRolls: fresh.damage?.damageRolls ?? null,
+      damageModifierSnapshot: fresh.damage?.damageModifierSnapshot ?? null,
+      damageTotalBeforeTargetModifiers: fresh.damage?.damageTotalBeforeTargetModifiers ?? null,
+      damageStatus: fresh.attack.hitResult ? "recorded" : "not-applicable",
+      techniqueApplicationId: null,
+      completedOperation: {
+        operationId,
+        request: structuredClone(input),
+        outcome: fresh.attack.hitResult ? "hit" : "miss",
+      },
+    };
+    closeRestWindow(draft, "recorded-attack");
+    sequence.resolvedAttacks.push(attack);
+    attack.slotNumber = getUsedAttackSlots(sequence);
+    sequence.status = getUsedAttackSlots(sequence) >= sequence.maximumAttacks
+      ? "complete" : "open";
+    pruneCombatHistory(assistant, draft);
+    receipt = { sequenceId: sequence.id, attackId: attack.id, outcome: attack.hitResult };
+    return draft;
+  }, (current) => {
+    const fresh = previewCompletedBonusAttack(current, input);
+    if (!fresh.ok || fresh.stage !== "complete") {
+      return fresh.reason ?? "Завершённый результат атаки не готов.";
+    }
+    const sequence = (current.monk?.combatAssistant?.activeSequences ?? [])
+      .find((entry) => entry.id === input.sequenceId);
+    if (sequence && (sequence.status !== "open" ||
+        getUsedAttackSlots(sequence) !== input.expectedUsedSlots)) {
+      return "Последовательность или ожидаемый слот атаки устарел.";
+    }
+    return null;
+  });
+}
+
 function completedNormalAttackReceiptFromState(state, operationId) {
   for (const sequence of state?.monk?.combatAssistant?.activeSequences ?? []) {
     const attack = sequence.resolvedAttacks?.find((entry) =>

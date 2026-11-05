@@ -377,7 +377,7 @@ export function renderAttackWorkspace(session, state) {
       entry.id === session.sequenceId)
     : null;
   const commandTitle = session.command?.titleRu ?? "Действие «Атака»";
-  const attackCount = sequence?.maximumAttacks ?? getSaraAttackCount(state);
+  const attackCount = sequence?.maximumAttacks ?? getSaraAttackCount(state, session.sequenceKind);
   const currentAttackNumber = session.currentStep === "attack-input"
     ? getUsedAttackSlots(sequence) + 1
     : attackNumber(state, session);
@@ -398,7 +398,8 @@ export function renderAttackWorkspace(session, state) {
   const header = session.workspaceType === "attack"
     ? `<div class="workspace-task-heading"><h2 id="workspaceDialogTitle" tabindex="-1"
         data-workspace-title>${escapeHtml(heading)}</h2>
-        ${session.pendingAttackIntent && session.currentStep === "damage-input"
+        ${session.pendingAttackIntent && session.currentStep === "damage-input" &&
+          !session.readOnly && !session.submitting && !session.appliedUnsaved
           ? `<button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>`
           : ""}
         ${session.pendingAttackIntent ? "" : `<button type="button" class="workspace-defer" data-workspace-action="minimize">Отложить</button>`}</div>`
@@ -421,7 +422,8 @@ export function renderAttackWorkspace(session, state) {
       <button type="button" class="primary" data-workspace-action="attack-hit" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: попадание" : "Попадание"}</button>
       <button type="button" data-workspace-action="attack-miss" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: промах" : "Промах"}</button>
     </div>`;
-    if (session.sequenceKind === "attack-action" && !session.readOnly &&
+    if (["attack-action", "flurry", "bonus-unarmed"].includes(session.sequenceKind) &&
+        !session.readOnly && !session.submitting && !session.appliedUnsaved &&
         !session.historicalOnly && !session.selectedDamage) {
       footer += `<button type="button" class="btn btn--utility" data-workspace-action="cancel-attack-draft">Отмена текущего удара</button>`;
     }
@@ -450,7 +452,8 @@ export function renderAttackWorkspace(session, state) {
       ${session.pendingAttackIntent ? "" : `<button type="button" data-workspace-action="outside-damage"
         ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Урон учтён вне приложения</button>`}
     </div>`;
-    if (session.pendingAttackIntent) {
+    if (session.pendingAttackIntent && !session.readOnly &&
+        !session.submitting && !session.appliedUnsaved) {
       footer += `<button type="button" class="btn btn--utility" data-workspace-action="cancel-attack-draft">Отмена текущего удара</button>`;
     }
   } else if (session.currentStep === "seeking-input") {
