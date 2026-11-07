@@ -8,9 +8,20 @@ import {
   updateState,
 } from "../../scripts/state.js";
 import {
+  discardWorkspaceDraft,
+  getWorkspaceRecoverySessions,
   getWorkspaceSessionForTests,
+  openIncomingAttack,
   openNormalAttack,
+  reconcileWorkspaceAfterStateChange,
+  resumeWorkspace,
 } from "../../scripts/workspace/controller.js";
+import {
+  bindBattleConsole,
+  renderBattleConsole,
+  updateBattleConsole,
+} from "../../scripts/render/render-battle-console.js";
+import { RecoveryConsoleRoot, Control } from "./recovery-console-fixture.mjs";
 import {
   fireWorkspaceActionStrict,
   fireWorkspaceInput,
@@ -218,6 +229,9 @@ test("persistence retry after completed hit does not add another slot", () => {
     };
     fireWorkspaceActionStrict(dialog, "submit-damage", { apply: true });
     assert.equal(getWorkspaceSessionForTests().appliedUnsaved, true);
+    assert.equal(getWorkspaceRecoverySessions().find((entry) =>
+      entry.workspaceSessionId === getWorkspaceSessionForTests().workspaceSessionId)
+      .recoveryKind, "save");
     const revision = getSessionContext().stateRevision;
     const attackId = getWorkspaceSessionForTests().attackId;
     fireWorkspaceActionStrict(dialog, "retry-save");
@@ -322,8 +336,61 @@ test("canonical inspection failure enters verification without retrying the comm
       value: savedSequences,
     });
     assert.equal(savedSequences[0].resolvedAttacks.length, 1);
-    assert.equal(getWorkspaceSessionForTests().readOnly, true);
-    assert.match(getWorkspaceSessionForTests().error, /Повтор заблокирован/);
+    const verificationSession = getWorkspaceSessionForTests();
+    assert.equal(verificationSession.readOnly, true);
+    assert.equal(verificationSession.operationVerificationRequired, true);
+    assert.equal(verificationSession.dirty, true);
+    assert.match(verificationSession.error, /Повтор заблокирован/);
+    const recovery = getWorkspaceRecoverySessions().find((entry) =>
+      entry.workspaceSessionId === getWorkspaceSessionForTests().workspaceSessionId);
+    assert.equal(recovery.recoveryKind, "verification");
+    assert.deepEqual(Object.keys(recovery).sort(), [
+      "label", "recoveryKind", "workspaceSessionId", "workspaceType",
+    ]);
+    const stateBeforeDiscard = structuredClone(getState());
+    const revisionBeforeDiscard = getSessionContext().stateRevision;
+    const storageBeforeDiscard = new Map(window.localStorage.values);
+    assert.equal(discardWorkspaceDraft(verificationSession.workspaceSessionId).ok, false);
+    assert.deepEqual(getState(), stateBeforeDiscard);
+    assert.equal(getSessionContext().stateRevision, revisionBeforeDiscard);
+    assert.deepEqual(window.localStorage.values, storageBeforeDiscard);
+    assert.deepEqual(getWorkspaceSessionForTests().rawInputsByStep,
+      verificationSession.rawInputsByStep);
+    reconcileWorkspaceAfterStateChange(getState(), {
+      kind: "persistence-retry",
+      persistenceResult: { ok: true },
+    });
+    assert.equal(getWorkspaceSessionForTests().operationVerificationRequired, true);
+
+    const recoverySessionId = verificationSession.workspaceSessionId;
+    assert.equal(openIncomingAttack().ok, true);
+    const beforeOpenRecovery = structuredClone(getState());
+    const revisionBeforeOpenRecovery = getSessionContext().stateRevision;
+    const initialMarkup = renderBattleConsole(getState());
+    assert.match(initialMarkup, /data-sara-workspace-recovery/);
+    assert.doesNotMatch(initialMarkup, /data-sara-pending-work hidden/);
+    const root = new RecoveryConsoleRoot();
+    const previousElement = globalThis.Element;
+    globalThis.Element = Control;
+    try {
+      bindBattleConsole(root);
+      updateBattleConsole(root, getState());
+      const recoveryRegion = root.shell.querySelector("[data-sara-pending-work]");
+      assert.equal(recoveryRegion.hidden, false);
+      const recoveryControl = recoveryRegion.controls.find((control) =>
+        control.dataset.workspaceRecovery === recoverySessionId);
+      assert.ok(recoveryControl?.isConnected);
+      root.click(recoveryControl);
+      assert.equal(getWorkspaceSessionForTests().workspaceSessionId, recoverySessionId);
+      assert.deepEqual(getState(), beforeOpenRecovery);
+      assert.equal(getSessionContext().stateRevision, revisionBeforeOpenRecovery);
+      openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+      assert.equal(getWorkspaceRecoverySessions().some((entry) =>
+        entry.workspaceSessionId === recoverySessionId), false);
+      assert.equal(resumeWorkspace(recoverySessionId).ok, false);
+    } finally {
+      globalThis.Element = previousElement;
+    }
   } finally {
     removeSubscriber?.();
     if (stateForRestore && savedSequences) {

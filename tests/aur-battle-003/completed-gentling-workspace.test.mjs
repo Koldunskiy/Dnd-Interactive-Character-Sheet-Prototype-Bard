@@ -10,6 +10,7 @@ import {
 import { executeBattleCommand } from "../../scripts/battle/commands.js";
 import {
   disposeWorkspaceOwner,
+  discardWorkspaceDraft,
   getActiveWorkspaceSession,
   getWorkspaceSessionForTests,
   minimizeWorkspace,
@@ -386,9 +387,23 @@ test("W19: storage retry success with receipt inspection failure stays verificat
     assert.match(session.error, /Gentling Touch/);
     assert.match(dialog.body.innerHTML, /Gentling Touch/);
     const before = structuredClone(getState());
+    const revisionBeforeExit = getSessionContext().stateRevision;
+    const storageBeforeExit = new Map(window.localStorage.values);
+    const operationId = session.gentlingRecovery.operationId;
+    const workspaceId = session.workspaceSessionId;
+    fireWorkspaceAction(dialog, "finish-workspace");
+    fireWorkspaceAction(dialog, "confirm-close");
+    fireWorkspaceAction(dialog, "close");
+    fireWorkspaceAction(dialog, "back");
+    fireWorkspaceAction(dialog, "close-attack-remainder");
+    assert.equal(discardWorkspaceDraft(workspaceId).ok, false);
     fireWorkspaceAction(dialog, "submit-gentling");
     fireWorkspaceAction(dialog, "cancel-contextual");
     assert.deepEqual(getState(), before);
+    assert.equal(getSessionContext().stateRevision, revisionBeforeExit);
+    assert.deepEqual(window.localStorage.values, storageBeforeExit);
+    assert.equal(getWorkspaceSessionForTests().workspaceSessionId, workspaceId);
+    assert.equal(getWorkspaceSessionForTests().gentlingRecovery.operationId, operationId);
     assert.equal(getState().combat.ki.current, ki - 1);
     assert.equal(getState().monk.combatAssistant.activeSequences[0].replacementResults.length, 1);
     assert.equal(getSessionContext().stateRevision, revision);

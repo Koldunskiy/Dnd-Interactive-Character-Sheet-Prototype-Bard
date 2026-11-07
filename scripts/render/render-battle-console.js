@@ -458,7 +458,6 @@ export function updateBattleConsole(root, state, { forceUi = false } = {}) {
   for (const selector of [
     "[data-sara-budget]",
     "[data-sara-navigation]",
-    "[data-sara-pending-work]",
     "[data-sara-turn-controls]",
   ]) {
     const region = shell.querySelector(selector);

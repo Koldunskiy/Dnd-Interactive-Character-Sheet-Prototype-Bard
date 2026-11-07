@@ -4545,7 +4545,9 @@ function closeAttackRemainder() {
   const sequence = getSequence();
   if (!session || !sequence || sequence.status !== "open" ||
       getUsedAttackSlots(sequence) >= sequence.maximumAttacks ||
-      session.submitting || session.appliedUnsaved || !requireOwner()) return;
+      session.submitting || session.appliedUnsaved ||
+      hasExplicitWorkspaceVerification(session) || session.historicalOnly ||
+      !requireOwner()) return;
   session.submitting = true;
   const result = abandonWorkspaceSequence(
     session.owner,
@@ -4926,7 +4928,8 @@ function handleAction(action, button = null) {
     setStep("summary", session.attackId);
   } else if (action === "finish-workspace") {
     if (session.currentStep === "summary" && !session.submitting &&
-        !session.appliedUnsaved) finishCurrentSession();
+        !session.appliedUnsaved &&
+        !hasExplicitWorkspaceVerification(session)) finishCurrentSession();
   } else if (action === "retry-save") {
     retrySave();
   } else if (action === "back" &&
@@ -5123,7 +5126,8 @@ function getAllWorkspaceSessions() {
 }
 
 function isUnrecordedWorkspaceDraft(entry) {
-  if (entry.workspaceType === "incoming") return false;
+  if (entry.workspaceType === "incoming" || entry.submitting ||
+      entry.appliedUnsaved || hasExplicitWorkspaceVerification(entry)) return false;
   return entry.dirty === true && !entry.appliedUnsaved && !entry.submitting &&
     ["attack-input", "damage-input", "command-input", "strike-input",
       "seeking-input", "gentling-input"].includes(entry.currentStep);
@@ -5132,7 +5136,11 @@ function isUnrecordedWorkspaceDraft(entry) {
 export function discardWorkspaceDraft(workspaceSessionId) {
   const entry = getAllWorkspaceSessions().find((candidate) =>
     candidate.workspaceSessionId === workspaceSessionId);
-  if (!entry || !isUnrecordedWorkspaceDraft(entry)) {
+  if (!entry || !isWorkspaceOwnerCurrent(entry.owner) ||
+      entry.owner.appInstanceId !== appInstanceId ||
+      entry.submitting || entry.appliedUnsaved ||
+      hasExplicitWorkspaceVerification(entry) ||
+      !isUnrecordedWorkspaceDraft(entry)) {
     return { ok: false, reason: "Эта панель больше не содержит удаляемого черновика." };
   }
   if (entry.rawInputsByStep && entry.currentStepKey) {

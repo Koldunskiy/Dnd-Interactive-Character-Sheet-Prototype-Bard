@@ -9,9 +9,11 @@ import {
 } from "../../scripts/state.js";
 import {
   getWorkspaceSessionForTests,
+  discardWorkspaceDraft,
   openNormalAttack,
   openSaraBattleCommand,
   disposeWorkspaceOwner,
+  reconcileWorkspaceAfterStateChange,
   requestEndBattle,
 } from "../../scripts/workspace/controller.js";
 import {
@@ -286,6 +288,23 @@ test("canonical inspection exception locks the committed bonus draft against app
         step: getWorkspaceSessionForTests().currentStep,
         throwOnInspection,
       }));
+    assert.equal(getWorkspaceSessionForTests().operationVerificationRequired, true);
+    assert.equal(getWorkspaceSessionForTests().dirty, true);
+    const workspaceBeforeDiscard = getWorkspaceSessionForTests();
+    const stateBeforeDiscard = structuredClone(getState());
+    const revisionBeforeDiscard = getSessionContext().stateRevision;
+    const storageBeforeDiscard = new Map(window.localStorage.values);
+    assert.equal(discardWorkspaceDraft(workspaceBeforeDiscard.workspaceSessionId).ok, false);
+    assert.deepEqual(getState(), stateBeforeDiscard);
+    assert.equal(getSessionContext().stateRevision, revisionBeforeDiscard);
+    assert.deepEqual(window.localStorage.values, storageBeforeDiscard);
+    assert.deepEqual(getWorkspaceSessionForTests().rawInputsByStep,
+      workspaceBeforeDiscard.rawInputsByStep);
+    reconcileWorkspaceAfterStateChange(getState(), {
+      kind: "persistence-retry",
+      persistenceResult: { ok: true },
+    });
+    assert.equal(getWorkspaceSessionForTests().operationVerificationRequired, true);
     assert.equal(dialog.footer.querySelector('[data-workspace-action="submit-damage"]').disabled, true);
     assert.equal(dialog.footer.querySelector('[data-workspace-action="cancel-attack-draft"]'), null);
     assert.equal(dialog.header.querySelector('[data-workspace-action="back"]'), null);

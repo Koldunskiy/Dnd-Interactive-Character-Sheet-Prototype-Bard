@@ -12,9 +12,11 @@ import {
   readCompletedSeekingStrikeReceipt,
 } from "../../scripts/actions/sara-combat.js";
 import {
+  discardWorkspaceDraft,
   disposeWorkspaceOwner,
   getWorkspaceSessionForTests,
   openNormalAttack,
+  reconcileWorkspaceAfterStateChange,
   requestEndBattle,
 } from "../../scripts/workspace/controller.js";
 import { previewWorkspaceCompletedSeekingStrike } from "../../scripts/workspace/attack-adapter.js";
@@ -297,6 +299,22 @@ test("post-commit subscriber exception recovers a completed Seeking miss as appl
         const uncertain = getWorkspaceSessionForTests();
         assert.equal(inspectionFailed, true);
         assert.equal(uncertain.readOnly, true);
+        assert.equal(uncertain.operationVerificationRequired, true);
+        assert.equal(uncertain.dirty, true);
+        const stateBeforeDiscard = structuredClone(getState());
+        const revisionBeforeDiscard = getSessionContext().stateRevision;
+        const storageBeforeDiscard = new Map(window.localStorage.values);
+        assert.equal(discardWorkspaceDraft(uncertain.workspaceSessionId).ok, false);
+        assert.deepEqual(getState(), stateBeforeDiscard);
+        assert.equal(getSessionContext().stateRevision, revisionBeforeDiscard);
+        assert.deepEqual(window.localStorage.values, storageBeforeDiscard);
+        assert.deepEqual(getWorkspaceSessionForTests().rawInputsByStep,
+          uncertain.rawInputsByStep);
+        reconcileWorkspaceAfterStateChange(getState(), {
+          kind: "persistence-retry",
+          persistenceResult: { ok: true },
+        });
+        assert.equal(getWorkspaceSessionForTests().operationVerificationRequired, true);
         assert.equal(uncertain.currentStep, "damage-input");
         const submit = dialog.footer.querySelector('[data-workspace-action="submit-damage"]');
         assert.ok(submit?.isConnected);

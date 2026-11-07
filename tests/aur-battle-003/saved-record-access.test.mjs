@@ -13,6 +13,7 @@ import {
   getWorkspaceSessionForTests,
   openNormalAttack,
   openSaraBattleCommand,
+  requestCloseWorkspace,
 } from "../../scripts/workspace/controller.js";
 import {
   beginSeekingStrike,
@@ -389,6 +390,53 @@ test("connected historical damage uses the recorded profile after battle end wit
       (updatedSequence.replacementResults?.length ?? 0), usedSlots);
     assert.equal(getState().combat.ki.current, kiBefore);
     assert.equal(getState().inventory.items.find((entry) => entry.id === "darts").quantity, ammoBefore);
+  } finally {
+    const active = getWorkspaceSessionForTests();
+    if (active) disposeWorkspaceOwner(active.owner, "saved-record-test-cleanup");
+    unsubscribe();
+  }
+});
+
+test("historical damage close ignores current remainder and preserves the exact saved sequence", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture();
+  try {
+    updateState((state) => {
+      startBattle(state, { rawD20: "10" }, { id: "historical-close-battle" });
+      assert.equal(beginOwnTurn(state, { id: "historical-close-turn" }).ok, true);
+      return state;
+    });
+    const sequenceId = "historical-close-sequence";
+    const attackId = "historical-close-hit";
+    assert.equal(recordAttackOutcome(getSessionContext(), sequenceId, attackId, {
+      kind: "attack-action", profileId: "unarmed", rollMode: "normal",
+      firstD20: "12", dmHitResult: "hit",
+    }, "historical-close-record-hit").status, "applied");
+    const before = structuredClone(getState());
+    const sequenceBefore = before.monk.combatAssistant.activeSequences
+      .find((entry) => entry.id === sequenceId);
+    assert.equal(sequenceBefore.status, "open");
+    assert.ok(sequenceBefore.maximumAttacks > sequenceBefore.resolvedAttacks.length);
+    assert.equal(openNormalAttack({
+      sequenceId, attackId, mode: "historical-damage",
+    }).ok, true);
+    const workspaceId = getWorkspaceSessionForTests().workspaceSessionId;
+    fireWorkspaceAction(dialog, "close-attack-remainder");
+    assert.deepEqual(getState(), before);
+    assert.equal(getWorkspaceSessionForTests().workspaceSessionId, workspaceId);
+    assert.equal(requestCloseWorkspace(), true);
+    assert.doesNotMatch(dialog.footer.innerHTML, /close-attack-remainder/);
+    assert.match(dialog.body.innerHTML, /Сохранённых записях/);
+    fireWorkspaceActionStrict(dialog, "confirm-close");
+    assert.equal(getWorkspaceSessionForTests(), null);
+    assert.deepEqual(getState(), before);
+    const saved = getSavedPlayerRecords(getState()).sequences
+      .find((entry) => entry.sequenceId === sequenceId);
+    assert.equal(saved.status, "open");
+    assert.equal(saved.attacks.find((entry) => entry.attackId === attackId)
+      .damageStatus, "awaiting-damage");
+    assert.equal(openNormalAttack({
+      sequenceId, attackId, mode: "historical-damage",
+    }).ok, true);
   } finally {
     const active = getWorkspaceSessionForTests();
     if (active) disposeWorkspaceOwner(active.owner, "saved-record-test-cleanup");

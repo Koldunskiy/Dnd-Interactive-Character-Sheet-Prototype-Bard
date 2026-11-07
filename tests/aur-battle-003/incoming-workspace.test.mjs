@@ -7,6 +7,7 @@ import {
 } from "../../scripts/actions/incoming-event.js";
 import {
   disposeWorkspaceOwner,
+  getWorkspaceRecoverySessions,
   getWorkspaceSessionForTests,
   getWorkspaceSessions,
   openIncomingAttack,
@@ -441,6 +442,15 @@ test("production handler preserves verification on receipt-inspection failure, t
   }
   const verification = getWorkspaceSessionForTests().incomingDraft;
   assert.equal(verification.stage, "verification");
+  assert.deepEqual(getWorkspaceRecoverySessions().map((entry) => ({
+    workspaceSessionId: entry.workspaceSessionId,
+    recoveryKind: entry.recoveryKind,
+    workspaceType: entry.workspaceType,
+  })), [{
+    workspaceSessionId: getWorkspaceSessionForTests().workspaceSessionId,
+    recoveryKind: "verification",
+    workspaceType: "incoming",
+  }]);
   assert.match(verification.error, /receipt inspection failed/);
   assert.match(dialog.footer.innerHTML, /incoming-verify/);
   const hpAfterApply = getState().combat.hp.current;

@@ -633,7 +633,7 @@ export function renderAttackWorkspace(session, state) {
     footer = `<button type="button" class="btn btn--primary" data-workspace-action="no-technique-continue" ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Без техники → ${session.capabilities.canContinueSequence ? "следующий удар" : "завершить"}</button>
       <button type="button" class="btn btn--utility" data-workspace-action="apply-strike" ${session.submitting || session.appliedUnsaved || !canApplyStrike(session, state) ? "disabled" : ""}>${technique ? `Применить за ${escapeHtml(paymentLabel)}` : "Выберите технику"}</button>`;
   } else if (session.currentStep === "confirm-close") {
-    const hasRemainder = sequence?.status === "open" &&
+    const hasRemainder = !session.historicalOnly && sequence?.status === "open" &&
       getUsedAttackSlots(sequence) < sequence.maximumAttacks;
     body = `<p>${session.historicalOnly
       ? "Закрыть панель. Сохранённая запись останется доступна в «Сохранённых записях»."
