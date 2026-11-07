@@ -10,6 +10,7 @@ import {
   buildGentlingMechanicsBasis,
   commitCompletedGentlingTouch,
   commitCompletedNormalAttack,
+  getSaraAttackCount,
   getUsedAttackSlots,
   previewCompletedGentlingTouch,
   readCompletedGentlingTouchReceipt,
@@ -490,13 +491,50 @@ test("Battle ID, phase, own turn and turn marker mismatches are independently re
   }
 });
 
-test("Open-draft mechanics and saved capacity changes require a fresh request basis", () => {
+test("Level 6 to 17 martial-mechanics change requires a fresh draft basis", () => {
   prepare();
   const request = requestFor();
   updateState((draft) => { draft.profile.level = 17; return draft; });
   const result = previewCompletedGentlingTouch(getState(), request);
   assert.equal(result.ok, false);
   assert.equal(result.code, "revalidation-required");
+});
+
+test("Open draft rejects the stale level-4-to-5 Attack-capacity basis without mutation", () => {
+  prepare({ level: 4 });
+  assert.equal(getSaraAttackCount(getState()), 1);
+  const request = requestFor({ sum: 20 });
+  assert.equal(getState().monk.combatAssistant.activeSequences
+    .some((sequence) => sequence.id === request.sequenceId), false);
+  assert.equal(request.expectedMechanicsBasis, buildGentlingMechanicsBasis(getState(), null));
+
+  updateState((draft) => {
+    draft.profile.level = 5;
+    draft.combat.hitDice.remaining = Math.min(draft.combat.hitDice.remaining, 5);
+    return draft;
+  });
+  assert.equal(getSaraAttackCount(getState()), 2);
+  const stalePreview = previewCompletedGentlingTouch(getState(), request);
+  assert.equal(stalePreview.ok, false);
+  assert.equal(stalePreview.code, "revalidation-required");
+
+  const state = structuredClone(getState());
+  const revision = getSessionContext().stateRevision;
+  const storage = new Map(window.localStorage.values);
+  const staleCommit = commitCompletedGentlingTouch(
+    getSessionContext(), request, "stale-level-capacity-request",
+  );
+  assert.equal(staleCommit.status, "rejected");
+  assert.match(staleCommit.reason, /Параметры Gentling Touch изменились/);
+  assert.deepEqual(getState(), state);
+  assert.equal(getSessionContext().stateRevision, revision);
+  assert.deepEqual(window.localStorage.values, storage);
+
+  const currentRequest = requestFor({ sum: 20 });
+  assert.equal(currentRequest.expectedMechanicsBasis, buildGentlingMechanicsBasis(getState(), null));
+  const currentPreview = previewCompletedGentlingTouch(getState(), currentRequest);
+  assert.equal(currentPreview.ok, true, currentPreview.reason);
+  assert.equal(currentPreview.stage, "complete");
 });
 
 test("D45: Gentling preserves unrelated resources and action flags", () => {

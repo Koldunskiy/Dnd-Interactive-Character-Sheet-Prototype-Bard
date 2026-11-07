@@ -388,6 +388,53 @@ test("W19: storage retry success with receipt inspection failure stays verificat
   }
 });
 
+test("Applied-unsaved Gentling ignores a synthetic second submit and keeps retry-save available", () => {
+  const { dialog, unsubscribe } = setup();
+  const storage = window.localStorage;
+  const setItem = storage.setItem.bind(storage);
+  let failSave = true;
+  try {
+    begin(dialog);
+    gentlingForm(dialog, { extraKi: "0", targetHp: "7", sum: "20" });
+    const kiBefore = getState().combat.ki.current;
+    storage.setItem = (key, value) => {
+      if (failSave) throw new Error("Gentling persistence failure for applied-unsaved guard");
+      setItem(key, value);
+    };
+    submit(dialog);
+    const session = getWorkspaceSessionForTests();
+    assert.equal(session.appliedUnsaved, true);
+    const appliedState = structuredClone(getState());
+    const revision = getSessionContext().stateRevision;
+    const kiAfter = getState().combat.ki.current;
+    const sequences = getState().monk.combatAssistant.activeSequences;
+    const sequenceCount = sequences.length;
+    const replacementCount = sequences.reduce(
+      (count, sequence) => count + sequence.replacementResults.length, 0,
+    );
+    assert.equal(kiAfter, kiBefore - 1);
+    assert.equal(replacementCount, 1);
+
+    fireWorkspaceAction(dialog, "submit-gentling", { apply: true });
+
+    assert.equal(getWorkspaceSessionForTests().appliedUnsaved, true);
+    assert.deepEqual(getState(), appliedState);
+    assert.equal(getSessionContext().stateRevision, revision);
+    assert.equal(getState().combat.ki.current, kiAfter);
+    assert.equal(getState().monk.combatAssistant.activeSequences.length, sequenceCount);
+    assert.equal(getState().monk.combatAssistant.activeSequences.reduce(
+      (count, sequence) => count + sequence.replacementResults.length, 0,
+    ), replacementCount);
+    const retry = dialog.footer.querySelector('[data-workspace-action="retry-save"]');
+    assert.ok(retry);
+    assert.equal(retry.disabled, false);
+  } finally {
+    failSave = false;
+    storage.setItem = setItem;
+    unsubscribe();
+  }
+});
+
 test("W07: numeric typing updates constraints and preview without replacing the body or focused input", () => {
   const { dialog, unsubscribe } = setup();
   try {
