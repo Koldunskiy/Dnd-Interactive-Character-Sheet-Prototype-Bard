@@ -349,6 +349,43 @@ export function getWorkspaceGentlingProjection(session, state) {
   };
 }
 
+export function updateWorkspaceGentlingProjection(session, state) {
+  const projection = getWorkspaceGentlingProjection(session, state);
+  const root = getWorkspaceHost();
+  const setConstraint = (name, value, attribute) => {
+    const input = root?.querySelector(`[data-workspace-field][name="${name}"]`);
+    if (!input) return;
+    if (value == null) {
+      input.removeAttribute?.(attribute);
+      if (attribute === "max") input.max = "";
+    } else {
+      input.setAttribute?.(attribute, String(value));
+      input[attribute] = String(value);
+    }
+  };
+  setConstraint("extraKi", 0, "min");
+  setConstraint("extraKi", projection.maximumExtraKi, "max");
+  setConstraint("targetHp", 0, "min");
+  setConstraint("targetHp", null, "max");
+  setConstraint("sum", projection.mechanics?.dice ?? 5, "min");
+  setConstraint("sum", projection.mechanics
+    ? projection.mechanics.dice * projection.mechanics.sides : null, "max");
+  const mechanicsNode = root?.querySelector("[data-gentling-mechanics]");
+  if (mechanicsNode) mechanicsNode.textContent = projection.mechanics
+    ? `Бросьте: ${projection.mechanics.dice}d${projection.mechanics.sides} · допустимая сумма ${projection.mechanics.dice}..${projection.mechanics.dice * projection.mechanics.sides} · стоимость ${projection.mechanics.cost} ци.`
+    : "Дополнительная ци должна быть целым числом в пределах Wisdom.";
+  const completed = projection.completedPreview;
+  const previewNode = root?.querySelector("[data-gentling-preview]");
+  if (previewNode) {
+    previewNode.textContent = completed?.ok
+      ? completed.result.thresholdMet
+        ? `Порог достигнут: ${completed.result.sum} ≥ ${completed.result.targetHp}.`
+        : `Порог не достигнут: ${completed.result.sum} < ${completed.result.targetHp}. При записи будут потрачены ${completed.result.cost} ци и один слот Attack.`
+      : completed?.reason ?? "Укажите HP цели и физическую сумму.";
+  }
+  return renderAttackWorkspace(session, state).footer;
+}
+
 function attackNumber(state, session) {
   const sequence = (state.monk?.combatAssistant?.activeSequences ?? [])
     .find((entry) => entry.id === session.sequenceId);

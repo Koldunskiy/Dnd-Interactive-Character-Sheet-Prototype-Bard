@@ -172,7 +172,7 @@ test("D09-D15: invalid integers, physical range and insufficient ki reject witho
   assertRejectedUnchanged(shortage, "gentling-insufficient-ki");
 });
 
-test("D15, D38-D43: numeric canonical replay, early replay, mismatch and legacy-ID collision", () => {
+test("D15, D38-D43: canonical replay, early replay, request mismatch and legacy-ID collision", () => {
   prepare();
   const first = requestFor({ sum: "20", targetHp: "7", extraKi: "0" });
   assert.equal(applyGentling(first, "gentling-replay-id").status, "applied");
@@ -225,13 +225,16 @@ test("D16-D20: completed normal parents retain evidence and Gentling uses the sa
     getSessionContext(), normal, "normal-gentling-parent",
   ).status, "applied");
   const sequence = getState().monk.combatAssistant.activeSequences[0];
-  const normalEvidence = structuredClone(sequence.resolvedAttacks[0].completedOperation);
+  const normalEvidence = sequence.resolvedAttacks[0].completedOperation;
+  assert.ok(normalEvidence && typeof normalEvidence === "object");
+  assert.equal(normalEvidence.operationId, "normal-gentling-parent");
+  const savedNormalEvidence = structuredClone(normalEvidence);
   const gentling = requestFor({
     sequenceId, expectedSequenceExists: true, expectedUsedSlots: 1,
   });
   assert.equal(applyGentling(gentling, "normal-parent-gentling").status, "applied");
   assert.deepEqual(getState().monk.combatAssistant.activeSequences[0]
-    .resolvedAttacks[0].completedOperation, normalEvidence);
+    .resolvedAttacks[0].completedOperation, savedNormalEvidence);
   const savedMaximum = getState().monk.combatAssistant.activeSequences[0].maximumAttacks;
   updateState((draft) => { draft.profile.level = 4; return draft; });
   assert.equal(getState().monk.combatAssistant.activeSequences[0].maximumAttacks, savedMaximum);
@@ -239,6 +242,145 @@ test("D16-D20: completed normal parents retain evidence and Gentling uses the sa
     sequenceId, expectedSequenceExists: true, expectedUsedSlots: 2,
   });
   assert.equal(previewCompletedGentlingTouch(getState(), staleCapacityRequest).ok, false);
+});
+
+test("D46: two operation IDs cannot apply to the same expected slot", () => {
+  prepare();
+  const first = requestFor();
+  assert.equal(applyGentling(first, "slot-race-first").status, "applied");
+  const nextSlot = requestFor({
+    sequenceId: first.sequenceId,
+    expectedSequenceExists: true,
+    expectedUsedSlots: 1,
+  });
+  assert.equal(applyGentling(nextSlot, "slot-race-second").status, "applied");
+  const afterFirst = structuredClone(getState());
+  const revision = getSessionContext().stateRevision;
+  const storage = new Map(window.localStorage.values);
+  const staleSameSlot = commitCompletedGentlingTouch(
+    getSessionContext(), nextSlot, "slot-race-third",
+  );
+  assert.equal(staleSameSlot.status, "rejected");
+  assert.deepEqual(getState(), afterFirst);
+  assert.equal(getSessionContext().stateRevision, revision);
+  assert.deepEqual(window.localStorage.values, storage);
+  assert.equal(getUsedAttackSlots(getState().monk.combatAssistant.activeSequences[0]), 2);
+});
+
+test("D47-D48: malformed and ambiguous receipts are conflicts, never replay evidence", () => {
+  prepare();
+  const request = requestFor();
+  assert.equal(applyGentling(request, "malformed-receipt-id").status, "applied");
+  const entry = getState().monk.combatAssistant.activeSequences[0].replacementResults[0];
+  entry.completedGentlingOperation.outcome.sum += 1;
+  const before = structuredClone(getState());
+  const revision = getSessionContext().stateRevision;
+  const storage = new Map(window.localStorage.values);
+  assert.equal(readCompletedGentlingTouchReceipt(getState(), "malformed-receipt-id").conflict, true);
+  assert.equal(commitCompletedGentlingTouch(
+    getSessionContext(), request, "malformed-receipt-id",
+  ).status, "rejected");
+  assert.deepEqual(getState(), before);
+  assert.equal(getSessionContext().stateRevision, revision);
+  assert.deepEqual(window.localStorage.values, storage);
+
+  prepare();
+  const ambiguousRequest = requestFor();
+  assert.equal(applyGentling(ambiguousRequest, "ambiguous-receipt-id").status, "applied");
+  const sequences = getState().monk.combatAssistant.activeSequences;
+  sequences.push(structuredClone(sequences[0]));
+  const ambiguousState = structuredClone(getState());
+  const ambiguousRevision = getSessionContext().stateRevision;
+  const ambiguousStorage = new Map(window.localStorage.values);
+  assert.equal(readCompletedGentlingTouchReceipt(
+    getState(), "ambiguous-receipt-id",
+  ).conflict, true);
+  assert.equal(commitCompletedGentlingTouch(
+    getSessionContext(), ambiguousRequest, "ambiguous-receipt-id",
+  ).status, "rejected");
+  assert.deepEqual(getState(), ambiguousState);
+  assert.equal(getSessionContext().stateRevision, ambiguousRevision);
+  assert.deepEqual(window.localStorage.values, ambiguousStorage);
+});
+
+test("D49: stale owner after a real session-generation change is rejected", () => {
+  prepare();
+  const request = requestFor();
+  const oldContext = getSessionContext();
+  const before = structuredClone(getState());
+  const storage = new Map(window.localStorage.values);
+  openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+  assert.notEqual(getSessionContext().sessionGeneration, oldContext.sessionGeneration);
+  const afterOpen = structuredClone(getState());
+  const revision = getSessionContext().stateRevision;
+  const result = commitCompletedGentlingTouch(oldContext, request, "old-generation-operation");
+  assert.equal(result.status, "rejected");
+  assert.deepEqual(getState(), afterOpen);
+  assert.equal(getSessionContext().stateRevision, revision);
+  assert.notDeepEqual(before, afterOpen);
+  assert.deepEqual(window.localStorage.values, storage);
+});
+
+test("D50-D51: closed and abandoned sequences and expected-exists mismatches reject", () => {
+  for (const status of ["closed", "abandoned"]) {
+    prepare();
+    const sequenceId = `non-open-${status}`;
+    updateState((draft) => {
+      draft.monk.combatAssistant.activeSequences.push({
+        id: sequenceId, kind: "attack-action", status, maximumAttacks: 2,
+        turnMarker: draft.ui.turn.turnNumber, battleId: null, ownTurnId: null,
+        resolvedAttacks: [], replacementResults: [], actionFlagApplied: true,
+      });
+      return draft;
+    });
+    const request = requestFor({
+      sequenceId, expectedSequenceExists: true, expectedUsedSlots: 0,
+    });
+    assert.equal(previewCompletedGentlingTouch(getState(), request).ok, false, status);
+  }
+  prepare();
+  const expectedExistingButAbsent = requestFor({
+    sequenceId: "absent-sequence", expectedSequenceExists: true,
+  });
+  assert.equal(previewCompletedGentlingTouch(getState(), expectedExistingButAbsent).ok, false);
+  const expectedAbsentButExisting = requestFor();
+  const id = expectedAbsentButExisting.sequenceId;
+  updateState((draft) => {
+    draft.monk.combatAssistant.activeSequences.push({
+      id, kind: "attack-action", status: "open", maximumAttacks: 2,
+      turnMarker: draft.ui.turn.turnNumber, battleId: null, ownTurnId: null,
+      resolvedAttacks: [], replacementResults: [], actionFlagApplied: true,
+    });
+    return draft;
+  });
+  assert.equal(previewCompletedGentlingTouch(getState(), expectedAbsentButExisting).ok, false);
+});
+
+test("D52: an open bonus sequence may coexist, but an incompatible parent blocks creation", () => {
+  prepare();
+  updateState((draft) => {
+    draft.monk.combatAssistant.activeSequences.push({
+      id: "coexisting-bonus", kind: "bonus-unarmed", status: "open",
+      maximumAttacks: 1, turnMarker: draft.ui.turn.turnNumber,
+      battleId: null, ownTurnId: null, resolvedAttacks: [],
+      replacementResults: [], actionFlagApplied: true,
+    });
+    return draft;
+  });
+  assert.equal(applyGentling(requestFor(), "gentling-with-bonus").status, "applied");
+  assert.equal(getState().monk.combatAssistant.activeSequences.length, 2);
+
+  prepare();
+  updateState((draft) => {
+    draft.monk.combatAssistant.activeSequences.push({
+      id: "incompatible-parent", kind: "reaction-unarmed", status: "open",
+      maximumAttacks: 2, turnMarker: draft.ui.turn.turnNumber,
+      battleId: null, ownTurnId: null, resolvedAttacks: [],
+      replacementResults: [], actionFlagApplied: true,
+    });
+    return draft;
+  });
+  assert.equal(previewCompletedGentlingTouch(getState(), requestFor()).ok, false);
 });
 
 test("D21-D25: legacy empty sequence is reused; wrong, full and absent-sequence contexts reject", () => {
@@ -284,7 +426,7 @@ test("D21-D25: legacy empty sequence is reused; wrong, full and absent-sequence 
   })).ok, false);
 });
 
-test("D26-D37, D44: context and mechanics changes require revalidation without slot relocation", () => {
+test("Stale turn, battle, mechanics and unpaid-action changes reject without slot relocation", () => {
   for (const change of [
     (draft) => { draft.ui.turn.turnNumber += 1; },
     (draft) => { draft.battleConsole.current = { id: "battle", phase: "own-turn", ownTurnId: "turn" }; },
@@ -320,6 +462,41 @@ test("D26-D37, D44: context and mechanics changes require revalidation without s
     sequenceId: existingId, expectedSequenceExists: true,
   });
   assertRejectedUnchanged(unpaid, "unpaid-action-guard");
+});
+
+test("Battle ID, phase, own turn and turn marker mismatches are independently rejected", () => {
+  for (const mismatch of ["battleId", "phase", "ownTurnId", "turnMarker"]) {
+    prepare();
+    const baseline = {
+      id: "gentling-context-battle",
+      phase: "own-turn",
+      ownTurnId: "gentling-own-turn-A",
+    };
+    updateState((draft) => {
+      draft.battleConsole.current = { ...baseline };
+      return draft;
+    });
+    const request = requestFor();
+    updateState((draft) => {
+      if (mismatch === "battleId") draft.battleConsole.current.id += "-changed";
+      if (mismatch === "phase") draft.battleConsole.current.phase = "paused";
+      if (mismatch === "ownTurnId") draft.battleConsole.current.ownTurnId += "-changed";
+      if (mismatch === "turnMarker") draft.ui.turn.turnNumber += 1;
+      return draft;
+    });
+    const result = previewCompletedGentlingTouch(getState(), request);
+    assert.equal(result.ok, false, mismatch);
+    assert.equal(result.code, "stale-context", mismatch);
+  }
+});
+
+test("Open-draft mechanics and saved capacity changes require a fresh request basis", () => {
+  prepare();
+  const request = requestFor();
+  updateState((draft) => { draft.profile.level = 17; return draft; });
+  const result = previewCompletedGentlingTouch(getState(), request);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "revalidation-required");
 });
 
 test("D45: Gentling preserves unrelated resources and action flags", () => {

@@ -120,9 +120,9 @@ import {
 } from "../render/render-command-workspace.js";
 import {
   renderAttackWorkspace,
+  updateWorkspaceGentlingProjection,
   renderWorkspaceAttackPreview,
   renderWorkspaceDamagePreview,
-  getWorkspaceGentlingProjection,
 } from "../render/render-attack-workspace.js";
 import {
   getSessionContext,
@@ -1682,41 +1682,7 @@ function updateInput(field) {
     renderWorkspaceAttackPreview(session, getState());
   } else if (session.currentStep === "gentling-input" &&
       ["extraKi", "targetHp", "sum"].includes(field.name)) {
-    const state = getState();
-    const projection = getWorkspaceGentlingProjection(session, state);
-    const root = getWorkspaceHost();
-    const setConstraint = (name, value, attribute) => {
-      const input = root?.querySelector(`[data-workspace-field][name="${name}"]`);
-      if (!input) return;
-      if (value == null) {
-        input.removeAttribute?.(attribute);
-        if (attribute === "max") input.max = "";
-      } else {
-        input.setAttribute?.(attribute, String(value));
-        input[attribute] = String(value);
-      }
-    };
-    setConstraint("extraKi", 0, "min");
-    setConstraint("extraKi", projection.maximumExtraKi, "max");
-    setConstraint("targetHp", 0, "min");
-    setConstraint("targetHp", null, "max");
-    setConstraint("sum", projection.mechanics?.dice ?? 5, "min");
-    setConstraint("sum", projection.mechanics
-      ? projection.mechanics.dice * projection.mechanics.sides : null, "max");
-    const mechanicsNode = root?.querySelector("[data-gentling-mechanics]");
-    if (mechanicsNode) mechanicsNode.textContent = projection.mechanics
-      ? `Бросьте: ${projection.mechanics.dice}d${projection.mechanics.sides} · допустимая сумма ${projection.mechanics.dice}..${projection.mechanics.dice * projection.mechanics.sides} · стоимость ${projection.mechanics.cost} ци.`
-      : "Дополнительная ци должна быть целым числом в пределах Wisdom.";
-    const previewNode = root?.querySelector("[data-gentling-preview]");
-    const completed = projection.completedPreview;
-    if (previewNode) {
-      previewNode.textContent = completed?.ok
-        ? completed.result.thresholdMet
-          ? `Порог достигнут: ${completed.result.sum} ≥ ${completed.result.targetHp}.`
-          : `Порог не достигнут: ${completed.result.sum} < ${completed.result.targetHp}. При записи будут потрачены ${completed.result.cost} ци и один слот Attack.`
-        : completed?.reason ?? "Укажите HP цели и физическую сумму.";
-    }
-    updateWorkspaceFooter(renderAttackWorkspace(session, state).footer);
+    updateWorkspaceFooter(updateWorkspaceGentlingProjection(session, getState()));
     return;
   } else if (session.currentStep === "seeking-input" && field.name === "rollMode") {
     render();
@@ -2655,7 +2621,6 @@ function runCompletedSeekingMutation(capturedSession, request, operationIdValue)
   if (session !== capturedSession || session.workspaceSessionId !== sessionId ||
       !isWorkspaceOwnerCurrent(owner)) return { status: "replaced" };
   if (!thrown) return result;
-  console.error("Gentling Touch submit failed unexpectedly", thrown);
   try {
     const receipt = readWorkspaceCompletedSeekingStrikeReceipt(getState(), operationIdValue);
     if (receipt && !receipt.malformed &&
@@ -4618,38 +4583,46 @@ function continueAfterGentlingPersistence(active, state) {
   if (session !== active || !active.gentlingRecovery ||
       !isWorkspaceOwnerCurrent(active.owner)) return;
   const { sequenceId, operationId: receiptId } = active.gentlingRecovery;
-  const receipt = readWorkspaceCompletedGentlingTouchReceipt(state, receiptId);
-  if (!receipt || receipt.conflict || receipt.sequence?.id !== sequenceId) {
-    active.readOnly = true;
-    active.gentlingVerificationRequired = true;
-    active.error = "Сохранение выполнено, но Gentling Touch не удалось подтвердить.";
-    return;
-  }
-  const sequence = getWorkspaceAttackSequence(state, sequenceId);
   active.appliedUnsaved = false;
-  active.gentlingRecovery = null;
-  active.status = "Сохранение выполнено.";
-  if (sequence && sequence.status === "open" &&
-      sequenceCurrentForAttack(sequence, state) &&
-      getUsedAttackSlots(sequence) < sequence.maximumAttacks) {
-    const attackId = createId("sara-attack");
-    active.attackId = attackId;
-    active.rawInputsByStep[stepKey("attack-input", attackId)] = {};
-    active.currentStep = "attack-input";
-    active.currentStepKey = stepKey("attack-input", attackId);
-    active.isExistingSequence = true;
-    active.firstAttempt = false;
-    active.readOnly = false;
-    active.capabilities.canContinueSequence = true;
-    active.capabilities.canRecordAttack = true;
-    active.relevantPreviewFingerprint = getNormalAttackFingerprint(state, sequenceId, false);
-    active.confirmationRequired = false;
-  } else {
+  try {
+    const receipt = readWorkspaceCompletedGentlingTouchReceipt(state, receiptId);
+    if (!receipt || receipt.conflict || receipt.sequence?.id !== sequenceId) {
+      active.readOnly = true;
+      active.gentlingVerificationRequired = true;
+      active.error = "Сохранение выполнено, но Gentling Touch не удалось подтвердить.";
+      return;
+    }
+    const sequence = getWorkspaceAttackSequence(state, sequenceId);
+    active.gentlingRecovery = null;
+    active.status = "Сохранение выполнено.";
+    if (sequence && sequence.status === "open" &&
+        sequenceCurrentForAttack(sequence, state) &&
+        getUsedAttackSlots(sequence) < sequence.maximumAttacks) {
+      const attackId = createId("sara-attack");
+      active.attackId = attackId;
+      active.rawInputsByStep[stepKey("attack-input", attackId)] = {};
+      active.currentStep = "attack-input";
+      active.currentStepKey = stepKey("attack-input", attackId);
+      active.isExistingSequence = true;
+      active.firstAttempt = false;
+      active.readOnly = false;
+      active.capabilities.canContinueSequence = true;
+      active.capabilities.canRecordAttack = true;
+      active.relevantPreviewFingerprint = getNormalAttackFingerprint(state, sequenceId, false);
+      active.confirmationRequired = false;
+      return;
+    }
     active.currentStep = "summary";
     active.currentStepKey = stepKey("summary", sequenceId);
     active.readOnly = true;
     active.capabilities.canContinueSequence = false;
     active.capabilities.canRecordAttack = false;
+  } catch (error) {
+    active.readOnly = true;
+    active.gentlingVerificationRequired = true;
+    active.error = `Сохранение выполнено; проверка Gentling Touch не удалась: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
   }
 }
 
@@ -5071,7 +5044,7 @@ export function reconcileWorkspaceAfterStateChange(state, metadata = null) {
     renderWorkspaceDamagePreview(session);
   }
   if (session.currentStep === "gentling-input" && workspaceHostIsOpen()) {
-    render();
+    updateWorkspaceFooter(updateWorkspaceGentlingProjection(session, state));
   }
 }
 

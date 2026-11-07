@@ -104,6 +104,44 @@ test("W01-W03: free begin/cancel preserves exact initial draft and completed att
   }
 });
 
+test("W27: cancel after a completed normal attack returns to the exact checkpoint", () => {
+  const { dialog, unsubscribe } = setup();
+  try {
+    dialog.forms.attack = new FixtureForm("attack", {
+      profileId: "unarmed", rollMode: "normal", firstD20: "10",
+      secondD20: "", confirmSeparateAction: false,
+    });
+    fireWorkspaceActionStrict(dialog, "attack-hit");
+    dialog.forms.damage = new FixtureForm("damage", { damage1: "3" });
+    fireWorkspaceInput(dialog, "damage1", "3");
+    fireWorkspaceActionStrict(dialog, "submit-damage", { apply: true });
+    assert.equal(getWorkspaceSessionForTests().currentStep, "checkpoint");
+    const beforeSession = getWorkspaceSessionForTests();
+    const checkpoint = {
+      attackId: beforeSession.attackId,
+      step: beforeSession.currentStep,
+      stepKey: beforeSession.currentStepKey,
+    };
+    const state = structuredClone(getState());
+    const revision = getSessionContext().stateRevision;
+    const storage = new Map(window.localStorage.values);
+    begin(dialog);
+    assert.equal(getWorkspaceSessionForTests().gentlingIntent.returnTo.attackId, checkpoint.attackId);
+    fireWorkspaceActionStrict(dialog, "cancel-contextual");
+    const after = getWorkspaceSessionForTests();
+    assert.equal(after.currentStep, checkpoint.step);
+    assert.equal(after.currentStepKey, checkpoint.stepKey);
+    assert.equal(after.attackId, checkpoint.attackId);
+    assert.deepEqual(getState(), state);
+    assert.equal(getSessionContext().stateRevision, revision);
+    assert.deepEqual(window.localStorage.values, storage);
+    assert.equal(getState().monk.combatAssistant.activeSequences[0].resolvedAttacks.length, 1);
+    assert.equal(getState().combat.ki.current, state.combat.ki.current);
+  } finally {
+    unsubscribe();
+  }
+});
+
 test("W04-W07, W22-W23, W26: rendered form commits one slot and next attack uses fresh rolls", () => {
   const { dialog, unsubscribe } = setup();
   try {
@@ -170,6 +208,39 @@ test("W04-W07, W22-W23, W26: rendered form commits one slot and next attack uses
   }
 });
 
+test("W28: completed Gentling then rendered hit and damage records the next exact slot", () => {
+  const { dialog, unsubscribe } = setup();
+  try {
+    begin(dialog);
+    gentlingForm(dialog);
+    submit(dialog);
+    const sequence = getState().monk.combatAssistant.activeSequences[0];
+    assert.equal(sequence.replacementResults[0].slotNumber, 1);
+    dialog.forms.attack = new FixtureForm("attack", {
+      profileId: "unarmed", rollMode: "normal", firstD20: "10",
+      secondD20: "", confirmSeparateAction: false,
+    });
+    fireWorkspaceActionStrict(dialog, "attack-hit");
+    assert.equal(getWorkspaceSessionForTests().currentStep, "damage-input");
+    const renderedDamageInput = dialog.body.querySelector(
+      '[data-workspace-field][name="damage1"]',
+    );
+    assert.ok(renderedDamageInput?.isConnected);
+    dialog.forms.damage = new FixtureForm("damage", { damage1: "4" });
+    fireWorkspaceInput(dialog, "damage1", "4");
+    fireWorkspaceActionStrict(dialog, "submit-damage", { apply: true });
+    const after = getState().monk.combatAssistant.activeSequences[0];
+    assert.equal(after.resolvedAttacks.length, 1);
+    assert.equal(after.resolvedAttacks[0].slotNumber, 2);
+    assert.equal(after.resolvedAttacks[0].damageStatus, "recorded");
+    assert.equal(after.replacementResults[0].slotNumber, 1);
+    assert.equal(getWorkspaceSessionForTests().firstAttempt, false);
+    assert.equal(getWorkspaceSessionForTests().confirmationRequired, false);
+  } finally {
+    unsubscribe();
+  }
+});
+
 test("W23: consecutive Gentling uses distinct operation/draft IDs and never opens a third slot", () => {
   const { dialog, unsubscribe } = setup();
   try {
@@ -211,6 +282,11 @@ test("W08-W10: minimize/resume and unrelated bookkeeping preserve draft; ki shor
     assert.equal(resumeWorkspace(sessionId).ok, true);
     assert.equal(getWorkspaceSessionForTests().gentlingIntent.operationId, intent.operationId);
     assert.equal(getWorkspaceSessionForTests().currentStepKey, intent.draftKey);
+    const sumInput = dialog.body.querySelector('[data-workspace-field][name="sum"]');
+    sumInput.focus();
+    sumInput.value = "15";
+    sumInput.setSelectionRange(1, 1);
+    fireWorkspaceInput(dialog, "sum", "15");
     updateState((draft) => {
       draft.inventory.items.find((entry) => entry.id === "darts").quantity += 1;
       return draft;
@@ -219,15 +295,95 @@ test("W08-W10: minimize/resume and unrelated bookkeeping preserve draft; ki shor
     assert.equal(getWorkspaceSessionForTests().readOnly, false);
     updateState((draft) => { draft.combat.ki.current = 1; return draft; });
     assert.equal(getWorkspaceSessionForTests().rawInputsByStep[intent.draftKey].extraKi, "1");
+    assert.equal(getWorkspaceSessionForTests().rawInputsByStep[intent.draftKey].sum, "15");
+    assert.equal(dialog.body.querySelector('[data-workspace-field][name="sum"]'), sumInput);
+    assert.equal(sumInput.isConnected, true);
+    assert.equal(globalThis.document.activeElement, sumInput);
+    assert.equal(sumInput.selectionStart, 1);
     assert.equal(dialog.footer.querySelector('[data-workspace-action="submit-gentling"]').disabled,
       true, dialog.footer.innerHTML);
-    assert.match(dialog.body.querySelector("[data-gentling-preview]").textContent,
-      /Недостаточно ци/);
+    assert.match(dialog.body.querySelector("[data-gentling-preview]").textContent, /Недостаточно ци/);
     updateState((draft) => { draft.combat.ki.current = 2; return draft; });
     assert.equal(getWorkspaceSessionForTests().readOnly, false);
     assert.equal(dialog.footer.querySelector('[data-workspace-action="submit-gentling"]').disabled, false);
+    assert.equal(dialog.body.querySelector('[data-workspace-field][name="sum"]'), sumInput);
+    assert.equal(globalThis.document.activeElement, sumInput);
+    assert.equal(sumInput.value, "15");
     assert.equal(getWorkspaceSessionForTests().rawInputsByStep[intent.draftKey].sum, "15");
   } finally {
+    unsubscribe();
+  }
+});
+
+test("W19: storage retry success with receipt inspection failure stays verification-only", () => {
+  const { dialog, unsubscribe } = setup();
+  const storage = window.localStorage;
+  const setItem = storage.setItem.bind(storage);
+  let failSave = true;
+  let inspectionInjected = false;
+  let removeInspectionFailure;
+  try {
+    begin(dialog);
+    gentlingForm(dialog);
+    const ki = getState().combat.ki.current;
+    storage.setItem = (key, value) => {
+      if (failSave) throw new Error("Gentling storage failure before retry");
+      setItem(key, value);
+    };
+    submit(dialog);
+    assert.equal(getWorkspaceSessionForTests().appliedUnsaved, true);
+    assert.ok(getWorkspaceSessionForTests().gentlingRecovery);
+    const sequence = getState().monk.combatAssistant.activeSequences[0];
+    assert.equal(sequence.replacementResults.length, 1);
+    const revision = getSessionContext().stateRevision;
+    failSave = false;
+    removeInspectionFailure = subscribe((state, metadata) => {
+      if (metadata?.kind !== "persistence-retry") return;
+      const currentSequence = state.monk.combatAssistant.activeSequences[0];
+      const results = currentSequence.replacementResults;
+      Object.defineProperty(currentSequence, "replacementResults", {
+        configurable: true,
+        get() {
+          if (new Error().stack.includes("completedGentlingReceiptFromState")) {
+            inspectionInjected = true;
+            throw new Error("injected Gentling receipt inspection failure");
+          }
+          return results;
+        },
+      });
+      removeInspectionFailure();
+      currentSequence._savedReplacementResultsForTest = results;
+    });
+    fireWorkspaceActionStrict(dialog, "retry-save");
+    removeInspectionFailure?.();
+    removeInspectionFailure = null;
+    Object.defineProperty(sequence, "replacementResults", {
+      configurable: true,
+      writable: true,
+      value: sequence._savedReplacementResultsForTest,
+    });
+    delete sequence._savedReplacementResultsForTest;
+    assert.equal(inspectionInjected, true);
+    assert.equal(getSessionContext().stateRevision, revision);
+    assert.equal(getState().combat.ki.current, ki - 1);
+    assert.equal(sequence.replacementResults.length, 1);
+    const session = getWorkspaceSessionForTests();
+    assert.equal(session.appliedUnsaved, false);
+    assert.equal(session.readOnly, true);
+    assert.equal(session.gentlingVerificationRequired, true);
+    assert.equal(session.gentlingRecovery.sequenceId, sequence.id);
+    assert.match(session.error, /Gentling Touch/);
+    assert.match(dialog.body.innerHTML, /Gentling Touch/);
+    const before = structuredClone(getState());
+    fireWorkspaceAction(dialog, "submit-gentling");
+    fireWorkspaceAction(dialog, "cancel-contextual");
+    assert.deepEqual(getState(), before);
+    assert.equal(getState().combat.ki.current, ki - 1);
+    assert.equal(getState().monk.combatAssistant.activeSequences[0].replacementResults.length, 1);
+    assert.equal(getSessionContext().stateRevision, revision);
+  } finally {
+    removeInspectionFailure?.();
+    storage.setItem = setItem;
     unsubscribe();
   }
 });
@@ -363,6 +519,57 @@ test("W16-W17: owner replacement during commit leaves replacement workspace unto
   }
 });
 
+test("W29: session-generation replacement during commit never inspects the new owner receipt", () => {
+  const { dialog, unsubscribe } = setup();
+  let removeReplacement;
+  let replacement;
+  let inspectedNewGeneration = false;
+  let originalDescriptor;
+  try {
+    begin(dialog);
+    gentlingForm(dialog);
+    let replaced = false;
+    removeReplacement = subscribe((state) => {
+      if (replaced) return;
+      replaced = true;
+      const oldSequence = state.monk.combatAssistant.activeSequences[0];
+      openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+      assert.equal(openNormalAttack().ok, true);
+      replacement = getWorkspaceSessionForTests();
+      const currentState = getState();
+      const sequences = currentState.monk.combatAssistant.activeSequences;
+      originalDescriptor = Object.getOwnPropertyDescriptor(
+        currentState.monk.combatAssistant, "activeSequences",
+      );
+      Object.defineProperty(currentState.monk.combatAssistant, "activeSequences", {
+        configurable: true,
+        get() {
+          inspectedNewGeneration = true;
+          return sequences;
+        },
+      });
+      assert.notEqual(oldSequence?.id, sequences[0]?.id);
+    });
+    const oldGeneration = getWorkspaceSessionForTests().owner.sessionGeneration;
+    submit(dialog);
+    removeReplacement();
+    removeReplacement = null;
+    Object.defineProperty(getState().monk.combatAssistant, "activeSequences", originalDescriptor);
+    assert.equal(getWorkspaceSessionForTests().owner.sessionGeneration > oldGeneration, true);
+    assert.equal(inspectedNewGeneration, false);
+    assert.equal(getWorkspaceSessionForTests().workspaceSessionId, replacement.workspaceSessionId);
+    assert.equal(getWorkspaceSessionForTests().currentStep, "attack-input");
+    assert.equal(getWorkspaceSessionForTests().submitting, false);
+    assert.equal(getWorkspaceSessionForTests().appliedUnsaved, false);
+  } finally {
+    removeReplacement?.();
+    if (originalDescriptor) {
+      Object.defineProperty(getState().monk.combatAssistant, "activeSequences", originalDescriptor);
+    }
+    unsubscribe();
+  }
+});
+
 test("W18, W25: storage failure applies once; retry-save exposes the remaining slot", () => {
   const { dialog, unsubscribe } = setup();
   const storage = window.localStorage;
@@ -410,6 +617,37 @@ test("W20: end battle during a no-sequence Gentling draft never creates or pays 
     assert.equal(ended.status, "applied");
     assert.deepEqual(getState().monk.combatAssistant.activeSequences, []);
     assert.equal(getState().combat.ki.current, ki);
+    assert.equal(getWorkspaceSessionForTests(), null);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("W30: ending battle with an existing Gentling sequence preserves prior result but cancels draft", () => {
+  const { dialog, unsubscribe } = setup({ battle: true });
+  try {
+    begin(dialog);
+    gentlingForm(dialog);
+    submit(dialog);
+    const before = structuredClone(getState());
+    const sequence = before.monk.combatAssistant.activeSequences[0];
+    const ki = before.combat.ki.current;
+    assert.equal(sequence.replacementResults.length, 1);
+    assert.equal(sequence.replacementResults[0].slotNumber, 1);
+    assert.equal(getWorkspaceSessionForTests().currentStep, "attack-input");
+    begin(dialog);
+    const intent = getWorkspaceSessionForTests().gentlingIntent;
+    assert.equal(intent.expectedSequenceExists, true);
+    const owner = getWorkspaceSessionForTests().owner;
+    const battleId = before.battleConsole.current.id;
+    assert.equal(requestEndBattle({ owner, battleId }, { confirm: () => true }).status, "applied");
+    const after = getState();
+    const savedSequence = after.monk.combatAssistant.activeSequences
+      .find((entry) => entry.id === sequence.id);
+    assert.equal(savedSequence.replacementResults.length, 1);
+    assert.deepEqual(savedSequence.replacementResults[0], sequence.replacementResults[0]);
+    assert.equal(after.combat.ki.current, ki);
+    assert.equal(after.battleConsole.current, null);
     assert.equal(getWorkspaceSessionForTests(), null);
   } finally {
     unsubscribe();
