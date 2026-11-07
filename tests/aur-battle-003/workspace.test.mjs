@@ -253,16 +253,15 @@ test("production normal attack workspace records one action, snapshot damage and
   assert.equal(dialog.open, true);
   assert.equal(getWorkspaceSessionForTests().workspaceSessionId, opened.sessionId);
 
-  minimizeWorkspace();
-  const minimized = getWorkspaceSessionForTests();
-  assert.equal(dialog.open, false);
-  assert.equal(minimized.rawInputsByStep[minimized.currentStepKey].firstD20, "10");
-  assert.match(renderBattleConsole(getState()), /data-workspace-resume=/);
+  assert.equal(minimizeWorkspace(), false);
+  const active = getWorkspaceSessionForTests();
+  assert.equal(dialog.open, true);
+  assert.equal(active.rawInputsByStep[active.currentStepKey].firstD20, "10");
+  assert.doesNotMatch(renderBattleConsole(getState()), /data-workspace-resume=/);
   const invalidTarget = openNormalAttack({ sequenceId: "another-normal-sequence" });
   assert.equal(invalidTarget.ok, false);
   assert.equal(getWorkspaceSessionForTests().workspaceSessionId, opened.sessionId);
-  assert.equal(dialog.open, false);
-  assert.equal(resumeWorkspace(opened.sessionId).ok, true);
+  assert.equal(dialog.open, true);
   fireAction(dialog, "close");
   assert.equal(getWorkspaceSessionForTests().currentStep, "confirm-close");
   fireAction(dialog, "stay");

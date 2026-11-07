@@ -558,7 +558,6 @@ export function renderCommandWorkspace(session, state) {
     ? "" : session.command?.availability?.reasonRu ?? "Команда больше недоступна.";
   const isTechniqueApplication = session.scenarioId?.startsWith("monk-technique:");
   const header = `<div class="workspace-nav">
-      <button type="button" class="btn btn--utility" data-workspace-action="minimize">${isTechniqueApplication ? "Отложить" : "Свернуть"}</button>
       <button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>
       <button type="button" class="btn btn--utility" data-workspace-action="close">Закрыть</button>
     </div>
@@ -708,18 +707,15 @@ function renderRollFooter(session) {
   if (!record) return `<button type="button" class="btn btn--utility" data-workspace-action="done">Готово</button>`;
   if (status === "awaiting-outcome" ||
       record.manualOutcome == null && record.dcResult == null) {
-    return `${rollOutcomeButtons("roll-outcome", disabled)}
-      <button type="button" class="btn btn--utility" data-workspace-action="roll-defer">Позже</button>`;
+    return `${rollOutcomeButtons("roll-outcome", disabled)}`;
   }
   if (status === "awaiting-damage-decision") {
     return `<button type="button" class="btn btn--utility" data-workspace-action="roll-no-damage" ${disabled ? "disabled" : ""}>Нет урона</button>
-      <button type="button" class="btn btn--primary" data-workspace-action="roll-has-damage" ${disabled ? "disabled" : ""}>Есть урон</button>
-      <button type="button" class="btn btn--utility" data-workspace-action="roll-defer">Позже</button>`;
+      <button type="button" class="btn btn--primary" data-workspace-action="roll-has-damage" ${disabled ? "disabled" : ""}>Есть урон</button>`;
   }
   if (status === "awaiting-damage-input") {
     return `<button type="button" class="btn btn--primary" data-workspace-action="roll-apply-consequence" ${disabled ? "disabled" : ""}>Применить рассчитанный урон</button>
-      <button type="button" class="btn btn--utility" data-workspace-action="roll-track-consequence" ${disabled ? "disabled" : ""}>Учесть вне листа</button>
-      <button type="button" class="btn btn--utility" data-workspace-action="roll-defer">Позже</button>`;
+      <button type="button" class="btn btn--utility" data-workspace-action="roll-track-consequence" ${disabled ? "disabled" : ""}>Учесть вне листа</button>`;
   }
   if (status === "pending") {
     return `<button type="button" class="btn btn--primary" data-workspace-action="roll-apply-consequence" ${disabled ? "disabled" : ""}>Применить исторический урон</button>

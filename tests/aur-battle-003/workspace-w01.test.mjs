@@ -5,7 +5,6 @@ import {
   getWorkspaceSessionForTests,
   minimizeWorkspace,
   openNormalAttack,
-  resumeWorkspace,
 } from "../../scripts/workspace/controller.js";
 import {
   fireWorkspaceAction,
@@ -14,7 +13,7 @@ import {
   installWorkspaceFixture,
 } from "./workspace-fixture.mjs";
 
-test("W-01 preserves a dirty second-attack intent across minimize and resume", () => {
+test("W-01 preserves a dirty second-attack intent without a defer lifecycle", () => {
   const { dialog, unsubscribe } = installWorkspaceFixture();
   const opened = openNormalAttack();
   dialog.forms.attack = new FixtureForm("attack", {
@@ -31,8 +30,8 @@ test("W-01 preserves a dirty second-attack intent across minimize and resume", (
   const revision = getSessionContext().stateRevision;
   fireWorkspaceInput(dialog, "firstD20", "13");
   const draft = getWorkspaceSessionForTests();
-  minimizeWorkspace();
-  assert.equal(resumeWorkspace(opened.sessionId).ok, true);
+  assert.equal(minimizeWorkspace(), false);
+  assert.equal(getWorkspaceSessionForTests().workspaceSessionId, opened.sessionId);
 
   const resumed = getWorkspaceSessionForTests();
   assert.equal(resumed.attackId, expectedAttackId);

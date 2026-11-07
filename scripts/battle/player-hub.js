@@ -2,7 +2,7 @@ import { getActiveBattle, getActionBudget } from "./model.js";
 import { getSaraBattleCommandRegistry } from "./command-registry.js";
 import { isRollConsequencePending } from "../rolls/commands.js";
 import { getUsedAttackSlots } from "../actions/sara-combat.js";
-import { pendingSeeking, readSeekingHistory } from "../combat/seeking-history.js";
+import { readSeekingHistory } from "../combat/seeking-history.js";
 
 const ATTACK_SEQUENCE_KINDS = new Set([
   "attack-action",
@@ -125,125 +125,6 @@ export function getOwnTurnContinuationTasks(character) {
     }));
 }
 
-export function getUnfinishedPlayerWork(character, workspaceSessions = []) {
-  const assistant = character.monk?.combatAssistant ?? {};
-  const work = [];
-  const liveDamageTasks = new Set(workspaceSessions
-    .filter((workspace) => workspace.stage === "damage-input" &&
-      workspace.sequenceId && workspace.attackId)
-    .map((workspace) => `${workspace.sequenceId}:${workspace.attackId}`));
-  const liveSeekingTasks = new Set(workspaceSessions
-    .filter((workspace) => workspace.stage === "seeking-input" &&
-      workspace.sequenceId && workspace.attackId)
-    .map((workspace) => `${workspace.sequenceId}:${workspace.attackId}`));
-  for (const sequence of assistant.activeSequences ?? []) {
-    for (const attack of sequence.resolvedAttacks ?? []) {
-      let pendingAmendment = null;
-      if (attack.seekingAmendments !== undefined ||
-          attack.seekingAmendment != null) {
-        try {
-          pendingAmendment = pendingSeeking(readSeekingHistory(attack, {
-            actionId: sequence.id,
-            attackId: attack.id,
-          }));
-        } catch {
-          pendingAmendment = { conflict: true };
-        }
-      }
-      if (pendingAmendment &&
-          !liveSeekingTasks.has(`${sequence.id}:${attack.id}`)) {
-        work.push({
-          id: `seeking:${sequence.id}:${attack.id}:${pendingAmendment.paidOperationId ?? "conflict"}`,
-          kind: "pending-seeking",
-          group: "required",
-          consequenceStatus: pendingAmendment.conflict ? "history-conflict" : "awaiting-replacement",
-          label: `Seeking Strike · новый бросок · удар ${attack.slotNumber ?? sequence.resolvedAttacks.indexOf(attack) + 1}/${sequence.maximumAttacks}`,
-          sequenceId: sequence.id,
-          attackId: attack.id,
-          amendmentId: pendingAmendment.paidOperationId ?? null,
-          status: pendingAmendment.conflict
-            ? "История противоречива; оплаченная запись сохранена для проверки."
-            : null,
-        });
-      }
-      if (attack.damageStatus === "awaiting-damage" &&
-          !liveDamageTasks.has(`${sequence.id}:${attack.id}`)) {
-        const attackNumber = attack.slotNumber ?? sequence.resolvedAttacks.indexOf(attack) + 1;
-        work.push({
-          id: `damage:${sequence.id}:${attack.id}`,
-          kind: "historical-damage",
-          group: "required",
-          consequenceStatus: "awaiting-damage",
-          label: `Урон · удар ${attackNumber}/${sequence.maximumAttacks}`,
-          sequenceId: sequence.id,
-          attackId: attack.id,
-        });
-      }
-    }
-  }
-  for (const application of assistant.pendingApplications ?? []) {
-    if (!["success", "failure"].includes(application.targetOutcome)) {
-      work.push({
-        id: `save:${application.id}`,
-        kind: "pending-save",
-        group: "awaiting-answer",
-        consequenceStatus: "awaiting-target-outcome",
-        label: `Исход цели · СЛ ${application.dc ?? "—"}`,
-        commandId: `pending-save:${application.id}`,
-      });
-    }
-  }
-  for (const record of character.characterRolls?.records ?? []) {
-    if (isRollConsequencePending(record)) {
-      work.push({
-        id: `roll:${record.id}`,
-        kind: "pending-roll",
-        group: record.consequence?.status === "awaiting-outcome"
-          ? "awaiting-answer" : "required",
-        consequenceStatus: record.consequence?.status ?? "pending",
-        label: record.consequence?.status === "awaiting-outcome"
-          ? `Указать исход · ${record.label ?? "бросок"}`
-          : `Продолжить последствие · ${record.label ?? "бросок"}`,
-        commandId: `pending-roll:${record.id}`,
-      });
-    }
-  }
-  for (const task of getOwnTurnContinuationTasks(character).filter((candidate) =>
-    !workspaceSessions.some((workspace) => workspace.sequenceId === candidate.sequenceId))) {
-    work.push({
-      id: `sequence:${task.sequenceId}`,
-      kind: "sequence-continuation",
-      group: "continuations",
-      label: `${task.label} · осталось ${task.remaining}`,
-      sequenceId: task.sequenceId,
-    });
-  }
-  for (const workspace of workspaceSessions) {
-    if (workspace.dirty || workspace.appliedUnsaved ||
-        workspace.minimized || workspace.suspended) {
-      const group = workspace.appliedUnsaved ? "save-recovery"
-        : workspace.stage === "damage-input" ? "required"
-          : workspace.draft ? "drafts" : "continuations";
-      work.push({
-        id: `workspace:${workspace.workspaceSessionId}`,
-        kind: "workspace",
-        group,
-        taskKind: workspace.workspaceType === "attack" ? "attack" : "command",
-        consequenceStatus: workspace.stage === "damage-input"
-          ? "awaiting-damage" : workspace.appliedUnsaved ? "applied-unsaved" : "in-progress",
-        label: workspace.label ?? "Продолжить рабочую панель",
-        workspaceSessionId: workspace.workspaceSessionId,
-        dirty: workspace.dirty === true,
-        draft: workspace.draft === true && !workspace.appliedUnsaved,
-        appliedUnsaved: workspace.appliedUnsaved === true,
-        sequenceId: workspace.sequenceId ?? null,
-        attackId: workspace.attackId ?? null,
-      });
-    }
-  }
-  return work;
-}
-
 export function getEndTurnAdvice(character, workspaceSessions = []) {
   if (getPlayerScenePhase(character) !== "own-turn") return [];
   const advice = getOwnTurnContinuationTasks(character).map((task) => ({
@@ -272,16 +153,6 @@ export function getEndTurnAdvice(character, workspaceSessions = []) {
       menu: "bonus",
     });
   }
-  for (const workspace of workspaceSessions) {
-    if (workspace.dirty) {
-      advice.push({
-        id: `draft:${workspace.workspaceSessionId}`,
-        kind: "draft",
-        label: "Есть незавершённый ввод, который станет устаревшим после конца хода",
-        workspaceSessionId: workspace.workspaceSessionId,
-      });
-    }
-  }
   return advice;
 }
 
@@ -293,7 +164,6 @@ export function getPlayerHubViewModel(character, workspaceSessions = []) {
     battle,
     budget: ["waiting", "own-turn"].includes(phase) ? getActionBudget(character) : null,
     continuations: getOwnTurnContinuationTasks(character),
-    unfinishedWork: getUnfinishedPlayerWork(character, workspaceSessions),
     endTurnAdvice: getEndTurnAdvice(character, workspaceSessions),
   };
 }

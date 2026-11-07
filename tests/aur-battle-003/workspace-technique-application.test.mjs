@@ -6,8 +6,7 @@ import {
   getWorkspaceSessionForTests,
   openSaraBattleCommand,
   openSaraTechniqueApplication,
-  getMinimizedWorkspaceSessions,
-  resumeWorkspace,
+  minimizeWorkspace,
 } from "../../scripts/workspace/controller.js";
 import { beginOwnTurn, startBattle } from "../../scripts/battle/transitions.js";
 import {
@@ -51,10 +50,8 @@ test("technique applications use the shared command workspace and execute once",
 
   fireWorkspaceInput(dialog, "kiCost", "2");
   const operationKey = "apply:monk-technique:ll-monk:gale-rush";
-  fireWorkspaceAction(dialog, "minimize");
-  const minimized = getMinimizedWorkspaceSessions().find((entry) => entry.workspaceSessionId === opened.sessionId);
-  assert.equal(minimized.scenarioId, "monk-technique:ll-monk:gale-rush");
-  assert.equal(resumeWorkspace(opened.sessionId).ok, true);
+  assert.equal(minimizeWorkspace(), false);
+  assert.equal(getWorkspaceSessionForTests().workspaceSessionId, opened.sessionId);
   task = getWorkspaceSessionForTests();
   assert.equal(task.rawInputsByStep[task.currentStepKey].kiCost, "2");
   setCommandForm(dialog, { kiCost: "2" });

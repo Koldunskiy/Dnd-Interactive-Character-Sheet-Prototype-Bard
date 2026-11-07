@@ -9,10 +9,8 @@ import { startBattle, beginOwnTurn, endOwnTurn } from "../../scripts/battle/tran
 import {
   disposeWorkspaceOwner,
   getWorkspaceSessionForTests,
-  getMinimizedWorkspaceSessions,
   openNormalAttack,
   openSaraBattleCommand,
-  resumeWorkspace,
 } from "../../scripts/workspace/controller.js";
 import {
   fireWorkspaceAction,
@@ -50,12 +48,8 @@ test("two misses exit summary; next-turn generic Attack is fresh and old summary
     }
     assert.equal(getWorkspaceSessionForTests().currentStep, "summary");
     assert.match(fixture.dialog.footer.innerHTML, /data-workspace-action="finish-workspace"/);
-    fireWorkspaceAction(fixture.dialog, "minimize");
+    fireWorkspaceAction(fixture.dialog, "finish-workspace");
     assert.equal(fixture.dialog.open, false);
-
-    const oldSummaryId = getMinimizedWorkspaceSessions()
-      .find((entry) => entry.workspaceSessionId === first.sessionId)?.workspaceSessionId;
-    assert.ok(oldSummaryId);
     updateSessionState(getSessionContext(), (draft) => {
       const ended = endOwnTurn(draft);
       if (!ended.ok) throw new Error(ended.reason);
@@ -73,9 +67,8 @@ test("two misses exit summary; next-turn generic Attack is fresh and old summary
     assert.deepEqual(fresh.rawInputsByStep[fresh.currentStepKey], {});
     assert.equal(getSessionContext().stateRevision, revision);
     assert.equal(getState().ui.turn.actionUsed, false);
-    assert.equal(resumeWorkspace(oldSummaryId).ok, true);
-    assert.equal(getWorkspaceSessionForTests().currentStep, "summary");
-    assert.equal(getWorkspaceSessionForTests().readOnly, true);
+    assert.equal(getState().monk.combatAssistant.activeSequences[0]
+      .resolvedAttacks.length, 2);
   } finally {
     finishFixture(fixture);
   }

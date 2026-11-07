@@ -27,7 +27,7 @@ import {
 import { isTechniqueEffectivelySelected } from "../selectors/techniques.js";
 import { eligibleEntitlement } from "../sara-functional.js";
 import { setPanelMarkup } from "./sara-dom.js";
-import { openSaraTechniqueApplication, getMinimizedWorkspaceSessions, resumeWorkspace } from "../workspace/controller.js";
+import { openSaraTechniqueApplication } from "../workspace/controller.js";
 
 const pendingDrafts = new Map();
 const techniqueViews = new Map();
@@ -212,15 +212,9 @@ export function renderTechniquesPanel(character) {
   ];
   const signatureCount = Object.values(character.monk?.signatureTechniqueSlots ?? {})
     .filter(Boolean).length;
-  const deferredTechniqueTasks = getMinimizedWorkspaceSessions()
-    .filter((task) => task.workspaceType === "command" && task.scenarioId?.startsWith("monk-technique:"));
   const markup = `
     <header class="sara-tab-heading"><h2>Техники</h2></header>
     <p class="sara-technique-summary">Обычные: ${ordinaryIds.length}/${derivedTechniqueLimit(character)} · Избранные: ${signatureCount} · Ци: ${character.combat?.ki?.current ?? "—"}/${derived.monk.kiMaximum ?? "—"}</p>
-    ${deferredTechniqueTasks.length ? `<section class="sara-status" aria-label="Отложенные применения">
-      <h3>Отложенное применение</h3>${deferredTechniqueTasks.map((task) => `<button type="button" class="btn btn--utility"
-        data-technique-resume-workspace="${escapeHtml(task.workspaceSessionId)}">${escapeHtml(task.label)}</button>`).join("")}
-    </section>` : ""}
     <nav class="sara-subtabs" aria-label="Разделы техник">
       ${techniqueModes.map(([id, label]) => `<button type="button" class="btn"
         data-technique-tab="${id}" aria-selected="${view.mode === id}">${label}</button>`).join("")}
@@ -336,11 +330,6 @@ export function renderTechniquesPanel(character) {
       if (target.matches("[data-technique-use]")) {
         const opened = openSaraTechniqueApplication(target.dataset.techniqueUse, target);
         if (!opened.ok && status) status.textContent = opened.reason;
-        return;
-      }
-      if (target.matches("[data-technique-resume-workspace]")) {
-        const resumed = resumeWorkspace(target.dataset.techniqueResumeWorkspace);
-        if (!resumed.ok && status) status.textContent = resumed.reason;
         return;
       }
       if (target.matches("[data-technique-tab]")) {

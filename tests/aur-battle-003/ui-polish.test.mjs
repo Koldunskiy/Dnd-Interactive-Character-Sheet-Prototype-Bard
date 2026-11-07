@@ -139,7 +139,7 @@ test("battle cards and global surfaces have wrapping and theme-token safeguards"
     readFile(new URL("../../styles/action-workspace.css", import.meta.url), "utf8"),
   ]);
   assert.match(battleCss, /\.battle-command-card__open\s*\{[\s\S]*?width:\s*100%/);
-  assert.match(battleCss, /\.battle-command-card,\s*\.battle-work-item,\s*\.workspace-record,\s*\.workspace-post-hit\s*\{[\s\S]*?display:\s*grid/);
+  assert.match(battleCss, /\.battle-command-card,\s*\.workspace-record,\s*\.workspace-post-hit\s*\{[\s\S]*?display:\s*grid/);
   assert.match(battleCss, /\.battle-command-card__chips\s*\{[\s\S]*?flex-wrap:\s*wrap/);
   assert.match(battleCss, /\.battle-command-card__chip\s*\{[\s\S]*?overflow-wrap:\s*anywhere/);
   assert.match(themeCss, /:root\[data-theme\]\s+dialog::backdrop/);
@@ -237,7 +237,9 @@ test("combat entry templates keep physical inputs beside totals and preserve cri
   assert.match(normal, /data-attack-formula/);
   assert.match(normal, /data-attack-status[\s\S]*?data-attack-validation/);
   assert.match(renderAttackWorkspace(attackSession, structuredClone(sara)).header,
-    /workspace-task-heading[\s\S]*?data-workspace-action="minimize"/);
+    /workspace-task-heading/);
+  assert.doesNotMatch(renderAttackWorkspace(attackSession, structuredClone(sara)).header,
+    /data-workspace-action="(?:minimize|roll-defer)"/);
   assert.match(normal, /data-attack-status role="status"><\/p>/);
 
   attackSession.rawInputsByStep[attackSession.currentStepKey] = {

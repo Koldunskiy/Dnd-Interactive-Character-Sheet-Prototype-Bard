@@ -2,12 +2,11 @@ import { escapeHtml } from "./shared/spell-card.js";
 import { executeBattleCommand } from "../battle/commands.js";
 import {
   getActiveWorkspaceSession,
-  getMinimizedWorkspaceSessions,
+  getWorkspaceRecoverySessions,
   getWorkspaceSessions,
   openNormalAttack,
   openSaraBattleCommand,
   resumeWorkspace,
-  discardWorkspaceDraft,
   requestEndBattle,
   openIncomingAttack,
 } from "../workspace/controller.js";
@@ -73,49 +72,6 @@ function renderBattleCommandCard(entry) {
       data-battle-command-open="${escapeHtml(entry.id)}"
       ${entry.availability.enabled ? "" : "disabled"}>Открыть</button>
   </article>`;
-}
-
-function renderPlayerWork(work) {
-  if (work.appliedUnsaved) {
-    return `<section class="combat-save-recovery__item" role="alert">
-      <strong>Результат применён, но не сохранён</strong>
-      <p>Повторное применение отключено. Возобновите панель и повторите сохранение.</p>
-      <button type="button" class="btn btn--utility"
-        data-workspace-resume="${escapeHtml(work.workspaceSessionId)}">Открыть сохранение</button>
-    </section>`;
-  }
-  if (work.kind === "historical-damage") {
-    return `<article class="battle-work-item"><h4>${escapeHtml(work.label)}</h4>
-      <small>Попадание записано · урон ещё не учтён</small><button type="button" class="primary"
-      data-battle-open-historical-damage="${escapeHtml(work.sequenceId)}"
-      data-battle-attack-id="${escapeHtml(work.attackId)}">Продолжить</button></article>`;
-  }
-  if (work.kind === "pending-seeking") {
-    return `<article class="battle-work-item"><h4>${escapeHtml(work.label)}</h4>
-      <small>1 ци уже уплачена · требуется физический повторный бросок</small>
-      <button type="button" class="primary" data-battle-open-seeking="${escapeHtml(work.sequenceId)}"
-        data-battle-attack-id="${escapeHtml(work.attackId)}">Продолжить</button></article>`;
-  }
-  if (work.kind === "sequence-continuation") {
-    return `<article class="battle-work-item"><h4>${escapeHtml(work.label)}</h4>
-      <small>Последовательность ударов ещё открыта</small><button type="button" class="primary"
-        data-battle-resume-sequence="${escapeHtml(work.sequenceId)}">Продолжить</button></article>`;
-  }
-  if (work.commandId) {
-    return `<article class="battle-work-item"><h4>${escapeHtml(work.label)}</h4>
-      <small>${work.group === "awaiting-answer" ? "Ожидается исход от ведущего" : "Последствие ещё не записано"}</small>
-      <button type="button" data-battle-command-open="${escapeHtml(work.commandId)}">
-        ${work.group === "awaiting-answer" ? "Записать исход" : "Продолжить"}</button></article>`;
-  }
-  if (work.workspaceSessionId) {
-    return `<article class="battle-work-item"><h4>${escapeHtml(work.label)}</h4>
-      <small>${work.appliedUnsaved ? "Результат применён, требуется сохранить" :
-        work.draft ? "Не записанный ввод" : "Рабочая панель приостановлена"}</small>
-      <div class="battle-work-item__actions"><button type="button" class="primary"
-        data-workspace-resume="${escapeHtml(work.workspaceSessionId)}">${work.draft ? "Вернуться" : "Продолжить"}</button>
-        ${work.draft ? `<button type="button" data-workspace-discard="${escapeHtml(work.workspaceSessionId)}">Удалить черновик</button>` : ""}</div></article>`;
-  }
-  return "";
 }
 
 function renderSavedRecords(records, owner, continuationIds) {
@@ -191,10 +147,9 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     }
   } catch {}
   const endBattleButton = renderSaraEndBattleButton(state, endBattleOwner);
-  const workspaceSessions = getWorkspaceSessions();
   const activeWorkspace = getActiveWorkspaceSession() ??
-    workspaceSessions.find((entry) => !entry.minimized && !entry.suspended);
-  const view = getPlayerHubViewModel(state, workspaceSessions);
+    null;
+  const view = getPlayerHubViewModel(state);
   const derived = getDerivedStats(state);
   const commands = getSaraBattleCommandRegistry(state);
   const initiativeSnapshot = getSaraInitiativeSnapshot(state);
@@ -214,7 +169,6 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
   const savedRecordsPanel = uiState.panel === "saved-records"
     ? renderSavedRecords(savedRecords, savedRecordsOwner,
       new Set(view.continuations.map((entry) => entry.sequenceId))) : "";
-  const minimized = getMinimizedWorkspaceSessions();
   const phaseLabels = {
     outside: "Исследование",
     waiting: "Бой · Ожидание своего хода",
@@ -342,32 +296,16 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
       `;
   }
 
-  const minimizedIds = new Set(minimized.map((entry) => entry.workspaceSessionId));
-  const unfinished = view.unfinishedWork.filter((entry) =>
-    !entry.workspaceSessionId || !minimizedIds.has(entry.workspaceSessionId));
-  const saveRecovery = activeWorkspace?.appliedUnsaved
-    ? [] : [...unfinished, ...minimized].filter((entry) => entry.appliedUnsaved);
-  const minimizedWithoutRecovery = minimized.filter((entry) => !entry.appliedUnsaved);
-  const visibleUnfinished = unfinished.filter((entry) => !entry.appliedUnsaved);
-  const groupedWork = [...visibleUnfinished, ...minimizedWithoutRecovery];
-  const requiredWork = groupedWork.filter((entry) => entry.group === "required");
-  const externalAnswers = groupedWork.filter((entry) => entry.group === "awaiting-answer");
-  const continuations = groupedWork.filter((entry) => entry.group === "continuations");
-  const drafts = groupedWork.filter((entry) => entry.group === "drafts" && entry.draft);
-  const renderWorkGroup = (title, entries) => entries.length
-    ? `<section class="battle-work-group"><h3>${title}</h3>
-        <div class="battle-unfinished-list">${entries.map(renderPlayerWork).join("")}</div></section>`
-    : "";
-  const visibleWorkCount = visibleUnfinished.length + minimizedWithoutRecovery.length;
-  const workPanel = visibleWorkCount ? `<details class="battle-unfinished-work">
-    <summary>Требует внимания · ${visibleWorkCount}</summary>
-    ${renderWorkGroup("Обязательные последствия", requiredWork)}
-    ${renderWorkGroup("Ожидается ответ", externalAnswers)}
-    ${renderWorkGroup("Доступные продолжения", continuations)}
-    ${renderWorkGroup("Черновики", drafts)}
-    ${requiredWork.length + externalAnswers.length + continuations.length + drafts.length === 0
-      ? "<p>Нет ожидающих результатов или черновиков.</p>" : ""}
-  </details>` : "";
+  const recoveries = getWorkspaceRecoverySessions()
+    .filter((entry) => !(entry.workspaceSessionId === activeWorkspace?.workspaceSessionId &&
+      (activeWorkspace.appliedUnsaved || activeWorkspace.verificationRequired)));
+  const recoveryPanel = recoveries.length ? `<section data-sara-workspace-recovery
+      aria-label="Техническое восстановление">${recoveries.map((entry) => `<article class="combat-save-recovery__item" role="alert">
+      <strong>${entry.recoveryKind === "verification" ? "Не удалось подтвердить результат" : "Результат применён, но не сохранён"}</strong>
+      <p>${entry.recoveryKind === "verification" ? "Повторное применение заблокировано." : "Повторное применение не требуется."}</p>
+      <button type="button" class="btn btn--utility" data-workspace-recovery="${escapeHtml(entry.workspaceSessionId)}">
+        ${entry.recoveryKind === "verification" ? "Открыть проверку результата" : "Открыть сохранение"}</button>
+    </article>`).join("")}</section>` : "";
   const workspaceHostMarkup = `<div class="combat-workspace-host" data-combat-workspace-root
       role="region" aria-label="Активная рабочая панель" ${activeWorkspace ? "" : "hidden"}>
     <header class="action-workspace__header"><div data-workspace-header></div></header>
@@ -388,9 +326,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     budget,
     navigation,
     phaseBody,
-    pending: `${saveRecovery.length ? `<section class="combat-save-recovery" aria-label="Требуется повторное сохранение">
-      ${saveRecovery.map(renderPlayerWork).join("")}</section>` : ""}
-      ${workPanel}`,
+    pending: recoveryPanel,
     turnControls: `${mainAction ? `<footer class="combat-primary-footer">${mainAction}</footer>` : ""}
       <p class="battle-console-status" data-battle-status role="status"></p>`,
     workspaceHostMarkup,
@@ -422,7 +358,7 @@ export function renderBattleConsole(state, uiState = {
       </div>
       ${hasPermanentSaraDock ? "" : regions.workspaceHostMarkup}
     </div>
-    <div data-sara-pending-work ${regions.activeWorkspace ? "hidden" : ""}>${regions.pending}</div>
+    <div data-sara-pending-work>${regions.pending}</div>
     <div data-sara-turn-controls ${regions.activeWorkspace ? "hidden" : ""}>${regions.turnControls}</div>
   </section>`;
 }
@@ -834,16 +770,6 @@ export function bindBattleConsole(root = document, { onNavigate } = {}) {
       rerender(true);
       return;
     }
-    const discardButton = event.target.closest("[data-workspace-discard]");
-    if (discardButton && root.contains(discardButton)) {
-      const result = discardWorkspaceDraft(discardButton.dataset.workspaceDiscard);
-      if (!result.ok) {
-        reportFailure(result.reason);
-      } else {
-        rerender();
-      }
-      return;
-    }
     const navigationButton = event.target.closest("[data-battle-navigate]");
     if (navigationButton && root.contains(navigationButton) && !navigationButton.disabled) {
       const tabId = navigationButton.dataset.battleNavigate;
@@ -923,9 +849,9 @@ export function bindBattleConsole(root = document, { onNavigate } = {}) {
       }
       return;
     }
-    const resumeShortcut = event.target.closest("[data-workspace-resume]");
+    const resumeShortcut = event.target.closest("[data-workspace-recovery]");
     if (resumeShortcut && root.contains(resumeShortcut)) {
-      const result = resumeWorkspace(resumeShortcut.dataset.workspaceResume);
+      const result = resumeWorkspace(resumeShortcut.dataset.workspaceRecovery);
       if (!result.ok) {
         reportFailure(result.reason);
       }

@@ -353,8 +353,7 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 .page[data-character-id="sara-velaris"] .battle-category-panel,
 .page[data-character-id="sara-velaris"] .battle-console-hud > span,
 .page[data-character-id="sara-velaris"] .workspace-resource,
-.page[data-character-id="sara-velaris"] .workspace-record,
-.page[data-character-id="sara-velaris"] .battle-work-item {
+.page[data-character-id="sara-velaris"] .workspace-record {
   border-color: var(--sara-border);
   border-radius: 12px;
   color: var(--sara-text);
@@ -368,7 +367,6 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 }
 
 .page[data-character-id="sara-velaris"] .battle-console-status,
-.page[data-character-id="sara-velaris"] .battle-work-item__status,
 .page[data-character-id="sara-velaris"] .workspace-resource__label {
   color: var(--sara-muted);
 }

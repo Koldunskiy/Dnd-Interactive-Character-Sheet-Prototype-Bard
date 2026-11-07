@@ -13,6 +13,7 @@ import {
   minimizeWorkspace,
   openNormalAttack,
   discardWorkspaceDraft,
+  getWorkspaceRecoverySessions,
 } from "../../scripts/workspace/controller.js";
 import {
   installWorkspaceFixture,
@@ -20,7 +21,7 @@ import {
   fireWorkspaceAction,
 } from "./workspace-fixture.mjs";
 import { closeWorkspaceHost, renderWorkspaceHost } from "../../scripts/workspace/host.js";
-import { getUnfinishedPlayerWork } from "../../scripts/battle/player-hub.js";
+import { getSavedPlayerRecords } from "../../scripts/battle/player-hub.js";
 import { renderMeleePanel } from "../../scripts/render/render-melee.js";
 import { getSaraHudModel, updateSaraHudRegion } from "../../scripts/render/sara-hud.js";
 import {
@@ -98,8 +99,8 @@ test("W1 historical numeric damage uses the recorded profile after current stats
   assert.equal(markAttackDamageOutside(
     getSessionContext(), sequenceId, attackId, "w1-snapshot-late-outside",
   ).status, "rejected");
-  assert.equal(getUnfinishedPlayerWork(getState(), [])
-    .filter((entry) => entry.kind === "historical-damage").length, 0);
+  assert.equal(getSavedPlayerRecords(getState()).sequences[0].attacks[0]
+    .damageStatus, "recorded");
   unsubscribe();
 });
 
@@ -116,8 +117,8 @@ test("W1 a closed sequence retains its unresolved damage obligation", () => {
   assert.equal(closeAttackSequence(
     getSessionContext(), sequenceId, "w1-close-pending-sequence",
   ).status, "applied");
-  assert.equal(getUnfinishedPlayerWork(getState(), [])
-    .filter((entry) => entry.kind === "historical-damage").length, 1);
+  assert.equal(getSavedPlayerRecords(getState()).sequences[0].attacks[0]
+    .damageStatus, "awaiting-damage");
   unsubscribe();
 });
 
@@ -349,16 +350,15 @@ test("W1 phase changes replace focused combat controls immediately and discard q
   unsubscribe();
 });
 
-test("W1 pending-task grouping follows consequence status, not Russian label wording", () => {
+test("W1 pending roll remains a saved record rather than a pending-work group", () => {
   const state = structuredClone(sara);
   state.characterRolls ??= { records: [] };
   state.characterRolls.records = [
     { id: "w1-awaiting-answer", label: "Переименованный результат", consequence: { status: "awaiting-outcome" } },
     { id: "w1-required", label: "Указать исход — изменённая подпись", consequence: { status: "awaiting-damage-input" } },
   ];
-  const work = getUnfinishedPlayerWork(state, []);
-  assert.equal(work.find((entry) => entry.id === "roll:w1-awaiting-answer").group, "awaiting-answer");
-  assert.equal(work.find((entry) => entry.id === "roll:w1-required").group, "required");
+  assert.deepEqual(getSavedPlayerRecords(state).rolls.map((entry) =>
+    entry.consequencePending), [true, true]);
 });
 
 test("W1 discarding an unrecorded draft removes only workspace input", () => {
@@ -375,7 +375,7 @@ test("W1 discarding an unrecorded draft removes only workspace input", () => {
   field.parentElement = dialog;
   dialog.fire("input", { target: field });
   assert.equal(getWorkspaceSessionForTests().dirty, true);
-  minimizeWorkspace();
+  assert.equal(minimizeWorkspace(), false);
 
   assert.deepEqual(discardWorkspaceDraft(workspaceId), { ok: true });
   assert.equal(getWorkspaceSessions().some((entry) => entry.workspaceSessionId === workspaceId), false);
@@ -385,7 +385,7 @@ test("W1 discarding an unrecorded draft removes only workspace input", () => {
   unsubscribe();
 });
 
-test("W1 a live damage workspace and its persisted hit project as one task", () => {
+test("W1 an active historical-damage input is not projected into recovery", () => {
   const { unsubscribe } = installWorkspaceFixture();
   const sequenceId = "w1-dedup-sequence";
   const attackId = "w1-dedup-hit";
@@ -398,32 +398,8 @@ test("W1 a live damage workspace and its persisted hit project as one task", () 
   }, "w1-record-dedup-hit");
   assert.equal(recorded.status, "applied");
   assert.equal(openNormalAttack({ sequenceId, attackId }).ok, true);
-  minimizeWorkspace();
-
-  const work = getUnfinishedPlayerWork(getState(), getWorkspaceSessions());
-  assert.equal(work.filter((entry) => entry.kind === "historical-damage").length, 0);
-  assert.equal(work.filter((entry) => entry.workspaceSessionId).length, 1);
-
-  const state = getState();
-  const matching = [{
-    workspaceSessionId: "matching-active",
-    sequenceId,
-    attackId,
-    stage: "damage-input",
-    dirty: true,
-  }];
-  assert.equal(getUnfinishedPlayerWork(state, matching)
-    .filter((entry) => entry.kind === "historical-damage").length, 0);
-  assert.equal(getUnfinishedPlayerWork(state, [{
-    ...matching[0], minimized: true,
-  }]).filter((entry) => entry.kind === "historical-damage").length, 0);
-  assert.equal(getUnfinishedPlayerWork(state, [{
-    ...matching[0], suspended: true,
-  }]).filter((entry) => entry.kind === "historical-damage").length, 0);
-  assert.equal(getUnfinishedPlayerWork(state, [])
-    .filter((entry) => entry.kind === "historical-damage").length, 1);
-  assert.equal(getUnfinishedPlayerWork(state, [{
-    ...matching[0], attackId: "different-hit",
-  }]).filter((entry) => entry.kind === "historical-damage").length, 1);
+  assert.deepEqual(getWorkspaceRecoverySessions(), []);
+  assert.equal(getSavedPlayerRecords(getState()).sequences[0].attacks[0]
+    .damageStatus, "awaiting-damage");
   unsubscribe();
 });

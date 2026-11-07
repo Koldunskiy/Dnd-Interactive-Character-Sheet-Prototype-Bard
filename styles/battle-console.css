@@ -314,15 +314,13 @@
   color: var(--sara-muted);
 }
 
-.battle-command-grid,
-.battle-unfinished-list {
+.battle-command-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
 .battle-command-card,
-.battle-work-item,
 .workspace-record,
 .workspace-post-hit {
   display: grid;
@@ -340,15 +338,13 @@
   gap: 8px;
 }
 
-.battle-command-card__title,
-.battle-work-item h4 {
+.battle-command-card__title {
   min-width: 0;
   font-size: 16px;
   overflow-wrap: anywhere;
 }
 
 .battle-command-card p,
-.battle-work-item small,
 .battle-command-card small {
   color: var(--sara-muted);
   font-size: 13px;
@@ -408,16 +404,6 @@
   background: var(--sara-panel);
 }
 
-.battle-unfinished-work {
-  border-top: 1px solid var(--sara-line);
-}
-
-.battle-unfinished-work > summary {
-  min-height: 44px;
-  padding: 8px 14px;
-  color: var(--sara-accent);
-}
-
 .battle-saved-records {
   display: grid;
   gap: 10px;
@@ -439,25 +425,6 @@
   margin: 0;
   color: var(--sara-muted);
   overflow-wrap: anywhere;
-}
-
-.battle-work-group {
-  display: grid;
-  gap: 8px;
-  padding: 0 14px 12px;
-}
-
-.battle-work-group h3 {
-  color: var(--sara-muted);
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: .02em;
-}
-
-.battle-work-item__actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
 }
 
 .combat-save-recovery,
@@ -548,7 +515,6 @@
   overflow-wrap: anywhere;
 }
 
-.sara-combat-shell .combat-workspace-host .workspace-defer,
 .sara-combat-shell .combat-workspace-host .workspace-nav button {
   flex: none;
   padding: 6px 8px;
@@ -773,17 +739,12 @@
 html[data-combat-entry-active="true"] .sara-combat-shell > [data-sara-hud],
 html[data-combat-entry-active="true"] .sara-combat-shell > [data-sara-budget],
 html[data-combat-entry-active="true"] .sara-combat-shell > [data-sara-navigation],
-html[data-combat-entry-active="true"] .sara-combat-shell > [data-sara-pending-work],
 html[data-combat-entry-active="true"] .sara-combat-shell > [data-sara-turn-controls] {
   display: none;
 }
 
 html[data-combat-entry-active="true"] .sara-combat-shell .combat-workspace-host .action-workspace__header {
   padding: 5px 10px;
-}
-
-html[data-combat-entry-active="true"] .sara-combat-shell .combat-workspace-host .workspace-defer {
-  padding: 6px 8px;
 }
 
 html[data-combat-entry-active="true"] .sara-combat-shell .combat-workspace-host .action-workspace__body {
@@ -848,7 +809,6 @@ html[data-combat-entry-active="true"] .combat-workspace-host .workspace-entry-he
 }
 
 :root[data-theme] .sara-combat-shell .battle-command-card:not([class*="__"]),
-:root[data-theme] .sara-combat-shell .battle-work-item:not([class*="__"]),
 :root[data-theme] .sara-combat-shell .workspace-record:not([class*="__"]),
 :root[data-theme] .sara-combat-shell .workspace-post-hit:not([class*="__"]),
 :root[data-theme] .sara-combat-shell .battle-menu-panel:not([class*="__"]),

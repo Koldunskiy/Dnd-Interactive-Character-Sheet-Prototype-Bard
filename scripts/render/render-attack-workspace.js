@@ -523,9 +523,8 @@ export function renderAttackWorkspace(session, state) {
           !session.readOnly && !session.submitting && !session.appliedUnsaved
           ? `<button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>`
           : ""}
-        ${session.pendingAttackIntent || session.pendingSeekingIntent ? "" : `<button type="button" class="workspace-defer" data-workspace-action="minimize">Отложить</button>`}</div>`
+        </div>`
     : `<div class="workspace-nav">
-      <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
       <button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>
       <button type="button" class="btn btn--utility" data-workspace-action="close">Закрыть</button>
     </div>
@@ -636,13 +635,14 @@ export function renderAttackWorkspace(session, state) {
   } else if (session.currentStep === "confirm-close") {
     const hasRemainder = sequence?.status === "open" &&
       getUsedAttackSlots(sequence) < sequence.maximumAttacks;
-    body = `<p>${hasRemainder
-      ? "У этой атаки ещё есть удары. Продолжение, сворачивание и закрытие остатка — разные решения; уже записанные результаты и расходы сохранятся."
+    body = `<p>${session.historicalOnly
+      ? "Закрыть панель. Сохранённая запись останется доступна в «Сохранённых записях»."
+      : hasRemainder
+      ? "У этой атаки ещё есть удары. Можно продолжить или закрыть остаток; уже записанные результаты и расходы сохранятся."
       : session.dirty ? "Есть незавершённый ввод." : "Закрыть только эту рабочую панель?"}</p>
       ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}`;
     footer = hasRemainder
       ? `<button type="button" class="btn btn--primary" data-workspace-action="stay">Продолжить</button>
-        <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
         <button type="button" class="btn btn--utility" data-workspace-action="close-attack-remainder">Закрыть остаток</button>`
       : `<button type="button" class="btn btn--utility" data-workspace-action="stay">Вернуться</button>
         <button type="button" class="btn btn--primary" data-workspace-action="confirm-close">${session.dirty ? "Закрыть без применения" : "Готово"}</button>`;
@@ -695,7 +695,6 @@ export function renderAttackWorkspace(session, state) {
     } else if (session.currentStep === "summary" && sequence?.status === "open" &&
         session.capabilities.canContinueSequence && !session.readOnly) {
       footer = `<button type="button" class="btn btn--primary" data-workspace-action="next-attack">Продолжить следующий удар</button>
-        <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
         <button type="button" class="btn btn--utility" data-workspace-action="close-attack-remainder">Закрыть остаток</button>`;
     } else if (session.currentStep === "summary") {
       footer = `<button type="button" class="btn btn--primary" data-workspace-action="finish-workspace"

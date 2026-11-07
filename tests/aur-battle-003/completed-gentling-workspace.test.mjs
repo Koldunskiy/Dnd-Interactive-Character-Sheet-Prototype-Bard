@@ -12,8 +12,8 @@ import {
   disposeWorkspaceOwner,
   getActiveWorkspaceSession,
   getWorkspaceSessionForTests,
+  minimizeWorkspace,
   openNormalAttack,
-  resumeWorkspace,
   requestEndBattle,
 } from "../../scripts/workspace/controller.js";
 import { getDerivedStats } from "../../scripts/calculations.js";
@@ -272,15 +272,13 @@ test("W23: consecutive Gentling uses distinct operation/draft IDs and never open
   }
 });
 
-test("W08-W10: minimize/resume and unrelated bookkeeping preserve draft; ki shortage does not rewrite it", () => {
+test("W08-W10: active draft and unrelated bookkeeping are preserved; ki shortage does not rewrite it", () => {
   const { dialog, unsubscribe } = setup({ level: 6, ki: 2 });
   try {
     begin(dialog);
     gentlingForm(dialog, { extraKi: "1", targetHp: "10", sum: "15" });
     const intent = getWorkspaceSessionForTests().gentlingIntent;
-    const sessionId = getWorkspaceSessionForTests().workspaceSessionId;
-    fireWorkspaceActionStrict(dialog, "minimize");
-    assert.equal(resumeWorkspace(sessionId).ok, true);
+    assert.equal(minimizeWorkspace(), false);
     assert.equal(getWorkspaceSessionForTests().gentlingIntent.operationId, intent.operationId);
     assert.equal(getWorkspaceSessionForTests().currentStepKey, intent.draftKey);
     const sumInput = dialog.body.querySelector('[data-workspace-field][name="sum"]');

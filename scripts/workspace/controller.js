@@ -102,13 +102,11 @@ import {
   focusWorkspaceHeading,
   getWorkspaceHost,
   initWorkspaceHost,
-  minimizeWorkspaceHost,
   openWorkspaceHost,
   renderWorkspaceHost,
   updateWorkspaceResources,
   updateWorkspaceFooter,
   workspaceHostIsOpen,
-  workspaceHostIsEmbedded,
 } from "./host.js";
 import {
   renderCommandWorkspace,
@@ -2192,24 +2190,26 @@ export function openSaraTechniqueApplication(techniqueId, invoker = null) {
 }
 
 export function minimizeWorkspace() {
-  if (!session) return false;
-  const body = getWorkspaceHost()?.querySelector("[data-workspace-body]");
-  if (body) session.internalScrollByStep[session.currentStepKey] = body.scrollTop;
-  session.minimized = true;
-  minimizeWorkspaceHost();
-  document.dispatchEvent(new CustomEvent("action-workspace-visibility-changed"));
-  return true;
+  return false;
 }
 
 export function prepareWorkspaceTabTransition(fromTab, toTab) {
-  if (fromTab === "melee" && toTab !== "melee" &&
-      workspaceHostIsEmbedded() && workspaceHostIsOpen()) {
-    minimizeWorkspace();
-  }
+  void fromTab;
+  void toTab;
 }
 
 export function requestCloseWorkspace() {
   if (!session) return false;
+  if (session.submitting || session.appliedUnsaved ||
+      hasExplicitWorkspaceVerification(session)) {
+    session.error = session.submitting
+      ? "Операция выполняется. Панель останется открытой."
+      : hasExplicitWorkspaceVerification(session)
+        ? "Сначала проверьте результат. Закрытие не отменит и не повторит операцию."
+        : "Сначала повторите сохранение. Применённый результат не будет повторён или отброшен.";
+    render();
+    return false;
+  }
   const body = getWorkspaceHost()?.querySelector("[data-workspace-body]");
   if (body) session.internalScrollByStep[session.currentStepKey] = body.scrollTop;
   session.returnStep = session.currentStep;
@@ -2778,6 +2778,7 @@ function submitAttack(outcome, button = null) {
         !isWorkspaceOwnerCurrent(submittingOwner)) return;
     if (result.status === "verification-required") {
       session.readOnly = true;
+      session.operationVerificationRequired = true;
       setError("Не удалось подтвердить применение атаки. Повтор заблокирован; проверьте запись и сохраните состояние.");
       render();
       return;
@@ -2927,6 +2928,7 @@ function submitDamage() {
         !isWorkspaceOwnerCurrent(intent.owner)) return;
     if (result.status === "verification-required") {
       session.readOnly = true;
+      session.operationVerificationRequired = true;
       setError("Не удалось подтвердить применение атаки. Повтор заблокирован; проверьте запись и сохраните состояние.");
       render();
       return;
@@ -3905,6 +3907,7 @@ function applyCompletedSeekingResult(taskSession, result, request, intent) {
       !isWorkspaceOwnerCurrent(intent.owner)) return;
   if (result.status === "verification-required") {
     session.readOnly = true;
+    session.operationVerificationRequired = true;
     setError("Не удалось подтвердить замену Seeking Strike. Повтор заблокирован; проверьте запись и сохраните состояние.");
     render();
     return;
@@ -4248,6 +4251,7 @@ function submitGentlingTouch() {
       !isWorkspaceOwnerCurrent(intent.owner)) return;
   if (result.status === "verification-required") {
     session.readOnly = true;
+    session.operationVerificationRequired = true;
     session.gentlingVerificationRequired = true;
     setError("Не удалось подтвердить применение Gentling Touch. Повтор заблокирован; проверьте запись и сохраните состояние.");
     render();
@@ -4525,13 +4529,16 @@ function continueWithoutTechnique() {
 }
 
 function confirmClose() {
-  if (!session || session.submitting) return;
-  if (session.appliedUnsaved) {
-    setError("Сначала повторите сохранение. Применённый результат не будет повторён или отброшен.");
-    render();
-    return;
-  }
+  if (!session || session.submitting || session.appliedUnsaved ||
+      hasExplicitWorkspaceVerification(session)) return;
   finishCurrentSession();
+}
+
+function hasExplicitWorkspaceVerification(entry) {
+  return entry.currentStep === "verification" ||
+    entry.incomingDraft?.stage === "verification" ||
+    entry.gentlingVerificationRequired === true ||
+    entry.operationVerificationRequired === true;
 }
 
 function closeAttackRemainder() {
@@ -4716,8 +4723,8 @@ function handleAction(action, button = null) {
     return;
   }
   if (!session) return;
-  if (action === "minimize") {
-    minimizeWorkspace();
+  if (action === "minimize" || action === "roll-defer") {
+    return;
   } else if (action === "close") {
     requestCloseWorkspace();
   } else if (action === "stay") {
@@ -4769,8 +4776,6 @@ function handleAction(action, button = null) {
     submitRollConsequence("apply-to-character");
   } else if (action === "roll-track-consequence") {
     submitRollConsequence("tracked-elsewhere");
-  } else if (action === "roll-defer") {
-    minimizeWorkspace();
   } else if (action === "submit-damage") {
     submitDamage();
   } else if (action === "cancel-attack-draft" &&
@@ -4945,12 +4950,8 @@ function handleAction(action, button = null) {
       session.selectedDamage = null;
       session.dirty = true;
       render();
-    } else if (session.currentStep === "damage-input" || session.currentStep === "attack-input") {
-      minimizeWorkspace();
-    } else if (session.currentStep === "checkpoint") {
-      minimizeWorkspace();
     } else {
-      minimizeWorkspace();
+      requestCloseWorkspace();
     }
   }
 }
@@ -5164,7 +5165,8 @@ export function getWorkspaceSessions() {
     readOnly: entry.readOnly === true,
     verificationRequired: entry.currentStep === "verification" ||
       entry.incomingDraft?.stage === "verification" ||
-      entry.gentlingVerificationRequired === true,
+      entry.gentlingVerificationRequired === true ||
+      entry.operationVerificationRequired === true,
     gentlingVerificationRequired: entry.gentlingVerificationRequired === true,
     minimized: entry.minimized === true,
     suspended: entry.suspended === true,
@@ -5188,7 +5190,8 @@ export function getActiveWorkspaceSession() {
     stage: session.currentStep ?? null,
     verificationRequired: session.currentStep === "verification" ||
       session.incomingDraft?.stage === "verification" ||
-      session.gentlingVerificationRequired === true,
+      session.gentlingVerificationRequired === true ||
+      session.operationVerificationRequired === true,
     readOnly: session.readOnly === true,
     gentlingVerificationRequired: session.gentlingVerificationRequired === true,
     workspaceType: session.workspaceType,
@@ -5216,6 +5219,19 @@ export function getMinimizedWorkspaceSessions() {
       group: entry.appliedUnsaved ? "save-recovery"
         : ["damage-input", "seeking-input"].includes(entry.currentStep) ? "required"
           : isUnrecordedWorkspaceDraft(entry) ? "drafts" : "continuations",
+    }));
+}
+
+export function getWorkspaceRecoverySessions() {
+  return getAllWorkspaceSessions()
+    .filter((entry) => isWorkspaceOwnerCurrent(entry.owner) &&
+      entry.owner.appInstanceId === appInstanceId)
+    .filter((entry) => entry.appliedUnsaved || hasExplicitWorkspaceVerification(entry))
+    .map((entry) => ({
+      workspaceSessionId: entry.workspaceSessionId,
+      label: getWorkspaceSessionLabel(entry),
+      recoveryKind: hasExplicitWorkspaceVerification(entry) ? "verification" : "save",
+      workspaceType: entry.workspaceType,
     }));
 }
 
