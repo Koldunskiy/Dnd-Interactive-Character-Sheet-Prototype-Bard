@@ -3975,7 +3975,14 @@ function submitSeekingStrike() {
         sequence: getSequence(),
         attack: {
           ...parentAttack,
+          rawD20Rolls: preview.replacement.rawD20Rolls,
+          rollMode: preview.replacement.rollMode,
+          chosenD20: preview.replacement.chosenD20,
+          attackTotal: preview.replacement.attackTotal,
+          attackBonusSnapshot: preview.replacement.attackBonusSnapshot,
+          hitResult: preview.replacement.hitResult,
           critical: preview.replacement.critical,
+          hitResolutionSource: preview.replacement.hitResolutionSource,
           profileSnapshot: parentAttack?.profileSnapshot,
         },
       };

@@ -84,6 +84,14 @@ function submitSeekingInput(dialog, { roll = "10", outcome = "miss", ac = "" } =
   fireWorkspaceActionStrict(dialog, "submit-seeking", { apply: true });
 }
 
+function renderedDamageForm(dialog) {
+  const form = dialog.body.innerHTML.match(
+    /<form data-workspace-form="damage"[\s\S]*?<\/form>/,
+  )?.[0];
+  assert.ok(form, "expected the rendered damage form");
+  return form;
+}
+
 test("new Seeking input and cancel return to exact miss checkpoint without payment or history", () => {
   const { dialog, unsubscribe } = installWorkspaceFixture();
   try {
@@ -141,6 +149,12 @@ test("replacement hit stays transient through damage then commits attack replace
     assert.equal(getSessionContext().stateRevision, revision);
     assert.equal(getState().monk.combatAssistant.activeSequences[0]
       .resolvedAttacks[0].hitResult, "miss");
+    const transient = getWorkspaceSessionForTests().selectedDamage.attack;
+    const form = renderedDamageForm(dialog);
+    assert.match(form, /name="damage1"/);
+    assert.doesNotMatch(form, /name="damage2"/);
+    assert.match(form, new RegExp(`Попадание: к20 19[^<]*= ${transient.attackTotal}`));
+    assert.doesNotMatch(form, /Попадание: к20 2 /);
     dialog.forms.seeking = null;
     dialog.forms.damage = new FixtureForm("damage", { damage1: "" });
     fireWorkspaceInput(dialog, "damage1", "3");
@@ -390,6 +404,14 @@ test("post-commit subscriber exception recovers a completed Seeking miss as appl
       const { dialog, unsubscribe } = installWorkspaceFixture();
       try {
         openMissCheckpoint(dialog);
+        const initialSequence = getState().monk.combatAssistant.activeSequences[0];
+        const initialAttack = initialSequence.resolvedAttacks[0];
+        const parentId = initialAttack.id;
+        const parentTotal = initialAttack.attackTotal;
+        const parentState = structuredClone(getState());
+        const parentRevision = getSessionContext().stateRevision;
+        const parentStorage = new Map(window.localStorage.values);
+        const beforeKi = getState().combat.ki.current;
         beginSeeking(dialog);
         dialog.forms.attack = null;
         dialog.forms.seeking = new FixtureForm("seeking", {
@@ -402,6 +424,31 @@ test("post-commit subscriber exception recovers a completed Seeking miss as appl
         fireWorkspaceInput(dialog, "targetArmorClass", "30");
         fireWorkspaceActionStrict(dialog, "submit-seeking", { apply: true });
         assert.equal(getWorkspaceSessionForTests().currentStep, "damage-input");
+        const transient = getWorkspaceSessionForTests().selectedDamage.attack;
+        assert.equal(transient.id, parentId);
+        assert.equal(transient.hitResult, "hit");
+        assert.equal(transient.critical, true);
+        assert.deepEqual(transient.rawD20Rolls, [20, 3]);
+        assert.equal(transient.rollMode, "advantage");
+        assert.equal(transient.chosenD20, 20);
+        assert.equal(transient.attackTotal, 30);
+        assert.notEqual(transient.attackTotal, parentTotal);
+        assert.equal(transient.attackBonusSnapshot, initialAttack.attackBonusSnapshot);
+        assert.deepEqual(transient.profileSnapshot, initialAttack.profileSnapshot);
+        const damageForm = renderedDamageForm(dialog);
+        const dieSides = Number(transient.profileSnapshot.damageDice.match(/d(\d+)/)?.[1]);
+        for (const name of ["damage1", "damage2"]) {
+          assert.match(damageForm, new RegExp(
+            `name="${name}" type="number"[^>]*min="1"[^>]*max="${dieSides}"[^>]*required`,
+          ));
+        }
+        assert.match(damageForm,
+          new RegExp(`Попадание: к20 20 / 3 \\+ ${transient.attackBonusSnapshot} = ${transient.attackTotal}`));
+        assert.doesNotMatch(damageForm, new RegExp(`Попадание: к20 2 .* = ${parentTotal}`));
+        assert.deepEqual(getState(), parentState);
+        assert.equal(getSessionContext().stateRevision, parentRevision);
+        assert.deepEqual(window.localStorage.values, parentStorage);
+        assert.equal(getState().combat.ki.current, beforeKi);
         dialog.forms.seeking = null;
         dialog.forms.damage = new FixtureForm("damage", { damage1: "", damage2: "" });
         fireWorkspaceInput(dialog, "damage1", "2");
@@ -413,9 +460,15 @@ test("post-commit subscriber exception recovers a completed Seeking miss as appl
         assert.ok(submit?.isConnected);
         assert.equal(submit.disabled, false);
         fireWorkspaceActionStrict(dialog, "submit-damage", { apply: true });
+        assert.equal(getSessionContext().stateRevision, parentRevision + 1);
+        assert.equal(getState().combat.ki.current, beforeKi - 1);
         const attack = getState().monk.combatAssistant.activeSequences[0].resolvedAttacks[0];
+        assert.equal(attack.id, parentId);
         assert.equal(attack.critical, true);
         assert.deepEqual(attack.damageRolls, [2, 5]);
+        assert.equal(readSeekingHistory(attack, {
+          actionId: getWorkspaceSessionForTests().sequenceId, attackId: parentId,
+        }).filter((entry) => entry.status === "resolved").length, 1);
       } finally {
         unsubscribe();
       }
