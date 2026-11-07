@@ -22,6 +22,10 @@ import {
   previewWorkspaceCompletedBonusAttack,
   submitWorkspaceCompletedBonusAttack,
   readWorkspaceCompletedBonusAttackReceipt,
+  buildWorkspaceSeekingParentBasis,
+  previewWorkspaceCompletedSeekingStrike,
+  submitWorkspaceCompletedSeekingStrike,
+  readWorkspaceCompletedSeekingStrikeReceipt,
   submitWorkspaceAttack,
   submitWorkspaceSequenceAttack,
   submitWorkspaceDamage,
@@ -1673,6 +1677,9 @@ function updateInput(field) {
     renderWorkspaceAttackPreview(session, getState());
   } else if (session.currentStep === "seeking-input" && field.name === "rollMode") {
     render();
+  } else if (session.currentStep === "seeking-input" &&
+      ["firstD20", "secondD20", "targetArmorClass", "dmHitResult", "dmExceptionConfirmed"].includes(field.name)) {
+    updateWorkspaceFooter(renderAttackWorkspace(session, getState()).footer);
   } else if (session.currentStep === "damage-input") {
     renderWorkspaceDamagePreview(session);
     updateWorkspaceFooter(renderAttackWorkspace(session, getState()).footer);
@@ -2311,6 +2318,36 @@ function rehydrateFromState(state) {
     return;
   }
   const targetAttack = sequence.resolvedAttacks.find((entry) => entry.id === session.attackId);
+  if (session.seekingIntent) {
+    let history;
+    try {
+      history = targetAttack && readSeekingHistory(targetAttack, {
+        actionId: sequence.id, attackId: targetAttack.id,
+      });
+    } catch {
+      session.readOnly = true;
+      session.error = "История Seeking Strike противоречива; применение заблокировано.";
+      return;
+    }
+    const basis = targetAttack
+      ? buildWorkspaceSeekingParentBasis(sequence, targetAttack, history)
+      : null;
+    if (!targetAttack || basis !== session.seekingIntent.expectedParentBasis ||
+        session.seekingIntent.workspaceSessionId !== session.workspaceSessionId ||
+        session.seekingIntent.owner.characterId !== session.owner.characterId ||
+        session.seekingIntent.owner.sessionGeneration !== session.owner.sessionGeneration) {
+      session.readOnly = true;
+      session.error = "Исходный промах или контекст изменился. Черновик сохранён, но не будет применён.";
+    }
+    return;
+  }
+  if (session.pendingSeekingIntent) {
+    if (session.pendingSeekingIntent.workspaceSessionId !== session.workspaceSessionId) {
+      session.readOnly = true;
+      session.error = "Контекст Seeking Strike изменился. Урон не применён.";
+    }
+    return;
+  }
   if (session.currentStep === "seeking-input") {
     let amendment = null;
     try {
@@ -2519,6 +2556,45 @@ function runCompletedBonusMutation(capturedSession, request, operationIdValue) {
     if (receipt?.sequence?.id === normalizedRequest.sequenceId &&
         receipt?.sequence?.kind === normalizedRequest.sequenceKind &&
         receipt?.attack?.id === normalizedRequest.attackId &&
+        stableRequestString(receipt.request) === stableRequestString(normalizedRequest)) {
+      return { status: "applied", recovered: true, persistence: { ok: false } };
+    }
+  } catch {
+    return { status: "verification-required", error: thrown };
+  }
+  return { status: "verification-required", error: thrown };
+}
+
+function runCompletedSeekingMutation(capturedSession, request, operationIdValue) {
+  const owner = { ...capturedSession.owner };
+  const sessionId = capturedSession.workspaceSessionId;
+  let before;
+  try {
+    before = previewWorkspaceCompletedSeekingStrike(getState(), request);
+  } catch (error) {
+    return { status: "rejected", reason: error?.message ?? "Seeking Strike preview failed." };
+  }
+  if (!before.ok || before.stage !== "complete") {
+    return { status: "rejected", reason: before.reason ?? "Полный результат Seeking Strike не готов." };
+  }
+  const normalizedRequest = before.request;
+  let result = null;
+  let thrown = null;
+  capturedSession.submitting = true;
+  try {
+    result = submitWorkspaceCompletedSeekingStrike(owner, normalizedRequest, operationIdValue);
+  } catch (error) {
+    thrown = error;
+  } finally {
+    if (session === capturedSession && session.workspaceSessionId === sessionId &&
+        isWorkspaceOwnerCurrent(owner)) session.submitting = false;
+  }
+  if (session !== capturedSession || session.workspaceSessionId !== sessionId ||
+      !isWorkspaceOwnerCurrent(owner)) return { status: "replaced" };
+  if (!thrown) return result;
+  try {
+    const receipt = readWorkspaceCompletedSeekingStrikeReceipt(getState(), operationIdValue);
+    if (receipt && !receipt.malformed &&
         stableRequestString(receipt.request) === stableRequestString(normalizedRequest)) {
       return { status: "applied", recovered: true, persistence: { ok: false } };
     }
@@ -2758,6 +2834,29 @@ function submitDamage() {
   session.rawInputsByStep[session.currentStepKey] = values;
   session.dirty = true;
   const { sequence, attack } = session.selectedDamage;
+  if (session.pendingSeekingIntent) {
+    const intent = session.pendingSeekingIntent;
+    if (intent.workspaceSessionId !== session.workspaceSessionId ||
+        intent.actionId !== session.sequenceId || intent.attackId !== session.attackId ||
+        !isWorkspaceOwnerCurrent(intent.owner)) {
+      session.readOnly = true;
+      setError("Контекст Seeking Strike изменился; урон не применён.");
+      render();
+      return;
+    }
+    const rolls = attack.critical
+      ? [values.damage1 ?? "", values.damage2 ?? ""]
+      : [values.damage1 ?? ""];
+    const request = { ...intent.request, damageRolls: rolls };
+    const preview = previewWorkspaceCompletedSeekingStrike(getState(), request);
+    if (!preview.ok || preview.stage !== "complete") {
+      setError(preview.reason ?? "Полный результат замены Seeking Strike не готов.");
+      render();
+      return;
+    }
+    submitCompletedSeeking(intent, preview.request);
+    return;
+  }
   if (session.pendingAttackIntent &&
       ["attack-action", "flurry", "bonus-unarmed"].includes(session.sequenceKind)) {
     const rolls = attack.critical
@@ -3673,29 +3772,57 @@ function beginSeekingStrikeRoute(button = null) {
     render();
     return;
   }
-  const basisKey = JSON.stringify([
-    session.sequenceId, attack.id, attack.hitResult, attack.rollMode,
-    attack.rawD20Rolls, attack.chosenD20, attack.attackTotal,
-    history.at(-1)?.paidOperationId ?? null, history.at(-1)?.status ?? null,
-  ]);
+  const sequence = getSequence();
+  const basisKey = buildWorkspaceSeekingParentBasis(sequence, attack, history);
   if (button?.dataset.seekingBasis &&
       button.dataset.seekingBasis !== encodeURIComponent(basisKey)) {
     setError("Результат атаки изменился. Обновите панель перед новым применением.");
     render();
     return;
   }
-  const oldIntent = session.seekingBeginIntent;
-  const beginIntent = oldIntent?.actionId === session.sequenceId &&
-      oldIntent.attackId === attack.id && oldIntent.basisKey === basisKey
+  const state = getState();
+  const battle = state.battleConsole?.current;
+  const reactionParent = sequence?.kind === "reaction-unarmed";
+  const windowCurrent = Boolean(sequence &&
+    ["open", "complete"].includes(sequence.status) &&
+    Number(sequence.turnMarker) === Number(state.ui?.turn?.turnNumber ?? 1) &&
+    (reactionParent
+      ? Boolean(battle && ["waiting", "own-turn"].includes(battle.phase) &&
+        battle.id === sequence.battleId &&
+        (!sequence.ownTurnId || sequence.ownTurnId === battle.ownTurnId) &&
+        state.ui?.turn?.reactionUsed === true)
+      : ["attack-action", "flurry", "bonus-unarmed"].includes(sequence.kind) &&
+        (!battle ? !sequence.battleId : battle.phase === "own-turn" &&
+          battle.id === sequence.battleId &&
+          (!sequence.ownTurnId || sequence.ownTurnId === battle.ownTurnId))));
+  if (!getEffectiveSelectedTechniqueIds(state).has("ll-monk:seeking-strike") ||
+      !(attack.profileId === "unarmed" || attack.profileSnapshot?.martialArtsEligible === true) ||
+      !Number.isInteger(Number(state.combat?.ki?.current)) ||
+      Number(state.combat.ki.current) < 1 || !windowCurrent) {
+    setError("Seeking Strike сейчас недоступен: проверьте технику, промах, ресурс и контекст.");
+    render();
+    return;
+  }
+  const oldIntent = session.seekingIntent;
+  const intent = oldIntent?.actionId === session.sequenceId &&
+      oldIntent.attackId === attack.id && oldIntent.expectedParentBasis === basisKey
     ? oldIntent
-    : (session.seekingBeginIntent = {
-      operationId: createId("seeking-invocation"),
+    : (session.seekingIntent = {
+      invocationId: createId("seeking-invocation"),
+      operationId: null,
       actionId: session.sequenceId,
       attackId: attack.id,
-      basisKey,
+      expectedParentBasis: basisKey,
+      battleId: getState().battleConsole?.current?.id ?? null,
+      phaseAtOpen: getState().battleConsole?.current?.phase ?? "waiting",
+      ownTurnId: getState().battleConsole?.current?.phase === "own-turn"
+        ? getState().battleConsole.current.ownTurnId : null,
+      turnMarker: Number(getState().ui?.turn?.turnNumber ?? 1),
+      workspaceSessionId: session.workspaceSessionId,
+      owner: { ...session.owner },
+      returnStep: "checkpoint",
+      returnAttackId: attack.id,
     });
-  const taskSession = session;
-  const taskIdentity = `${session.sequenceId}:${attack.id}:${beginIntent.operationId}`;
   const currentOwner = getSessionContext();
   if (currentOwner.characterId !== session.owner.characterId ||
       currentOwner.sessionGeneration !== session.owner.sessionGeneration) {
@@ -3704,85 +3831,99 @@ function beginSeekingStrikeRoute(button = null) {
     return;
   }
   session.owner = { ...session.owner, stateRevision: currentOwner.stateRevision };
-  session.submitting = true;
-  let result;
-  let caughtUnexpectedError = false;
-  try {
-    result = beginSeekingStrike(session.owner, session.sequenceId, attack.id,
-      beginIntent.operationId);
-  } catch (error) {
-    caughtUnexpectedError = true;
-    console.error("Seeking Strike begin failed unexpectedly", error);
-    if (session === taskSession) {
-      const currentAttack = getSequence()?.resolvedAttacks?.find((entry) =>
-        entry.id === attack.id);
-      let verification = "not-applied";
-      try {
-        verification = currentAttack && readSeekingHistory(currentAttack, {
-          actionId: taskSession.sequenceId, attackId: attack.id,
-        }).some((entry) => entry.paidOperationId === beginIntent.operationId)
-          ? "applied" : "not-applied";
-      } catch (verificationError) {
-        console.error("Could not verify Seeking payment after handler failure", verificationError);
-        verification = "unknown";
-      }
-      session.appliedUnsaved = verification !== "not-applied";
-      setError(verification === "applied"
-        ? "Seeking Strike применён, но обработка завершилась с ошибкой. Сохраните запись; повторная оплата заблокирована."
-        : verification === "unknown"
-          ? "Исход Seeking Strike не подтверждён из-за ошибки проверки. Повторная оплата заблокирована; проверьте запись и сохраните состояние."
-          : "Не удалось выполнить Seeking Strike. Оплата не обнаружена; операция не повторялась.");
-    }
+  const key = stepKey("seeking-input", `${attack.id}:${intent.invocationId}`);
+  session.rawInputsByStep[key] ??= {};
+  session.seekingLegacyTask = null;
+  session.seekingOriginalRollMode = attack.rollMode;
+  session.error = "";
+  session.status = "";
+  session.appliedUnsaved = false;
+  session.readOnly = false;
+  session.dirty = false;
+  session.currentStep = "seeking-input";
+  session.currentStepKey = key;
+  render();
+}
+
+function makeCompletedSeekingRequest(intent, values, damageRolls = []) {
+  return {
+    actionId: intent.actionId,
+    attackId: intent.attackId,
+    invocationId: intent.invocationId,
+    battleId: intent.battleId,
+    phaseAtOpen: intent.phaseAtOpen,
+    ownTurnId: intent.ownTurnId,
+    turnMarker: intent.turnMarker,
+    expectedParentBasis: intent.expectedParentBasis,
+    replacement: {
+      rollMode: values.rollMode ?? "normal",
+      firstD20: values.firstD20,
+      secondD20: values.secondD20,
+      targetArmorClass: values.targetArmorClass,
+      dmHitResult: values.dmHitResult,
+      dmExceptionConfirmed: values.dmExceptionConfirmed === true,
+    },
+    damageRolls,
+  };
+}
+
+function applyCompletedSeekingResult(taskSession, result, request, intent) {
+  if (result.status === "replaced" || session !== taskSession ||
+      session.workspaceSessionId !== intent.workspaceSessionId ||
+      !isWorkspaceOwnerCurrent(intent.owner)) return;
+  if (result.status === "verification-required") {
+    session.readOnly = true;
+    setError("Не удалось подтвердить замену Seeking Strike. Повтор заблокирован; проверьте запись и сохраните состояние.");
+    render();
     return;
-  } finally {
-    if (session === taskSession &&
-        `${taskSession.sequenceId}:${taskSession.attackId}:${taskSession.seekingBeginIntent?.operationId}` === taskIdentity) {
-      session.submitting = false;
-      if (caughtUnexpectedError) render();
-    }
   }
-  if (session !== taskSession) return;
-  if (result.status !== "applied") {
+  if (result.status !== "applied" && result.status !== "replayed") {
     setError(result.reason);
     render();
     return;
   }
   refreshWorkspaceOwnerRevision();
-  const canonicalAttack = getSequence()?.resolvedAttacks?.find((entry) => entry.id === attack.id);
-  let invocation;
-  try {
-    invocation = readSeekingHistory(canonicalAttack, {
-      actionId: session.sequenceId,
-      attackId: attack.id,
-    }).find((entry) => entry.paidOperationId === beginIntent.operationId);
-  } catch {
-    invocation = null;
-  }
-  if (result.replayed === true && !invocation) {
-    setError("Записанное применение не найдено; новая оплата не выполнена.");
+  const updatedSequence = getWorkspaceAttackSequence(getState(), request.actionId);
+  const updatedAttack = updatedSequence?.resolvedAttacks?.find((entry) =>
+    entry.id === request.attackId);
+  if (!updatedAttack) {
+    session.readOnly = true;
+    setError("Результат Seeking Strike применён, но исходная атака не найдена.");
     render();
     return;
   }
-  if (!invocation || invocation.status !== "awaiting-replacement") {
-    session.appliedUnsaved = result.replayed ? session.appliedUnsaved
+  session.seekingIntent = null;
+  session.pendingSeekingIntent = null;
+  session.seekingTask = null;
+  session.seekingLegacyTask = null;
+  session.dirty = false;
+  session.appliedUnsaved = result.recovered === true
+    ? true
+    : result.status === "replayed"
+      ? session.appliedUnsaved
       : result.persistence?.ok === false;
-    session.error = "Это применение уже разрешено; повторный ввод не открыт.";
-    render();
-    return;
-  }
-  session.appliedUnsaved = result.replayed === true
-    ? session.appliedUnsaved : result.persistence?.ok === false;
-  session.seekingTask = {
-    actionId: session.sequenceId,
-    attackId: attack.id,
-    amendmentId: invocation.paidOperationId,
-  };
-  session.seekingOriginalRollMode = invocation.original.rollMode;
-  session.error = "";
-  const key = stepKey("seeking-input", `${attack.id}:${invocation.paidOperationId}`);
-  session.rawInputsByStep[key] ??= {};
-  setStep("seeking-input", attack.id, key);
+  session.selectedDamage = null;
+  session.strikeParent = updatedAttack.hitResult === "hit" &&
+      getCurrentWorkspaceStrikeParent(getState(), updatedSequence.id, updatedAttack.id)
+    ? { sequenceId: updatedSequence.id, attackId: updatedAttack.id } : null;
+  session.capabilities.canContinueSequence = !updatedAttack.historicalResolution &&
+    updatedSequence.status === "open" &&
+    getUsedAttackSlots(updatedSequence) < updatedSequence.maximumAttacks;
+  session.capabilities.canRecordAttack = session.capabilities.canContinueSequence;
+  session.capabilities.canRecordDamage = false;
+  session.status = "Seeking Strike и замена результата записаны атомарно.";
+  session.currentStep = "checkpoint";
+  session.currentStepKey = stepKey("checkpoint", updatedAttack.id);
+  session.attackId = updatedAttack.id;
   render();
+}
+
+function submitCompletedSeeking(intent, request) {
+  const taskSession = session;
+  if (!taskSession || taskSession.workspaceSessionId !== intent.workspaceSessionId ||
+      !isWorkspaceOwnerCurrent(intent.owner)) return;
+  const result = runCompletedSeekingMutation(taskSession, request, intent.invocationId);
+  applyCompletedSeekingResult(taskSession, result, request, intent);
 }
 
 function submitSeekingStrike() {
@@ -3798,7 +3939,54 @@ function submitSeekingStrike() {
   const values = parseForm(form);
   session.rawInputsByStep[session.currentStepKey] = values;
   session.dirty = true;
-  const task = session.seekingTask;
+  if (session.seekingIntent) {
+    const intent = session.seekingIntent;
+    if (intent.workspaceSessionId !== session.workspaceSessionId ||
+        intent.actionId !== session.sequenceId || intent.attackId !== session.attackId ||
+        !isWorkspaceOwnerCurrent(intent.owner)) {
+      session.readOnly = true;
+      setError("Контекст Seeking Strike изменился; повторный ввод не применён.");
+      render();
+      return;
+    }
+    const request = makeCompletedSeekingRequest(intent, values);
+    let preview;
+    try {
+      preview = previewWorkspaceCompletedSeekingStrike(getState(), request);
+    } catch (error) {
+      setError(error?.message ?? "Seeking Strike preview failed.");
+      render();
+      return;
+    }
+    if (!preview.ok) {
+      setError(preview.reason);
+      render();
+      return;
+    }
+    intent.operationId = intent.invocationId;
+    if (preview.stage === "damage") {
+      session.pendingSeekingIntent = { ...intent, request: preview.request };
+      const parentAttack = getSequence()?.resolvedAttacks?.find((entry) =>
+        entry.id === intent.attackId);
+      session.selectedDamage = {
+        sequence: getSequence(),
+        attack: {
+          ...parentAttack,
+          critical: preview.replacement.critical,
+          profileSnapshot: parentAttack?.profileSnapshot,
+        },
+      };
+      const key = stepKey("damage-input", `${intent.attackId}:${intent.invocationId}`);
+      session.rawInputsByStep[key] ??= {};
+      session.currentStep = "damage-input";
+      session.currentStepKey = key;
+      render();
+      return;
+    }
+    submitCompletedSeeking(intent, preview.request);
+    return;
+  }
+  const task = session.seekingLegacyTask ?? session.seekingTask;
   const attack = getSequence()?.resolvedAttacks?.find((entry) => entry.id === task?.attackId);
   let amendment;
   try {
@@ -4427,6 +4615,21 @@ function handleAction(action, button = null) {
     } else {
       finishCurrentSession();
     }
+  } else if (action === "cancel-seeking-draft" &&
+      session.workspaceType === "attack" && session.seekingIntent &&
+      ["seeking-input", "damage-input"].includes(session.currentStep) &&
+      !session.readOnly && !session.submitting && !session.appliedUnsaved) {
+    const returnAttackId = session.seekingIntent.returnAttackId;
+    session.seekingIntent = null;
+    session.pendingSeekingIntent = null;
+    session.seekingTask = null;
+    session.selectedDamage = null;
+    session.dirty = false;
+    session.attackId = returnAttackId;
+    session.currentStep = "checkpoint";
+    session.currentStepKey = stepKey("checkpoint", returnAttackId);
+    session.strikeParent = null;
+    render();
   } else if (action === "apply-command") {
     submitCommand();
   } else if (action === "edit-rest-replacement" &&
@@ -4544,8 +4747,18 @@ function handleAction(action, button = null) {
   } else if (action === "retry-save") {
     retrySave();
   } else if (action === "back" &&
-      !(session.readOnly && session.pendingAttackIntent)) {
-    if (session.currentStep === "damage-input" && session.pendingAttackIntent &&
+      !(session.readOnly && (session.pendingAttackIntent || session.pendingSeekingIntent))) {
+    if (session.currentStep === "damage-input" && session.pendingSeekingIntent &&
+        !session.readOnly && !session.submitting && !session.appliedUnsaved) {
+      const intent = session.pendingSeekingIntent;
+      session.pendingSeekingIntent = null;
+      session.selectedDamage = null;
+      session.currentStep = "seeking-input";
+      session.currentStepKey = stepKey("seeking-input",
+        `${intent.attackId}:${intent.invocationId}`);
+      session.dirty = true;
+      render();
+    } else if (session.currentStep === "damage-input" && session.pendingAttackIntent &&
         !session.readOnly && !session.submitting && !session.appliedUnsaved) {
       session.pendingAttackIntent = null;
       session.currentStep = "attack-input";

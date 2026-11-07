@@ -2,6 +2,8 @@ import { getDerivedStats } from "../calculations.js";
 import {
   calculateWorkspaceAttackPreview,
   calculateWorkspaceDamagePreview,
+  buildWorkspaceSeekingParentBasis,
+  previewWorkspaceCompletedSeekingStrike,
   getCurrentWorkspaceStrikeParent,
   getSaraAttackCount,
 } from "../workspace/attack-adapter.js";
@@ -242,6 +244,9 @@ function renderSeekingForm(session) {
         <option value="miss" ${values.dmHitResult === "miss" ? "selected" : ""}>Промах</option>
       </select>
     </label>
+    <label class="workspace-check"><input data-workspace-field="dmExceptionConfirmed"
+      name="dmExceptionConfirmed" type="checkbox" ${values.dmExceptionConfirmed ? "checked" : ""}>
+      Подтверждаю исключение ведущего для натурального результата</label>
     ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}
   </form>`;
 }
@@ -398,11 +403,12 @@ export function renderAttackWorkspace(session, state) {
   const header = session.workspaceType === "attack"
     ? `<div class="workspace-task-heading"><h2 id="workspaceDialogTitle" tabindex="-1"
         data-workspace-title>${escapeHtml(heading)}</h2>
-        ${session.pendingAttackIntent && session.currentStep === "damage-input" &&
+        ${(session.pendingAttackIntent || session.pendingSeekingIntent) &&
+          session.currentStep === "damage-input" &&
           !session.readOnly && !session.submitting && !session.appliedUnsaved
           ? `<button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>`
           : ""}
-        ${session.pendingAttackIntent ? "" : `<button type="button" class="workspace-defer" data-workspace-action="minimize">Отложить</button>`}</div>`
+        ${session.pendingAttackIntent || session.pendingSeekingIntent ? "" : `<button type="button" class="workspace-defer" data-workspace-action="minimize">Отложить</button>`}</div>`
     : `<div class="workspace-nav">
       <button type="button" class="btn btn--utility" data-workspace-action="minimize">Свернуть</button>
       <button type="button" class="btn btn--utility" data-workspace-action="back">Назад</button>
@@ -457,10 +463,42 @@ export function renderAttackWorkspace(session, state) {
         !session.submitting && !session.appliedUnsaved) {
       footer += `<button type="button" class="btn btn--utility" data-workspace-action="cancel-attack-draft">Отмена текущего удара</button>`;
     }
+    if (session.pendingSeekingIntent && !session.readOnly &&
+        !session.submitting && !session.appliedUnsaved) {
+      footer += `<button type="button" class="btn btn--utility" data-workspace-action="back">Назад к замене</button>
+        <button type="button" class="btn btn--utility" data-workspace-action="cancel-seeking-draft">Отмена Seeking Strike</button>`;
+    }
   } else if (session.currentStep === "seeking-input") {
     body = renderSeekingForm(session);
+    const seekingValues = currentInputs(session);
+    const seekingPreview = session.seekingIntent
+      ? previewWorkspaceCompletedSeekingStrike(state, {
+        actionId: session.seekingIntent.actionId,
+        attackId: session.seekingIntent.attackId,
+        invocationId: session.seekingIntent.invocationId,
+        battleId: session.seekingIntent.battleId,
+        phaseAtOpen: session.seekingIntent.phaseAtOpen,
+        ownTurnId: session.seekingIntent.ownTurnId,
+        turnMarker: session.seekingIntent.turnMarker,
+        expectedParentBasis: session.seekingIntent.expectedParentBasis,
+        replacement: {
+          rollMode: seekingValues.rollMode ?? "normal",
+          firstD20: seekingValues.firstD20 ?? "",
+          secondD20: seekingValues.secondD20 ?? "",
+          targetArmorClass: seekingValues.targetArmorClass ?? "",
+          dmHitResult: seekingValues.dmHitResult || null,
+          dmExceptionConfirmed: seekingValues.dmExceptionConfirmed === true,
+        },
+        damageRolls: [],
+      })
+      : null;
+    const canSubmitSeeking = Boolean(session.seekingIntent
+      ? seekingPreview?.ok
+      : String(seekingValues.firstD20 ?? "").trim());
     footer = `<button type="button" class="primary" data-workspace-action="submit-seeking"
-      ${session.submitting || session.appliedUnsaved || session.readOnly ? "disabled" : ""}>Записать новый бросок</button>`;
+      ${session.submitting || session.appliedUnsaved || session.readOnly || !canSubmitSeeking ? "disabled" : ""}>${seekingPreview?.stage === "damage" ? "Указать урон замены" : session.seekingIntent ? "Записать замену результата" : "Записать новый бросок"}</button>
+      ${session.seekingIntent && !session.readOnly && !session.submitting && !session.appliedUnsaved
+        ? `<button type="button" class="btn btn--utility" data-workspace-action="cancel-seeking-draft">Отмена Seeking Strike</button>` : ""}`;
   } else if (session.currentStep === "gentling-input") {
     body = renderGentlingForm(session, state);
     footer = `<button type="button" class="primary" data-workspace-action="submit-gentling"
@@ -557,12 +595,10 @@ export function renderAttackWorkspace(session, state) {
       }
     }
     const seekingPending = pendingSeeking(currentSeekingHistory);
-    const seekingBasis = currentAttack ? encodeURIComponent(JSON.stringify([
-      sequence.id, currentAttack.id, currentAttack.hitResult, currentAttack.rollMode,
-      currentAttack.rawD20Rolls, currentAttack.chosenD20, currentAttack.attackTotal,
-      currentSeekingHistory.at(-1)?.paidOperationId ?? null,
-      currentSeekingHistory.at(-1)?.status ?? null,
-    ])) : "";
+    const seekingBasis = currentAttack
+      ? encodeURIComponent(buildWorkspaceSeekingParentBasis(
+        sequence, currentAttack, currentSeekingHistory,
+      )) : "";
     if (session.currentStep === "checkpoint" && !session.appliedUnsaved &&
         currentAttack?.hitResult === "miss" &&
         getEffectiveSelectedTechniqueIds(state).has("ll-monk:seeking-strike") &&

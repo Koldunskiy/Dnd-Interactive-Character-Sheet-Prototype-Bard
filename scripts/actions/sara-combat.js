@@ -16,6 +16,7 @@ import { isAttackProfileEligible } from "../combat/attack-profile-eligibility.js
 import { gentlingPreview } from "../sara-functional.js";
 import { integer } from "../sara-functional.js";
 import {
+  sameSeekingData,
   pendingSeeking,
   readSeekingHistory,
   writeSeekingHistory,
@@ -1348,6 +1349,351 @@ export function resolveSeekingStrike(context, actionId, attackId, input, operati
       return pendingSeeking(history)?.paidOperationId === input.amendmentId
         ? null : "Нет оплаченного Seeking Strike, ожидающего результата.";
     });
+}
+
+function canonicalSeekingBasisValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalSeekingBasisValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort()
+      .map((key) => [key, canonicalSeekingBasisValue(value[key])]));
+  }
+  return value;
+}
+
+export function buildSeekingParentBasis(sequence, attack, history) {
+  return JSON.stringify(canonicalSeekingBasisValue({
+    parent: {
+      actionId: sequence?.id ?? null,
+      attackId: attack?.id ?? null,
+      kind: sequence?.kind ?? null,
+      status: sequence?.status ?? null,
+      maximumAttacks: sequence?.maximumAttacks ?? null,
+      usedSlots: getUsedAttackSlots(sequence),
+      battleId: sequence?.battleId ?? null,
+      ownTurnId: sequence?.ownTurnId ?? null,
+      turnMarker: sequence?.turnMarker ?? null,
+    },
+    effectiveAttack: {
+      rawD20Rolls: attack?.rawD20Rolls ?? null,
+      rollMode: attack?.rollMode ?? null,
+      targetArmorClass: attack?.targetArmorClass ?? null,
+      dmHitResult: attack?.dmHitResult ?? null,
+      chosenD20: attack?.chosenD20 ?? null,
+      attackTotal: attack?.attackTotal ?? null,
+      attackBonusSnapshot: attack?.attackBonusSnapshot ?? null,
+      hitResult: attack?.hitResult ?? null,
+      critical: attack?.critical ?? null,
+      hitResolutionSource: attack?.hitResolutionSource ?? null,
+      profileId: attack?.profileId ?? null,
+      profileSnapshot: attack?.profileSnapshot ?? null,
+      damageStatus: attack?.damageStatus ?? null,
+      damageRolls: attack?.damageRolls ?? null,
+      damageTotalBeforeTargetModifiers: attack?.damageTotalBeforeTargetModifiers ?? null,
+      techniqueApplicationId: attack?.techniqueApplicationId ?? null,
+    },
+    history: (history ?? []).map((entry) => ({
+      id: entry.id,
+      paidOperationId: entry.paidOperationId,
+      status: entry.status,
+      kiPaid: entry.kiPaid,
+      original: entry.original,
+      replacement: entry.replacement ?? null,
+      resolutionOperationId: entry.resolutionOperationId ?? null,
+      resolutionRequest: entry.resolutionRequest ?? null,
+    })),
+  }));
+}
+
+function normalizeCompletedSeekingRequest(request) {
+  const replacement = request?.replacement;
+  if (!request || !["actionId", "attackId", "invocationId", "expectedParentBasis"]
+    .every((key) => typeof request[key] === "string" && request[key].trim()) ||
+      !replacement || !["normal", "advantage", "disadvantage"].includes(replacement.rollMode) ||
+      !Array.isArray(request.damageRolls) ||
+      !["waiting", "own-turn"].includes(request.phaseAtOpen) ||
+      !Number.isInteger(Number(request.turnMarker)) ||
+      (request.phaseAtOpen === "own-turn" &&
+        (typeof request.ownTurnId !== "string" || !request.ownTurnId.trim())) ||
+      (request.phaseAtOpen === "waiting" && request.ownTurnId != null)) {
+    return { ok: false, reason: "Запрос завершённого Seeking Strike имеет неверный формат." };
+  }
+  return {
+    ok: true,
+    request: {
+      actionId: request.actionId.trim(),
+      attackId: request.attackId.trim(),
+      invocationId: request.invocationId.trim(),
+      battleId: request.battleId ?? null,
+      phaseAtOpen: request.phaseAtOpen,
+      ownTurnId: request.ownTurnId ?? null,
+      turnMarker: Number(request.turnMarker),
+      expectedParentBasis: request.expectedParentBasis,
+      replacement: {
+        rollMode: replacement.rollMode,
+        firstD20: String(replacement.firstD20 ?? ""),
+        secondD20: String(replacement.secondD20 ?? ""),
+        targetArmorClass: replacement.targetArmorClass == null
+          ? "" : String(replacement.targetArmorClass),
+        dmHitResult: ["hit", "miss"].includes(replacement.dmHitResult)
+          ? replacement.dmHitResult : null,
+        dmExceptionConfirmed: replacement.dmExceptionConfirmed === true,
+      },
+      damageRolls: request.damageRolls.map((roll) => String(roll)),
+    },
+  };
+}
+
+function completedSeekingPreviewFromParent(state, input, sequence, attack, history) {
+  if (!isSara(state) || !sequence || !attack ||
+      attack.hitResult !== "miss" || attack.damageStatus === "awaiting-damage" ||
+      !seekingParentWindowIsCurrent(state, sequence) ||
+      !(attack.profileId === "unarmed" || attack.profileSnapshot?.martialArtsEligible === true) ||
+      !attack.profileSnapshot || !Number.isFinite(Number(attack.attackBonusSnapshot)) ||
+      pendingSeeking(history) ||
+      !getEffectiveSelectedTechniqueIds(state).has("ll-monk:seeking-strike")) {
+    return { ok: false, reason: "Нет допустимого текущего промаха для Seeking Strike." };
+  }
+  const basis = buildSeekingParentBasis(sequence, attack, history);
+  if (basis !== input.expectedParentBasis) {
+    return { ok: false, reason: "Исходный промах или контекст изменился. Проверьте Seeking Strike заново." };
+  }
+  const battle = state.battleConsole?.current;
+  if ((battle?.id ?? null) !== input.battleId ||
+      (battle?.phase ?? "waiting") !== input.phaseAtOpen ||
+      (input.phaseAtOpen === "own-turn" ? battle?.ownTurnId ?? null : null) !== input.ownTurnId ||
+      Number(state.ui?.turn?.turnNumber ?? 1) !== input.turnMarker) {
+    return { ok: false, reason: "Контекст хода или боя изменился." };
+  }
+  const ki = Number(state.combat?.ki?.current);
+  if (!Number.isInteger(ki) || ki < 1) {
+    return { ok: false, reason: "Для Seeking Strike требуется 1 ци." };
+  }
+  const replacementInput = {
+    profileId: attack.profileId,
+    rollMode: input.replacement.rollMode,
+    firstD20: input.replacement.firstD20,
+    secondD20: input.replacement.secondD20,
+    targetArmorClass: input.replacement.targetArmorClass,
+    dmHitResult: input.replacement.dmHitResult,
+  };
+  const preview = calculateAttackPreviewFromSnapshot(
+    state, replacementInput, attack.profileSnapshot, attack.attackBonusSnapshot,
+  );
+  if (!preview.ok) return { ok: false, stage: "replacement", reason: preview.reason };
+  const contradictsNaturalRule = preview.naturalMiss && input.replacement.dmHitResult === "hit" ||
+    preview.critical && input.replacement.dmHitResult === "miss";
+  if (contradictsNaturalRule && !input.replacement.dmExceptionConfirmed) {
+    return {
+      ok: false,
+      stage: "replacement",
+      reason: "Подтвердите исключение ведущего для натурального результата.",
+    };
+  }
+  if (preview.hitResult == null) {
+    return { ok: false, stage: "replacement", reason: "Для замены укажите КД либо явное попадание/промах." };
+  }
+  const replacement = {
+    rawD20Rolls: structuredClone(preview.rawD20Rolls),
+    rollMode: preview.rollMode,
+    chosenD20: preview.chosenD20,
+    attackTotal: preview.attackTotal,
+    attackBonusSnapshot: preview.attackBonusSnapshot,
+    hitResult: preview.hitResult ? "hit" : "miss",
+    critical: preview.critical,
+    hitResolutionSource: preview.hitResolutionSource,
+  };
+  if (!preview.hitResult) {
+    return input.damageRolls.length
+      ? { ok: false, stage: "complete", reason: "Промах Seeking Strike не принимает кости урона." }
+      : { ok: true, stage: "complete", request: input, replacement, damage: null, parentBasis: basis };
+  }
+  if (!input.damageRolls.length) {
+    return { ok: true, stage: "damage", request: input, replacement, damage: null, parentBasis: basis };
+  }
+  const damage = calculateAttackDamage(
+    attack.profileSnapshot, input.damageRolls, preview.critical,
+  );
+  return damage.ok
+    ? { ok: true, stage: "complete", request: input, replacement, damage, parentBasis: basis }
+    : { ok: false, stage: "damage", reason: damage.reason };
+}
+
+function completedSeekingParent(state, actionId, attackId) {
+  const sequence = state?.monk?.combatAssistant?.activeSequences?.find((entry) =>
+    entry.id === actionId);
+  return {
+    sequence: sequence ?? null,
+    attack: sequence?.resolvedAttacks?.find((entry) => entry.id === attackId) ?? null,
+  };
+}
+
+export function previewCompletedSeekingStrike(state, request) {
+  const normalized = normalizeCompletedSeekingRequest(request);
+  if (!normalized.ok) return normalized;
+  const input = normalized.request;
+  const { sequence, attack } = completedSeekingParent(state, input.actionId, input.attackId);
+  if (!attack) return { ok: false, reason: "Записанный удар для Seeking Strike не найден." };
+  let history;
+  try {
+    history = readSeekingHistory(attack, { actionId: input.actionId, attackId: input.attackId });
+  } catch (error) {
+    return { ok: false, reason: `История Seeking Strike противоречива. ${error.message}` };
+  }
+  return completedSeekingPreviewFromParent(state, input, sequence, attack, history);
+}
+
+export function readCompletedSeekingStrikeReceipt(state, operationId) {
+  if (typeof operationId !== "string" || !operationId.trim()) return null;
+  for (const sequence of state?.monk?.combatAssistant?.activeSequences ?? []) {
+    for (const attack of sequence.resolvedAttacks ?? []) {
+      const parent = { actionId: sequence.id, attackId: attack.id };
+      try {
+        const history = readSeekingHistory(attack, parent);
+        const invocation = history.find((entry) =>
+          entry.completedSeekingOperation?.operationId === operationId);
+        if (invocation) return { sequence, attack, invocation, ...invocation.completedSeekingOperation };
+      } catch {
+        const rawEntries = [
+          ...(Array.isArray(attack.seekingAmendments) ? attack.seekingAmendments : []),
+          ...(attack.seekingAmendment ? [attack.seekingAmendment] : []),
+        ];
+        if (rawEntries.some((entry) =>
+          entry?.completedSeekingOperation?.operationId === operationId)) {
+          return { sequence, attack, malformed: true };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+export function commitCompletedSeekingStrike(context, request, operationId) {
+  if (typeof operationId !== "string" || !operationId.trim()) {
+    return reject("Для операции требуется стабильный идентификатор.");
+  }
+  if (!isCurrentSession(context)) return reject("stale-session");
+  const normalized = normalizeCompletedSeekingRequest(request);
+  if (!normalized.ok) return reject(normalized.reason);
+  const input = normalized.request;
+  if (input.invocationId !== operationId) {
+    return reject("Идентификаторы применения и операции не совпадают.");
+  }
+  const prior = readCompletedSeekingStrikeReceipt(getState(), operationId);
+  if (prior) {
+    return !prior.malformed && sameSeekingData(prior.request, input)
+      ? { status: "replayed", receipt: prior }
+      : reject("operation-collision");
+  }
+  const allSequences = getState()?.monk?.combatAssistant?.activeSequences ?? [];
+  for (const sequence of allSequences) {
+    for (const attack of sequence.resolvedAttacks ?? []) {
+      const entries = [
+        ...(Array.isArray(attack.seekingAmendments) ? attack.seekingAmendments : []),
+        ...(attack.seekingAmendment ? [attack.seekingAmendment] : []),
+      ];
+      if (sequence.id !== input.actionId || attack.id !== input.attackId) {
+        if (entries.some((entry) => entry?.id === input.invocationId ||
+            entry?.paidOperationId === input.invocationId ||
+            entry?.resolutionOperationId === operationId ||
+            entry?.completedSeekingOperation?.operationId === operationId)) {
+          return reject("Идентификатор Seeking Strike уже использован для другого родителя.");
+        }
+      }
+      if (entries.some((entry) => entry?.resolutionOperationId === operationId)) {
+        return reject("operation-collision");
+      }
+    }
+  }
+  const preview = previewCompletedSeekingStrike(getState(), input);
+  if (!preview.ok || preview.stage !== "complete") {
+    return reject(preview.reason ?? "Завершённый результат Seeking Strike не готов.");
+  }
+  let receipt;
+  return commit(context, operationId, {
+    kind: "sara-completed-seeking-strike",
+    actionId: input.actionId,
+    attackId: input.attackId,
+    invocationId: input.invocationId,
+  }, (draft) => {
+    const { sequence, attack } = completedSeekingParent(draft, input.actionId, input.attackId);
+    let history;
+    try {
+      history = attack
+        ? readSeekingHistory(attack, { actionId: input.actionId, attackId: input.attackId })
+        : [];
+    } catch (error) {
+      throw new Error(`История Seeking Strike противоречива. ${error.message}`);
+    }
+    const fresh = completedSeekingPreviewFromParent(draft, input, sequence, attack, history);
+    if (!fresh.ok || fresh.stage !== "complete") {
+      throw new Error(fresh.reason ?? "Завершённый результат Seeking Strike не готов.");
+    }
+    if (history.some((entry) => entry.id === input.invocationId ||
+        entry.paidOperationId === input.invocationId)) {
+      throw new Error("Идентификатор применения Seeking Strike уже использован.");
+    }
+    draft.combat.ki.current = Number(draft.combat.ki.current) - 1;
+    const original = {
+      rawD20Rolls: structuredClone(attack.rawD20Rolls),
+      rollMode: attack.rollMode,
+      chosenD20: attack.chosenD20,
+      attackTotal: attack.attackTotal,
+      attackBonusSnapshot: attack.attackBonusSnapshot,
+      hitResult: attack.hitResult,
+      critical: attack.critical,
+      hitResolutionSource: attack.hitResolutionSource,
+    };
+    const replacement = {
+      ...fresh.replacement,
+      damageRolls: fresh.damage?.damageRolls ?? null,
+      damageModifierSnapshot: fresh.damage?.damageModifierSnapshot ?? null,
+      damageTotalBeforeTargetModifiers:
+        fresh.damage?.damageTotalBeforeTargetModifiers ?? null,
+    };
+    const resolutionRequest = structuredClone(input);
+    history.push({
+      id: input.invocationId,
+      paidOperationId: input.invocationId,
+      parent: { actionId: input.actionId, attackId: input.attackId },
+      status: "resolved",
+      kiPaid: 1,
+      original,
+      replacement,
+      resolutionOperationId: operationId,
+      resolutionRequest,
+      completedSeekingOperation: {
+        operationId,
+        request: structuredClone(input),
+        outcome: fresh.replacement.hitResult,
+      },
+    });
+    writeSeekingHistory(attack, history, {
+      actionId: input.actionId, attackId: input.attackId,
+    });
+    attack.rawD20Rolls = structuredClone(fresh.replacement.rawD20Rolls);
+    attack.rollMode = fresh.replacement.rollMode;
+    attack.chosenD20 = fresh.replacement.chosenD20;
+    attack.attackTotal = fresh.replacement.attackTotal;
+    attack.attackBonusSnapshot = fresh.replacement.attackBonusSnapshot;
+    attack.hitResolutionSource = fresh.replacement.hitResolutionSource;
+    attack.hitResult = fresh.replacement.hitResult;
+    attack.critical = fresh.replacement.critical;
+    attack.damageRolls = fresh.damage?.damageRolls ?? null;
+    attack.damageModifierSnapshot = fresh.damage?.damageModifierSnapshot ?? null;
+    attack.damageTotalBeforeTargetModifiers =
+      fresh.damage?.damageTotalBeforeTargetModifiers ?? null;
+    attack.damageStatus = fresh.replacement.hitResult === "hit" ? "recorded" : "not-applicable";
+    attack.techniqueApplicationId = null;
+    attack.historicalResolution = false;
+    closeRestWindow(draft, "seeking-strike-completed");
+    receipt = { actionId: sequence.id, attackId: attack.id, outcome: attack.hitResult };
+    pruneCombatHistory(draft.monk.combatAssistant, draft);
+    return draft;
+  }, (current) => {
+    const currentPreview = previewCompletedSeekingStrike(current, input);
+    return currentPreview.ok && currentPreview.stage === "complete"
+      ? null : currentPreview.reason ?? "Завершённый результат Seeking Strike не готов.";
+  });
 }
 
 export function applyGentlingTouchToAttackSlot(context, actionId, input, operationId) {

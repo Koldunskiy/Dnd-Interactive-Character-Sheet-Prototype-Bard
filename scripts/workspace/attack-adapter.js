@@ -1,14 +1,18 @@
 import { getDerivedStats } from "../calculations.js";
 import {
   closeAttackSequence,
+  buildSeekingParentBasis,
+  commitCompletedSeekingStrike,
   commitCompletedBonusAttack,
   commitCompletedNormalAttack,
   getSaraAttackCount,
   markAttackDamageOutside,
   previewCompletedNormalAttack,
   previewCompletedBonusAttack,
+  previewCompletedSeekingStrike,
   readCompletedNormalAttackReceipt,
   readCompletedBonusAttackReceipt,
+  readCompletedSeekingStrikeReceipt,
   recordAttackDamage,
   recordAttackOutcome,
 } from "../actions/sara-combat.js";
@@ -174,6 +178,23 @@ export function submitWorkspaceCompletedBonusAttack(owner, request, operationId)
 
 export function readWorkspaceCompletedBonusAttackReceipt(state, operationId) {
   return readCompletedBonusAttackReceipt(state, operationId);
+}
+
+export function buildWorkspaceSeekingParentBasis(sequence, attack, history) {
+  return buildSeekingParentBasis(sequence, attack, history);
+}
+
+export function previewWorkspaceCompletedSeekingStrike(state, request) {
+  return previewCompletedSeekingStrike(state, request);
+}
+
+export function submitWorkspaceCompletedSeekingStrike(owner, request, operationId) {
+  if (!isWorkspaceOwnerCurrent(owner)) return { status: "rejected", reason: "stale-session" };
+  return commitCompletedSeekingStrike(getWorkspaceAttackContext(), request, operationId);
+}
+
+export function readWorkspaceCompletedSeekingStrikeReceipt(state, operationId) {
+  return readCompletedSeekingStrikeReceipt(state, operationId);
 }
 
 export function submitWorkspaceAttack(owner, sequenceId, attackId, input, operationId) {
