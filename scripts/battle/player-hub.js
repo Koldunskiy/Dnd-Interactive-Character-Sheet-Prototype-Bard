@@ -19,6 +19,83 @@ export function getPlayerScenePhase(character) {
   return "outside";
 }
 
+export function getSavedPlayerRecords(character) {
+  const assistant = character?.monk?.combatAssistant ?? {};
+  const sequences = (assistant.activeSequences ?? []).map((sequence) => ({
+    sequenceId: sequence.id,
+    kind: sequence.kind,
+    status: sequence.status,
+    maximumAttacks: sequence.maximumAttacks,
+    usedSlots: getUsedAttackSlots(sequence),
+    attacks: (sequence.resolvedAttacks ?? []).map((attack) => {
+      let seeking = [];
+      let seekingConflict = false;
+      if (attack.seekingAmendments !== undefined || attack.seekingAmendment != null) {
+        try {
+          seeking = readSeekingHistory(attack, {
+            actionId: sequence.id,
+            attackId: attack.id,
+          }).map((entry) => ({
+            amendmentId: entry.paidOperationId,
+            status: entry.status,
+            kiPaid: entry.kiPaid,
+            result: entry.replacement ? {
+              attackTotal: entry.replacement.attackTotal,
+              hitResult: entry.replacement.hitResult,
+              critical: entry.replacement.critical,
+            } : null,
+          }));
+        } catch {
+          seekingConflict = true;
+        }
+      }
+      return {
+        attackId: attack.id,
+        slotNumber: attack.slotNumber,
+        hitResult: attack.hitResult,
+        attackTotal: attack.attackTotal,
+        chosenD20: attack.chosenD20,
+        critical: attack.critical,
+        damageStatus: attack.damageStatus,
+        recordedDamage: attack.damage?.total ?? attack.damageTotal ?? null,
+        profileSnapshot: attack.profileSnapshot ?? attack.attackProfileSnapshot ?? null,
+        attackBonusSnapshot: attack.attackBonusSnapshot ?? null,
+        seeking,
+        seekingConflict,
+      };
+    }),
+    replacementResults: (sequence.replacementResults ?? []).map((entry) => ({
+      id: entry.id,
+      kind: entry.kind,
+      slotNumber: entry.slotNumber,
+      total: entry.total,
+      damage: entry.damage,
+      cost: entry.cost,
+      thresholdReached: entry.thresholdReached,
+    })),
+  }));
+  const applications = (assistant.pendingApplications ?? []).map((application) => ({
+    applicationId: application.id,
+    parentAttackId: application.parentAttackId,
+    techniqueId: application.techniqueId,
+    dc: application.dc,
+    targetOutcome: application.targetOutcome,
+    status: application.status,
+  }));
+  const rolls = (character?.characterRolls?.records ?? []).map((record) => ({
+    rollId: record.id,
+    kind: record.kind,
+    label: record.label,
+    total: record.total,
+    chosenD20: record.chosenD20,
+    dcResult: record.dcResult,
+    outcome: record.outcome ?? record.manualOutcome ?? null,
+    consequenceStatus: record.consequence?.status ?? null,
+    consequencePending: isRollConsequencePending(record),
+  }));
+  return { sequences, applications, rolls };
+}
+
 export function getOwnTurnContinuationTasks(character) {
   if (getPlayerScenePhase(character) !== "own-turn") return [];
   const battle = getActiveBattle(character);

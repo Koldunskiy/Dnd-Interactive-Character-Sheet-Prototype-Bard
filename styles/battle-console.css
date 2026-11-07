@@ -418,6 +418,29 @@
   color: var(--sara-accent);
 }
 
+.battle-saved-records {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid var(--sara-line);
+}
+
+.saved-record {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--sara-line);
+  border-radius: 12px;
+  background: var(--sara-panel);
+}
+
+.saved-record p {
+  margin: 0;
+  color: var(--sara-muted);
+  overflow-wrap: anywhere;
+}
+
 .battle-work-group {
   display: grid;
   gap: 8px;

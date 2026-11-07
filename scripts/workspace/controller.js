@@ -5177,6 +5177,11 @@ export function getActiveWorkspaceSession() {
   return {
     workspaceSessionId: session.workspaceSessionId,
     appliedUnsaved: session.appliedUnsaved === true,
+    dirty: session.dirty === true,
+    submitting: session.submitting === true,
+    stage: session.currentStep ?? null,
+    verificationRequired: session.currentStep === "verification" ||
+      session.incomingDraft?.stage === "verification",
     workspaceType: session.workspaceType,
   };
 }

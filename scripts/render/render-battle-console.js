@@ -20,6 +20,7 @@ import { buildRestHitDieCommandId, buildRestReplacementCommandId } from "../work
 import { getState, getSessionContext } from "../state.js";
 import {
   getPlayerHubViewModel,
+  getSavedPlayerRecords,
 } from "../battle/player-hub.js";
 import { getSaraInitiativeSnapshot } from "../battle/providers/sara.js";
 import {
@@ -116,6 +117,54 @@ function renderPlayerWork(work) {
   return "";
 }
 
+function renderSavedRecords(records, owner) {
+  const ownerAttrs = `data-record-character="${escapeHtml(owner.characterId ?? "")}"
+    data-record-generation="${escapeHtml(owner.sessionGeneration ?? "")}"`;
+  const attacks = records.sequences.flatMap((sequence) => sequence.attacks.map((attack) => ({
+    sequence, attack,
+  })));
+  const items = [];
+  for (const { sequence, attack } of attacks) {
+    const seeking = attack.seeking.map((entry) => `<p>Seeking · ${escapeHtml(entry.amendmentId)} ·
+      ${entry.status === "awaiting-replacement" ? "ожидается замена" : "результат записан"}
+      ${entry.kiPaid === 1 ? "· 1 ци уплачена" : ""}</p>
+      ${entry.status === "awaiting-replacement" ? `<button type="button" ${ownerAttrs}
+        data-saved-seeking-sequence="${escapeHtml(sequence.sequenceId)}"
+        data-saved-seeking-attack="${escapeHtml(attack.attackId)}"
+        data-saved-seeking-amendment="${escapeHtml(entry.amendmentId)}">Записать оплаченный результат</button>` : ""}`).join("");
+    const damageAction = attack.damageStatus === "awaiting-damage"
+      ? `<button type="button" ${ownerAttrs} data-saved-damage-sequence="${escapeHtml(sequence.sequenceId)}"
+        data-saved-damage-attack="${escapeHtml(attack.attackId)}">Записать урон</button>` : "";
+    items.push(`<article class="saved-record">
+      <strong>${escapeHtml(sequence.kind)} · ${escapeHtml(sequence.status)} · использовано ${sequence.usedSlots}/${sequence.maximumAttacks}</strong>
+      <p>Удар ${escapeHtml(attack.slotNumber ?? "—")}: ${escapeHtml(attack.hitResult ?? "исход не записан")},
+        ${attack.recordedDamage == null ? "урон не записан" : `урон ${escapeHtml(attack.recordedDamage)}`}</p>
+      ${attack.seekingConflict ? `<p role="alert">История Seeking противоречива; изменение недоступно.</p>` : seeking}
+      ${attack.seekingConflict ? "" : damageAction}</article>`);
+  }
+  for (const application of records.applications) {
+    items.push(`<article class="saved-record"><strong>Применённая техника · ${escapeHtml(application.techniqueId ?? "—")}</strong>
+      <p>СЛ ${escapeHtml(application.dc ?? "—")} · исход цели ${escapeHtml(application.targetOutcome ?? "unknown")}</p>
+      ${!["success", "failure"].includes(application.targetOutcome)
+        ? `<button type="button" ${ownerAttrs} data-saved-application="${escapeHtml(application.applicationId)}">Открыть исход цели</button>` : ""}</article>`);
+  }
+  for (const roll of records.rolls) {
+    items.push(`<article class="saved-record"><strong>${escapeHtml(roll.label ?? roll.kind ?? "Бросок")}</strong>
+      <p>${escapeHtml(roll.total ?? roll.outcome ?? "Результат сохранён")}
+        ${roll.consequencePending ? "· последствие не записано" : ""}</p>
+      ${roll.consequencePending ? `<button type="button" ${ownerAttrs} data-saved-roll="${escapeHtml(roll.rollId)}">Открыть запись</button>` : ""}</article>`);
+  }
+  for (const sequence of records.sequences.filter((entry) => entry.status === "open" &&
+      !entry.attacks.some((attack) => attack.damageStatus === "awaiting-damage" ||
+        attack.seeking.some((invocation) => invocation.status === "awaiting-replacement")))) {
+    items.push(`<article class="saved-record"><strong>${escapeHtml(sequence.kind)} · последовательность открыта</strong>
+      <button type="button" ${ownerAttrs} data-saved-sequence="${escapeHtml(sequence.sequenceId)}">Продолжить последовательность</button></article>`);
+  }
+  return `<section class="battle-saved-records" aria-label="Сохранённые записи"><h3>Сохранённые записи</h3>
+    ${items.length ? items.join("") : "<p>Сохранённых записей нет.</p>"}
+    <button type="button" data-battle-menu="tools">Назад к инструментам</button></section>`;
+}
+
 function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: { rawD20: "", battleId: null }, error: "" }) {
   let endBattleOwner = null;
   try {
@@ -133,6 +182,9 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
   const commands = getSaraBattleCommandRegistry(state);
   const initiativeSnapshot = getSaraInitiativeSnapshot(state);
   const saraHud = renderSaraHud(getSaraHudModel(state, derived));
+  const savedRecords = getSavedPlayerRecords(state);
+  const savedRecordsPanel = uiState.panel === "saved-records"
+    ? renderSavedRecords(savedRecords, getSessionContext()) : "";
   const minimized = getMinimizedWorkspaceSessions();
   const phaseLabels = {
     outside: "Исследование",
@@ -200,6 +252,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     <button type="button" data-battle-command-open="completed-rest">Записать завершённый отдых</button>
     ${restResumeId ? `<button type="button" data-battle-command-open="${escapeHtml(restResumeId)}">Продолжить сохранённое восстановление</button>` : ""}
     <button type="button" data-battle-roll-shortcut="all">Проверка или спасбросок</button>
+    <button type="button" data-battle-scene-action="saved-records">Сохранённые записи</button>
     <button type="button" data-battle-menu="home">Назад</button>
   </section>` : "";
   if (view.phase === "outside") {
@@ -217,7 +270,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
       <button type="button" data-battle-menu="home">Назад</button></section>`;
     phaseBody = `${uiState.panel === "initiative-start" ? initiativeForm("start")
       : uiState.panel === "abilities" ? abilities : uiState.panel === "home" ? home : ""}
-      ${toolsPanel}`;
+      ${toolsPanel}${savedRecordsPanel}`;
     primaryFooter = uiState.panel === "home" ? `<button type="button" class="btn btn--primary"
       data-battle-scene-action="initiative">Начать бой</button>` : "";
   } else if (view.phase === "waiting") {
@@ -226,7 +279,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
       <button type="button" data-roll-preset="saving-throw">Спасбросок</button>
       <button type="button" data-roll-preset="ability-check">Проверка</button>
       <button type="button" data-battle-command-open="opportunity-unarmed">Провоцированная атака</button></div>
-      ${toolsPanel}`}`;
+      ${toolsPanel}${savedRecordsPanel}`}`;
     primaryFooter = uiState.panel === "initiative-correct" ? "" : `<button type="button" class="btn btn--primary"
       data-battle-command="begin-own-turn">Мой ход</button>`;
   } else if (view.phase === "own-turn") {
@@ -242,7 +295,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
       <button type="button" data-battle-command-open="opportunity-unarmed">Провоцированная атака</button></div>`;
     phaseBody = `${uiState.panel === "initiative-correct" ? initiativeForm("correct")
       : uiState.panel === "home" ? home : panel}
-      ${toolsPanel}`;
+      ${toolsPanel}${savedRecordsPanel}`;
     primaryFooter = uiState.panel === "initiative-correct" ? "" : `<button type="button" class="btn btn--primary"
       data-battle-command="end-own-turn">Завершить ход</button>`;
   } else {
@@ -254,7 +307,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
       <div class="battle-secondary-tools">
         ${renderInitiative(view.battle)}
       </div>
-    </section>`}${toolsPanel}`;
+    </section>`}    ${toolsPanel}${savedRecordsPanel}`;
     primaryFooter = uiState.panel === "initiative-correct" ? "" : `${resumable ? `<button type="button" class="btn btn--primary"
       data-battle-command="resume-battle">Продолжить прежний ход</button>` : ""}
       `;
@@ -625,6 +678,77 @@ export function bindBattleConsole(root = document, { onNavigate } = {}) {
       rerender();
       return;
     }
+    const savedControl = event.target.closest("[data-saved-damage-sequence], [data-saved-seeking-sequence], [data-saved-application], [data-saved-roll], [data-saved-sequence]");
+    if (savedControl && root.contains(savedControl)) {
+      if (savedControl.disabled) return;
+      if (savedControl.dataset.recordCharacter !== String(liveContext.owner.characterId ?? "") ||
+          savedControl.dataset.recordGeneration !== String(liveContext.owner.sessionGeneration ?? "")) {
+        reportFailure("Эта запись относится к прежнему сеансу персонажа.");
+        return;
+      }
+      const workspace = getActiveWorkspaceSession();
+      if (workspace?.submitting) {
+        reportFailure("Сначала завершите сохранение текущего результата.");
+        return;
+      }
+      if (workspace?.appliedUnsaved) {
+        reportFailure("Сначала повторите сохранение применённого результата.");
+        return;
+      }
+      if (workspace?.verificationRequired || workspace?.stage === "verification") {
+        reportFailure("Сначала проверьте результат текущего действия.");
+        return;
+      }
+      if (workspace?.dirty) {
+        reportFailure("Сначала завершите или отмените текущий ввод.");
+        return;
+      }
+      const records = getSavedPlayerRecords(getState());
+      let result;
+      if (savedControl.dataset.savedDamageSequence) {
+        const { savedDamageSequence: sequenceId, savedDamageAttack: attackId } = savedControl.dataset;
+        const parent = records.sequences.find((entry) => entry.sequenceId === sequenceId);
+        if (!parent?.attacks.some((entry) => entry.attackId === attackId && entry.damageStatus === "awaiting-damage")) {
+          reportFailure("Выбранный удар больше не ожидает записи урона.");
+          return;
+        }
+        result = openNormalAttack({ sequenceId, attackId, mode: "historical-damage", invoker: savedControl });
+      } else if (savedControl.dataset.savedSeekingSequence) {
+        const { savedSeekingSequence: sequenceId, savedSeekingAttack: attackId,
+          savedSeekingAmendment: amendmentId } = savedControl.dataset;
+        const parent = records.sequences.find((entry) => entry.sequenceId === sequenceId);
+        const attack = parent?.attacks.find((entry) => entry.attackId === attackId);
+        if (!attack || attack.seekingConflict ||
+            !attack.seeking.some((entry) => entry.amendmentId === amendmentId && entry.status === "awaiting-replacement")) {
+          reportFailure("Выбранная оплаченная запись изменилась или противоречива.");
+          return;
+        }
+        result = openNormalAttack({ sequenceId, attackId, invoker: savedControl });
+      } else if (savedControl.dataset.savedApplication) {
+        const applicationId = savedControl.dataset.savedApplication;
+        if (!records.applications.some((entry) => entry.applicationId === applicationId)) {
+          reportFailure("Запись исхода цели не найдена.");
+          return;
+        }
+        result = openSaraBattleCommand(`pending-save:${applicationId}`, savedControl);
+      } else if (savedControl.dataset.savedRoll) {
+        const rollId = savedControl.dataset.savedRoll;
+        if (!records.rolls.some((entry) => entry.rollId === rollId)) {
+          reportFailure("Запись броска не найдена.");
+          return;
+        }
+        result = openSaraBattleCommand(`pending-roll:${rollId}`, savedControl);
+      } else {
+        const sequenceId = savedControl.dataset.savedSequence;
+        if (!records.sequences.some((entry) => entry.sequenceId === sequenceId && entry.status === "open")) {
+          reportFailure("Последовательность больше недоступна.");
+          return;
+        }
+        result = openNormalAttack({ sequenceId, invoker: savedControl });
+      }
+      if (!result?.ok) reportFailure(result?.reason ?? "Не удалось открыть выбранную запись.");
+      return;
+    }
     const directDamageButton = event.target.closest("[data-battle-incoming-direct]");
     if (directDamageButton && root.contains(directDamageButton)) {
       const result = openIncomingAttack(directDamageButton, { mode: "direct-damage" });
@@ -648,6 +772,8 @@ export function bindBattleConsole(root = document, { onNavigate } = {}) {
       const action = sceneAction.dataset.battleSceneAction;
       if (action === "tools" || action === "initiative-info") {
         dispatchSceneUi(root, owner, sceneKey, { type: "set-panel", panel: "tools" });
+      } else if (action === "saved-records") {
+        dispatchSceneUi(root, owner, sceneKey, { type: "set-panel", panel: "saved-records" });
       } else if (action === "initiative") {
         dispatchSceneUi(root, owner, sceneKey, {
           type: "open-initiative", mode: "start", rawD20: "", battleId: null,

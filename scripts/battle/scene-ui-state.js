@@ -1,7 +1,7 @@
 const states = new WeakMap();
 const panels = new Set([
   "home", "abilities", "action", "bonus", "tools", "incoming",
-  "other-events", "initiative-start", "initiative-correct",
+  "other-events", "initiative-start", "initiative-correct", "saved-records",
 ]);
 
 function ownerKey(owner) {
