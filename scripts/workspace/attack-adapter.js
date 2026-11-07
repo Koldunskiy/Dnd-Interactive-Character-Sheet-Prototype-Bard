@@ -2,7 +2,9 @@ import { getDerivedStats } from "../calculations.js";
 import {
   closeAttackSequence,
   buildSeekingParentBasis,
+  buildGentlingMechanicsBasis,
   commitCompletedSeekingStrike,
+  commitCompletedGentlingTouch,
   commitCompletedBonusAttack,
   commitCompletedNormalAttack,
   getSaraAttackCount,
@@ -10,9 +12,11 @@ import {
   previewCompletedNormalAttack,
   previewCompletedBonusAttack,
   previewCompletedSeekingStrike,
+  previewCompletedGentlingTouch,
   readCompletedNormalAttackReceipt,
   readCompletedBonusAttackReceipt,
   readCompletedSeekingStrikeReceipt,
+  readCompletedGentlingTouchReceipt,
   recordAttackDamage,
   recordAttackOutcome,
 } from "../actions/sara-combat.js";
@@ -195,6 +199,23 @@ export function submitWorkspaceCompletedSeekingStrike(owner, request, operationI
 
 export function readWorkspaceCompletedSeekingStrikeReceipt(state, operationId) {
   return readCompletedSeekingStrikeReceipt(state, operationId);
+}
+
+export function buildWorkspaceGentlingMechanicsBasis(state, sequence) {
+  return buildGentlingMechanicsBasis(state, sequence);
+}
+
+export function previewWorkspaceCompletedGentlingTouch(state, request) {
+  return previewCompletedGentlingTouch(state, request);
+}
+
+export function submitWorkspaceCompletedGentlingTouch(owner, request, operationId) {
+  if (!isWorkspaceOwnerCurrent(owner)) return { status: "rejected", reason: "stale-session" };
+  return commitCompletedGentlingTouch(getWorkspaceAttackContext(), request, operationId);
+}
+
+export function readWorkspaceCompletedGentlingTouchReceipt(state, operationId) {
+  return readCompletedGentlingTouchReceipt(state, operationId);
 }
 
 export function submitWorkspaceAttack(owner, sequenceId, attackId, input, operationId) {

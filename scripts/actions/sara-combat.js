@@ -1781,6 +1781,282 @@ export function applyGentlingTouchToAttackSlot(context, actionId, input, operati
           });
         }
 
+function normalizeCompletedGentlingTouchRequest(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, reason: "Запрос Gentling Touch имеет неверный формат." };
+  }
+  const nonempty = (value) => typeof value === "string" && value.trim().length > 0;
+  if (!nonempty(raw.sequenceId) || raw.sequenceKind !== "attack-action" ||
+      !(raw.battleId === null || nonempty(raw.battleId)) ||
+      !["waiting", "own-turn"].includes(raw.phaseAtOpen) ||
+      !(raw.ownTurnId === null || nonempty(raw.ownTurnId)) ||
+      typeof raw.expectedSequenceExists !== "boolean" ||
+      typeof raw.confirmSeparateAction !== "boolean" ||
+      !nonempty(raw.expectedMechanicsBasis)) {
+    return { ok: false, reason: "Идентификаторы или контекст Gentling Touch недопустимы." };
+  }
+  let turnMarker;
+  let expectedUsedSlots;
+  let extraKi;
+  let targetHp;
+  let sum;
+  try {
+    turnMarker = integer(raw.turnMarker, 0);
+    expectedUsedSlots = integer(raw.expectedUsedSlots, 0);
+    for (const key of ["extraKi", "targetHp", "sum"]) {
+      if (raw[key] === null || raw[key] === undefined ||
+          typeof raw[key] === "string" && raw[key].trim() === "") {
+        throw new Error("Missing physical input.");
+      }
+    }
+    extraKi = integer(raw.extraKi, 0);
+    targetHp = integer(raw.targetHp, 0);
+    sum = integer(raw.sum, 0);
+  } catch {
+    return { ok: false, reason: "Gentling Touch требует целые значения ци, HP цели и физической суммы." };
+  }
+  return {
+    ok: true,
+    request: {
+      sequenceId: raw.sequenceId.trim(),
+      sequenceKind: "attack-action",
+      battleId: raw.battleId?.trim() ?? null,
+      phaseAtOpen: raw.phaseAtOpen,
+      ownTurnId: raw.ownTurnId?.trim() ?? null,
+      turnMarker,
+      expectedSequenceExists: raw.expectedSequenceExists,
+      expectedUsedSlots,
+      expectedMechanicsBasis: raw.expectedMechanicsBasis,
+      confirmSeparateAction: raw.confirmSeparateAction,
+      extraKi,
+      targetHp,
+      sum,
+    },
+  };
+}
+
+export function buildGentlingMechanicsBasis(state, sequenceOrNull = null) {
+  const derived = getDerivedStats(state);
+  const sequence = sequenceOrNull;
+  const basis = {
+    martialDieSides: derived.monk.martialDieSides,
+    wisdomModifier: derived.abilityModifiers.wisdom,
+    derivedAttackCount: getSaraAttackCount(state),
+    sequenceMaximumAttacks: sequence?.maximumAttacks ?? getSaraAttackCount(state),
+    unpaidActionContext: !sequence || sequence.actionFlagApplied !== true
+      ? { actionUsed: state.ui?.turn?.actionUsed === true }
+      : null,
+  };
+  return JSON.stringify(basis);
+}
+
+function completedGentlingReceiptFromState(state, operationId) {
+  const matches = [];
+  for (const sequence of state?.monk?.combatAssistant?.activeSequences ?? []) {
+    for (const result of sequence.replacementResults ?? []) {
+      const evidence = result.completedGentlingOperation;
+      if (result.operationId === operationId || result.id === operationId ||
+          evidence?.operationId === operationId) matches.push({ sequence, result, evidence });
+    }
+  }
+  if (!matches.length) return null;
+  if (matches.length !== 1) {
+    return { conflict: true, reason: "ambiguous-completed-gentling-receipt" };
+  }
+  const { sequence, result, evidence } = matches[0];
+  if (!evidence || evidence.operationId !== operationId ||
+      result.operationId !== operationId || result.id !== operationId ||
+      result.kind !== "gentling-touch" || sequence.id !== evidence.request?.sequenceId ||
+      result.slotNumber !== evidence.request?.expectedUsedSlots + 1 ||
+      !Number.isInteger(evidence.request?.expectedUsedSlots) ||
+      evidence.request?.sequenceKind !== "attack-action" ||
+      evidence.outcome?.operationId !== operationId ||
+      evidence.outcome?.slotNumber !== result.slotNumber ||
+      evidence.outcome?.cost !== result.cost ||
+      evidence.outcome?.dice !== result.dice ||
+      evidence.outcome?.sides !== result.sides ||
+      evidence.outcome?.sum !== result.sum ||
+      evidence.outcome?.targetHp !== result.targetHp ||
+      evidence.outcome?.thresholdMet !== result.thresholdMet ||
+      result.cost !== 1 + evidence.request?.extraKi ||
+      result.dice !== 5 + evidence.request?.extraKi ||
+      result.sum !== evidence.request?.sum ||
+      result.targetHp !== evidence.request?.targetHp ||
+      result.thresholdMet !== (result.targetHp <= result.sum) ||
+      result.sides < 1 || result.sum < result.dice ||
+      result.sum > result.dice * result.sides) {
+    return { conflict: true, reason: "malformed-completed-gentling-receipt" };
+  }
+  const normalized = normalizeCompletedGentlingTouchRequest(evidence.request);
+  if (!normalized.ok || JSON.stringify(normalized.request) !== JSON.stringify(evidence.request)) {
+    return { conflict: true, reason: "malformed-completed-gentling-request" };
+  }
+  return { sequence, result, ...evidence };
+}
+
+export function readCompletedGentlingTouchReceipt(state, operationId) {
+  return typeof operationId === "string" && operationId.trim()
+    ? completedGentlingReceiptFromState(state, operationId) : null;
+}
+
+export function previewCompletedGentlingTouch(state, raw) {
+  const normalized = normalizeCompletedGentlingTouchRequest(raw);
+  if (!normalized.ok) return { ...normalized, stage: "input", code: "invalid-input" };
+  const request = normalized.request;
+  const sequences = state?.monk?.combatAssistant?.activeSequences ?? [];
+  const sequenceMatches = sequences.filter((entry) => entry.id === request.sequenceId);
+  const sequence = sequenceMatches[0] ?? null;
+  if (!isSara(state) || !getEffectiveSelectedTechniqueIds(state).has("ll-monk:gentling-touch")) {
+    return { ok: false, stage: "context", code: "unavailable", reason: "Gentling Touch сейчас недоступен." };
+  }
+  const battle = state.battleConsole?.current ?? null;
+  const phaseAtOpen = battle?.phase ?? "waiting";
+  const ownTurnId = battle?.phase === "own-turn" ? battle.ownTurnId : null;
+  if (validateBattleActionPhase(state, "attack-action") ||
+      (battle?.id ?? null) !== request.battleId ||
+      phaseAtOpen !== request.phaseAtOpen || ownTurnId !== request.ownTurnId ||
+      Number(state.ui?.turn?.turnNumber ?? 1) !== request.turnMarker) {
+    return { ok: false, stage: "context", code: "stale-context", reason: "Контекст хода или боя изменился." };
+  }
+  if (request.expectedSequenceExists) {
+    if (sequenceMatches.length !== 1 || !sequence ||
+        sequence.kind !== "attack-action" || sequence.status !== "open" ||
+        sequence.battleId !== request.battleId || sequence.ownTurnId !== request.ownTurnId ||
+        Number(sequence.turnMarker) !== request.turnMarker ||
+        getUsedAttackSlots(sequence) !== request.expectedUsedSlots ||
+        request.expectedUsedSlots >= sequence.maximumAttacks) {
+      return { ok: false, stage: "context", code: "stale-slot", reason: "Последовательность или ожидаемый слот Gentling Touch устарели." };
+    }
+  } else if (sequenceMatches.length || request.expectedUsedSlots !== 0 ||
+      sequences.some((entry) => entry.status === "open" &&
+        !mayRunAlongside("attack-action", entry.kind))) {
+    return { ok: false, stage: "context", code: "sequence-conflict", reason: "Нельзя начать новую последовательность Attack." };
+  }
+  if ((!sequence || sequence.actionFlagApplied !== true) &&
+      state.ui?.turn?.actionUsed === true && !request.confirmSeparateAction) {
+    return { ok: false, stage: "context", code: "action-confirmation", reason: "Подтвердите отдельное действие Attack." };
+  }
+  const mechanicsBasis = buildGentlingMechanicsBasis(state, sequence);
+  if (mechanicsBasis !== request.expectedMechanicsBasis) {
+    return { ok: false, stage: "context", code: "revalidation-required", reason: "Параметры Gentling Touch изменились. Начните новый ввод." };
+  }
+  let result;
+  try {
+    result = gentlingPreview({
+      extraKi: request.extraKi,
+      targetHp: request.targetHp,
+      sum: request.sum,
+      martialDieSides: getDerivedStats(state).monk.martialDieSides,
+      wisdomModifier: getDerivedStats(state).abilityModifiers.wisdom,
+    });
+  } catch {
+    return { ok: false, stage: "input", code: "invalid-input", reason: "Проверьте значения ци, HP и физической суммы." };
+  }
+  const ki = Number(state.combat?.ki?.current);
+  if (!Number.isInteger(ki) || ki < result.cost) {
+    return { ok: false, stage: "resource", code: "insufficient-ki", reason: `Недостаточно ци для Gentling Touch (требуется ${result.cost}).` };
+  }
+  return {
+    ok: true,
+    stage: "complete",
+    request,
+    slotNumber: request.expectedUsedSlots + 1,
+    createsSequence: !request.expectedSequenceExists,
+    mechanicsBasis,
+    result,
+  };
+}
+
+export function commitCompletedGentlingTouch(context, raw, operationId) {
+  if (typeof operationId !== "string" || !operationId.trim()) {
+    return reject("Для операции требуется стабильный идентификатор.");
+  }
+  if (!isCurrentSession(context)) return reject("stale-session");
+  const normalized = normalizeCompletedGentlingTouchRequest(raw);
+  if (!normalized.ok) return reject(normalized.reason);
+  const request = normalized.request;
+  const prior = readCompletedGentlingTouchReceipt(getState(), operationId);
+  if (prior?.conflict) return reject("operation-collision");
+  if (prior) {
+    return JSON.stringify(prior.request) === JSON.stringify(request)
+      ? { status: "replayed", receipt: prior }
+      : reject("operation-collision");
+  }
+  if ((getState().monk?.combatAssistant?.activeSequences ?? []).some((sequence) =>
+    (sequence.replacementResults ?? []).some((entry) =>
+      entry.operationId === operationId || entry.id === operationId))) {
+    return reject("operation-collision");
+  }
+  const initial = previewCompletedGentlingTouch(getState(), request);
+  if (!initial.ok) return reject(initial.reason);
+  let receipt = null;
+  return commit(context, operationId, {
+    kind: "sara-completed-gentling-touch",
+    sequenceId: request.sequenceId,
+    expectedUsedSlots: request.expectedUsedSlots,
+  }, (draft) => {
+    const fresh = previewCompletedGentlingTouch(draft, request);
+    if (!fresh.ok || fresh.stage !== "complete") {
+      throw new Error(fresh.reason ?? "Gentling Touch result is not ready.");
+    }
+    const assistant = ensureCombatAssistant(draft);
+    let sequence = assistant.activeSequences.find((entry) =>
+      entry.id === request.sequenceId);
+    if (fresh.createsSequence) {
+      if (sequence || assistant.activeSequences.some((entry) => entry.status === "open" &&
+          !mayRunAlongside("attack-action", entry.kind))) {
+        throw new Error("Нельзя создать последовательность Gentling Touch.");
+      }
+      sequence = createSequenceRecord(draft, request.sequenceId, "attack-action");
+      assistant.activeSequences.push(sequence);
+    }
+    if (!sequence || sequence.kind !== "attack-action" ||
+        sequence.status !== "open" ||
+        getUsedAttackSlots(sequence) !== request.expectedUsedSlots ||
+        fresh.slotNumber !== getUsedAttackSlots(sequence) + 1) {
+      throw new Error("Ожидаемый слот Gentling Touch устарел.");
+    }
+    const ki = Number(draft.combat?.ki?.current);
+    if (!Number.isInteger(ki) || ki < fresh.result.cost) {
+      throw new Error("Недостаточно ци для Gentling Touch.");
+    }
+    draft.combat.ki.current = ki - fresh.result.cost;
+    sequence.replacementResults ??= [];
+    const entry = {
+      id: operationId,
+      operationId,
+      kind: "gentling-touch",
+      slotNumber: fresh.slotNumber,
+      request: {
+        extraKi: request.extraKi,
+        targetHp: request.targetHp,
+        sum: request.sum,
+      },
+      ...fresh.result,
+      completedGentlingOperation: {
+        operationId,
+        request: structuredClone(request),
+        outcome: { operationId, slotNumber: fresh.slotNumber, ...fresh.result },
+      },
+    };
+    sequence.replacementResults.push(entry);
+    if (!sequence.actionFlagApplied) {
+      draft.ui.turn.actionUsed = true;
+      sequence.actionFlagApplied = true;
+    }
+    sequence.status = getUsedAttackSlots(sequence) >= sequence.maximumAttacks
+      ? "complete" : "open";
+    closeRestWindow(draft, "gentling-touch-completed");
+    pruneCombatHistory(assistant, draft);
+    receipt = { sequenceId: sequence.id, operationId, slotNumber: entry.slotNumber };
+    return draft;
+  }, (current) => {
+    const currentPreview = previewCompletedGentlingTouch(current, request);
+    return currentPreview.ok && currentPreview.stage === "complete"
+      ? null : currentPreview.reason ?? "Завершённый Gentling Touch не готов.";
+  });
+}
+
 export function closeAttackSequence(context, actionId, operationId) {
   return commit(context, operationId, { kind: "sara-attack-sequence-close", actionId },
     (draft) => {

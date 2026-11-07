@@ -52,7 +52,24 @@ export class FixtureNode {
         const value = match[1].match(/\bvalue="([^"]*)"/)?.[1] ?? "";
         const input = new FixtureInput(name, value);
         input.dataset.workspaceField = name;
+        input.type = match[1].match(/\btype="([^"]*)"/)?.[1] ?? "text";
+        input.min = match[1].match(/\bmin="([^"]*)"/)?.[1] ?? "";
+        input.max = match[1].match(/\bmax="([^"]*)"/)?.[1] ?? "";
+        input.required = /\brequired\b/.test(match[1]);
+        input.formKind = markup.match(/<form\b[^>]*data-workspace-form="([^"]*)"/)?.[1] ?? null;
         this.appendChild(input);
+      }
+      for (const marker of ["gentling-mechanics", "gentling-preview"]) {
+        const match = markup.match(new RegExp(
+          `<[^>]+data-${marker}[^>]*>([\\s\\S]*?)<\\/[^>]+>`,
+        ));
+        if (match) {
+          const node = new FixtureNode();
+          node.dataset[marker === "gentling-mechanics"
+            ? "gentlingMechanics" : "gentlingPreview"] = true;
+          node.textContent = match[1].replace(/<[^>]*>/g, "");
+          this.appendChild(node);
+        }
       }
       for (const [attribute, selector] of [
         ["data-incoming-stage", "stage"],
@@ -145,6 +162,12 @@ export class FixtureNode {
     if (name) return this.childNodes.find((node) => node.name === name) ?? null;
     const action = selector.match(/data-workspace-action="([^"]+)"/)?.[1];
     if (action) return this.childNodes.find((node) => node.dataset.workspaceAction === action) ?? null;
+    if (selector === "[data-gentling-mechanics]") {
+      return this.childNodes.find((node) => node.dataset.gentlingMechanics) ?? null;
+    }
+    if (selector === "[data-gentling-preview]") {
+      return this.childNodes.find((node) => node.dataset.gentlingPreview) ?? null;
+    }
     const markers = {
       "[data-incoming-stage]": "stage",
       "[data-incoming-reply-damage]": "damage",
@@ -158,6 +181,9 @@ export class FixtureNode {
   }
   closest(selector) {
     if (selector === "[data-workspace-form]" && this.dataset.workspaceForm) return this;
+    if (selector === "[data-workspace-form]" && this.formKind) {
+      return { dataset: { workspaceForm: this.formKind } };
+    }
     if (selector === "[data-workspace-field]" && this.dataset.workspaceField) return this;
     if (selector === "[data-workspace-action]" && this.dataset.workspaceAction) return this;
     return null;
@@ -306,6 +332,11 @@ export class FixtureInput extends FixtureNode {
     this.name = name;
     this.value = value;
     this.type = "number";
+    this.min = "";
+    this.max = "";
+    this.required = false;
+    this.selectionStart = 0;
+    this.selectionEnd = 0;
   }
 
   get isConnected() {
@@ -317,6 +348,11 @@ export class FixtureInput extends FixtureNode {
 
   focus() {
     globalThis.document.activeElement = this;
+  }
+
+  setSelectionRange(start, end) {
+    this.selectionStart = start;
+    this.selectionEnd = end;
   }
 }
 

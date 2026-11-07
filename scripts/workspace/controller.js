@@ -26,6 +26,10 @@ import {
   previewWorkspaceCompletedSeekingStrike,
   submitWorkspaceCompletedSeekingStrike,
   readWorkspaceCompletedSeekingStrikeReceipt,
+  buildWorkspaceGentlingMechanicsBasis,
+  previewWorkspaceCompletedGentlingTouch,
+  submitWorkspaceCompletedGentlingTouch,
+  readWorkspaceCompletedGentlingTouchReceipt,
   submitWorkspaceAttack,
   submitWorkspaceSequenceAttack,
   submitWorkspaceDamage,
@@ -118,6 +122,7 @@ import {
   renderAttackWorkspace,
   renderWorkspaceAttackPreview,
   renderWorkspaceDamagePreview,
+  getWorkspaceGentlingProjection,
 } from "../render/render-attack-workspace.js";
 import {
   getSessionContext,
@@ -1675,6 +1680,44 @@ function updateInput(field) {
   }
   if (session.currentStep === "attack-input") {
     renderWorkspaceAttackPreview(session, getState());
+  } else if (session.currentStep === "gentling-input" &&
+      ["extraKi", "targetHp", "sum"].includes(field.name)) {
+    const state = getState();
+    const projection = getWorkspaceGentlingProjection(session, state);
+    const root = getWorkspaceHost();
+    const setConstraint = (name, value, attribute) => {
+      const input = root?.querySelector(`[data-workspace-field][name="${name}"]`);
+      if (!input) return;
+      if (value == null) {
+        input.removeAttribute?.(attribute);
+        if (attribute === "max") input.max = "";
+      } else {
+        input.setAttribute?.(attribute, String(value));
+        input[attribute] = String(value);
+      }
+    };
+    setConstraint("extraKi", 0, "min");
+    setConstraint("extraKi", projection.maximumExtraKi, "max");
+    setConstraint("targetHp", 0, "min");
+    setConstraint("targetHp", null, "max");
+    setConstraint("sum", projection.mechanics?.dice ?? 5, "min");
+    setConstraint("sum", projection.mechanics
+      ? projection.mechanics.dice * projection.mechanics.sides : null, "max");
+    const mechanicsNode = root?.querySelector("[data-gentling-mechanics]");
+    if (mechanicsNode) mechanicsNode.textContent = projection.mechanics
+      ? `Бросьте: ${projection.mechanics.dice}d${projection.mechanics.sides} · допустимая сумма ${projection.mechanics.dice}..${projection.mechanics.dice * projection.mechanics.sides} · стоимость ${projection.mechanics.cost} ци.`
+      : "Дополнительная ци должна быть целым числом в пределах Wisdom.";
+    const previewNode = root?.querySelector("[data-gentling-preview]");
+    const completed = projection.completedPreview;
+    if (previewNode) {
+      previewNode.textContent = completed?.ok
+        ? completed.result.thresholdMet
+          ? `Порог достигнут: ${completed.result.sum} ≥ ${completed.result.targetHp}.`
+          : `Порог не достигнут: ${completed.result.sum} < ${completed.result.targetHp}. При записи будут потрачены ${completed.result.cost} ци и один слот Attack.`
+        : completed?.reason ?? "Укажите HP цели и физическую сумму.";
+    }
+    updateWorkspaceFooter(renderAttackWorkspace(session, state).footer);
+    return;
   } else if (session.currentStep === "seeking-input" && field.name === "rollMode") {
     render();
   } else if (session.currentStep === "seeking-input" &&
@@ -2247,28 +2290,48 @@ function findInvoker(key) {
 
 function rehydrateFromState(state) {
   if (!session) return;
-  if (session.currentStep === "gentling-input") {
+  if (session.gentlingRecovery && session.appliedUnsaved) return;
+  if (session.gentlingIntent) {
     const intent = session.gentlingIntent;
-    const sequence = state.monk?.combatAssistant?.activeSequences
-      ?.find((entry) => entry.id === intent?.actionId);
-    const battle = state.battleConsole?.current ?? null;
-    const validTurn = sequence && (battle
-      ? battle.id === intent.battleContext?.battleId &&
-        battle.ownTurnId === intent.battleContext?.ownTurnId &&
-        battle.phase === "own-turn"
-      : !sequence.battleId && intent.battleContext?.battleId == null);
-    const slots = sequence ? getUsedAttackSlots(sequence) : -1;
-    const valid = intent && intent.actionId === session.sequenceId &&
-      sequence?.kind === "attack-action" && sequence.status === "open" &&
-      validTurn && Number(sequence.turnMarker) ===
-        Number(state.ui?.turn?.turnNumber ?? 1) &&
-      intent.slotNumber === slots + 1 &&
-      slots < sequence.maximumAttacks;
-    if (!valid) {
+    if (intent.workspaceSessionId !== session.workspaceSessionId ||
+        intent.owner.characterId !== session.owner.characterId ||
+        intent.owner.sessionGeneration !== session.owner.sessionGeneration) {
       session.readOnly = true;
-      session.error = "Контекст Gentling Touch истёк или изменился. Ввод сохранён для проверки; применение недоступно.";
+      session.gentlingStale = true;
+      session.error = "Сеанс Gentling Touch изменился. Черновик сохранён, применение недоступно.";
       return;
     }
+    if (session.gentlingVerificationRequired) return;
+    const sequences = state.monk?.combatAssistant?.activeSequences ?? [];
+    const matches = sequences.filter((entry) => entry.id === intent.sequenceId);
+    const sequence = matches[0] ?? null;
+    const battle = state.battleConsole?.current ?? null;
+    const slots = sequence ? getUsedAttackSlots(sequence) : 0;
+    const valid = matches.length <= 1 &&
+      intent.expectedSequenceExists === Boolean(sequence) &&
+      (!sequence || sequence.kind === "attack-action" && sequence.status === "open" &&
+        Number(sequence.turnMarker) === intent.turnMarker &&
+        sequence.battleId === intent.battleId &&
+        sequence.ownTurnId === intent.ownTurnId &&
+        slots === intent.expectedUsedSlots &&
+        slots < sequence.maximumAttacks &&
+        intent.slotNumber === slots + 1) &&
+      (sequence || !sequences.some((entry) => entry.status === "open" &&
+        !["flurry", "bonus-unarmed"].includes(entry.kind))) &&
+      getEffectiveSelectedTechniqueIds(state).has("ll-monk:gentling-touch") &&
+      (battle?.phase ?? "waiting") === intent.phaseAtOpen &&
+      (battle?.id ?? null) === intent.battleId &&
+      (battle?.phase === "own-turn" ? battle.ownTurnId : null) === intent.ownTurnId &&
+      Number(state.ui?.turn?.turnNumber ?? 1) === intent.turnMarker &&
+      buildWorkspaceGentlingMechanicsBasis(state, sequence) ===
+        intent.expectedMechanicsBasis;
+    if (!valid) {
+      session.readOnly = true;
+      session.gentlingStale = true;
+      session.error = "Контекст или параметры Gentling Touch изменились. Ввод сохранён; начните новый черновик.";
+      return;
+    }
+    if (session.gentlingStale) return;
     session.readOnly = false;
     session.currentStepKey = intent.draftKey;
     session.rawInputsByStep[intent.draftKey] ??= {
@@ -2278,7 +2341,7 @@ function rehydrateFromState(state) {
     session.error = ki < 1
       ? "Недостаточно ци; ввод сохранён и станет доступен после восстановления ресурса."
       : "";
-    return;
+    if (session.currentStep === "gentling-input") return;
   }
   if (session.currentStep === "attack-input") {
     const battle = state.battleConsole?.current ?? null;
@@ -2505,7 +2568,7 @@ function runCompletedNormalMutation(capturedSession, request, operationIdValue) 
       session.submitting = false;
     }
   }
-  if (session !== capturedSession || !isWorkspaceOwnerCurrent(owner)) {
+  if (session !== capturedSession || !isWorkspaceOwnerCurrent(capturedSession.owner)) {
     return { status: "replaced" };
   }
   if (!thrown) return result;
@@ -2544,7 +2607,7 @@ function runCompletedBonusMutation(capturedSession, request, operationIdValue) {
       session.submitting = false;
     }
   }
-  if (session !== capturedSession || !isWorkspaceOwnerCurrent(owner)) {
+  if (session !== capturedSession || !isWorkspaceOwnerCurrent(capturedSession.owner)) {
     return { status: "replaced" };
   }
   if (!thrown) return result;
@@ -2592,6 +2655,7 @@ function runCompletedSeekingMutation(capturedSession, request, operationIdValue)
   if (session !== capturedSession || session.workspaceSessionId !== sessionId ||
       !isWorkspaceOwnerCurrent(owner)) return { status: "replaced" };
   if (!thrown) return result;
+  console.error("Gentling Touch submit failed unexpectedly", thrown);
   try {
     const receipt = readWorkspaceCompletedSeekingStrikeReceipt(getState(), operationIdValue);
     if (receipt && !receipt.malformed &&
@@ -4096,84 +4160,55 @@ function beginGentlingTouchRoute() {
   if (!session || session.workspaceType !== "attack" ||
       !["attack-input", "checkpoint"].includes(session.currentStep) ||
       session.sequenceKind !== "attack-action" ||
-      session.submitting || session.appliedUnsaved || session.historicalOnly ||
-      !requireCurrentOwnerSession() ||
-      !getEffectiveSelectedTechniqueIds(getState()).has("ll-monk:gentling-touch")) return;
-  let sequence = getWorkspaceAttackSequence(getState(), session.sequenceId);
-  if (!sequence) {
-    const taskSession = session;
-    const taskIdentity = session.sequenceId;
-    const currentOwner = getSessionContext();
-    if (currentOwner.characterId !== session.owner.characterId ||
-        currentOwner.sessionGeneration !== session.owner.sessionGeneration) {
-      setError("Сеанс персонажа изменился. Операция не отправлена.");
-      render();
-      return;
-    }
-    session.owner = { ...session.owner, stateRevision: currentOwner.stateRevision };
-    session.submitting = true;
-    let started;
-    let caughtUnexpectedError = false;
-    try {
-      started = startAttackSequence(session.owner, {
-        kind: "attack-action",
-        sequenceId: session.sequenceId,
-      }, operationId(`gentling-sequence:${session.sequenceId}`));
-    } catch (error) {
-      caughtUnexpectedError = true;
-      console.error("Gentling sequence creation failed unexpectedly", error);
-      if (session === taskSession) {
-        let verification = "not-applied";
-        try {
-          verification = getWorkspaceAttackSequence(getState(), taskIdentity)
-            ? "applied" : "not-applied";
-        } catch (verificationError) {
-          console.error("Could not verify Gentling sequence after handler failure", verificationError);
-          verification = "unknown";
-        }
-        session.appliedUnsaved = verification !== "not-applied";
-        setError(verification === "applied"
-          ? "Последовательность создана, но обработка завершилась с ошибкой. Сохраните состояние."
-          : verification === "unknown"
-            ? "Создание последовательности не подтверждено из-за ошибки проверки. Повтор заблокирован; проверьте состояние."
-            : "Не удалось создать последовательность Gentling Touch; создание не обнаружено.");
-      }
-      return;
-    } finally {
-      if (session === taskSession && session.sequenceId === taskIdentity) {
-        session.submitting = false;
-        if (caughtUnexpectedError) render();
-      }
-    }
-    if (session !== taskSession) return;
-    if (started.status !== "applied") {
-      setError(started.reason);
-      render();
-      return;
-    }
-    refreshWorkspaceOwnerRevision();
-    sequence = getWorkspaceAttackSequence(getState(), session.sequenceId);
-    session.isExistingSequence = true;
+      session.submitting || session.appliedUnsaved || session.readOnly ||
+      session.historicalOnly || !requireCurrentOwnerSession()) return;
+  const state = getState();
+  if (!getEffectiveSelectedTechniqueIds(state).has("ll-monk:gentling-touch")) return;
+  const sequence = getWorkspaceAttackSequence(state, session.sequenceId);
+  const sequences = state.monk?.combatAssistant?.activeSequences ?? [];
+  const battle = state.battleConsole?.current ?? null;
+  const usedSlots = sequence ? getUsedAttackSlots(sequence) : 0;
+  if (battle && battle.phase !== "own-turn" ||
+      sequence && (sequence.kind !== "attack-action" || sequence.status !== "open" ||
+        sequence.battleId !== (battle?.id ?? null) ||
+        sequence.ownTurnId !== (battle?.phase === "own-turn" ? battle.ownTurnId : null) ||
+        Number(sequence.turnMarker) !== Number(state.ui?.turn?.turnNumber ?? 1) ||
+        usedSlots >= sequence.maximumAttacks) ||
+      !sequence && sequences.some((entry) => entry.id === session.sequenceId ||
+        entry.status === "open" && !(
+          entry.kind === "flurry" || entry.kind === "bonus-unarmed"
+        ))) {
+    setError("Текущая последовательность Attack недоступна для Gentling Touch.");
+    render();
+    return;
   }
-  if (!sequence || sequence.kind !== "attack-action" ||
-      getUsedAttackSlots(sequence) >= sequence.maximumAttacks) return;
-  const slotNumber = getUsedAttackSlots(sequence) + 1;
+  const draftValues = session.rawInputsByStep?.[session.currentStepKey] ?? {};
+  const expectedMechanicsBasis = buildWorkspaceGentlingMechanicsBasis(state, sequence);
   const returnTo = {
     step: session.currentStep,
     attackId: session.attackId,
     stepKey: session.currentStepKey,
+    dirty: session.dirty,
   };
+  const owner = { ...session.owner };
+  const sequenceId = sequence?.id ?? session.sequenceId;
+  const slotNumber = usedSlots + 1;
   const intent = {
     operationId: createId("gentling-slot"),
-    actionId: sequence.id,
+    sequenceId,
+    expectedSequenceExists: Boolean(sequence),
+    expectedUsedSlots: usedSlots,
     slotNumber,
     draftKey: stepKey("gentling-input",
-      `${sequence.id}:slot:${slotNumber}:${createId("gentling-draft")}`),
-    battleContext: {
-      battleId: sequence.battleId ?? null,
-      ownTurnId: sequence.ownTurnId ?? null,
-      turnMarker: sequence.turnMarker,
-    },
+      `${sequenceId}:slot:${slotNumber}:${createId("gentling-draft")}`),
+    battleId: battle?.id ?? null,
+    phaseAtOpen: battle?.phase ?? "waiting",
+    ownTurnId: battle?.phase === "own-turn" ? battle.ownTurnId : null,
+    turnMarker: Number(state.ui?.turn?.turnNumber ?? 1),
+    expectedMechanicsBasis,
+    confirmSeparateAction: draftValues.confirmSeparateAction === true,
+    owner,
+    workspaceSessionId: session.workspaceSessionId,
     returnTo,
   };
   session.gentlingIntent = intent;
@@ -4181,13 +4216,15 @@ function beginGentlingTouchRoute() {
   session.rawInputsByStep[intent.draftKey] = {
     extraKi: "0", targetHp: "", sum: "",
   };
+  session.dirty = true;
   setStep("gentling-input", session.attackId, intent.draftKey);
 }
 
 function submitGentlingTouch() {
   if (!session || session.workspaceType !== "attack" ||
       session.currentStep !== "gentling-input" ||
-      session.submitting || session.appliedUnsaved || !requireCurrentOwnerSession()) return;
+      session.submitting || session.appliedUnsaved || session.readOnly ||
+      !requireCurrentOwnerSession()) return;
   const form = getWorkspaceHost()?.querySelector('[data-workspace-form="gentling"]');
   if (!form) return;
   if (!form.checkValidity()) {
@@ -4198,72 +4235,97 @@ function submitGentlingTouch() {
   session.rawInputsByStep[session.currentStepKey] = values;
   session.dirty = true;
   const intent = session.gentlingIntent;
-  const sequence = getWorkspaceAttackSequence(getState(), intent?.actionId);
-  const slot = getUsedAttackSlots(sequence) + 1;
-  if (!intent || sequence?.id !== session.sequenceId ||
-      intent.slotNumber !== slot || sequence.status !== "open") {
+  if (!intent || intent.workspaceSessionId !== session.workspaceSessionId ||
+      intent.sequenceId !== session.sequenceId ||
+      intent.owner.characterId !== session.owner.characterId ||
+      intent.owner.sessionGeneration !== session.owner.sessionGeneration) {
     session.readOnly = true;
-    setError("Слот Gentling Touch изменился. Ввод сохранён; повторное применение заблокировано.");
+    session.gentlingStale = true;
+    setError("Контекст Gentling Touch изменился. Ввод сохранён; повторное применение заблокировано.");
     render();
     return;
   }
-  const currentOwner = getSessionContext();
-  if (currentOwner.characterId !== session.owner.characterId ||
-      currentOwner.sessionGeneration !== session.owner.sessionGeneration) {
-    setError("Сеанс персонажа изменился. Операция не отправлена.");
-    render();
-    return;
-  }
-  session.owner = { ...session.owner, stateRevision: currentOwner.stateRevision };
-  const taskSession = session;
-  const taskIdentity = `${intent.actionId}:${intent.slotNumber}:${intent.operationId}`;
-  session.submitting = true;
-  let result;
-  let caughtUnexpectedError = false;
+  const request = {
+    sequenceId: intent.sequenceId,
+    sequenceKind: "attack-action",
+    battleId: intent.battleId,
+    phaseAtOpen: intent.phaseAtOpen,
+    ownTurnId: intent.ownTurnId,
+    turnMarker: intent.turnMarker,
+    expectedSequenceExists: intent.expectedSequenceExists,
+    expectedUsedSlots: intent.expectedUsedSlots,
+    expectedMechanicsBasis: intent.expectedMechanicsBasis,
+    confirmSeparateAction: intent.confirmSeparateAction,
+    extraKi: values.extraKi,
+    targetHp: values.targetHp,
+    sum: values.sum,
+  };
+  let preview;
   try {
-    result = applyGentlingTouchToAttackSlot(session.owner, session.sequenceId,
-      values, intent.operationId);
+    preview = previewWorkspaceCompletedGentlingTouch(getState(), request);
   } catch (error) {
-    caughtUnexpectedError = true;
-    console.error("Gentling Touch submit failed unexpectedly", error);
-    if (session === taskSession) {
-      let verification = "not-applied";
-      try {
-        verification = getWorkspaceAttackSequence(getState(), intent.actionId)
-          ?.replacementResults?.some((entry) =>
-            entry.operationId === intent.operationId)
-          ? "applied" : "not-applied";
-      } catch (verificationError) {
-        console.error("Could not verify Gentling result after handler failure", verificationError);
-        verification = "unknown";
-      }
-      session.appliedUnsaved = verification !== "not-applied";
-      setError(verification === "applied"
-        ? "Gentling Touch применён, но обработка завершилась с ошибкой. Сохраните результат."
-        : verification === "unknown"
-          ? "Исход Gentling Touch не подтверждён из-за ошибки проверки. Повтор заблокирован; проверьте запись и сохраните состояние."
-          : "Не удалось завершить Gentling Touch; результат не обнаружен и операция не повторялась.");
-    }
+    setError(error?.message ?? "Gentling Touch preview failed.");
+    render();
     return;
-  } finally {
-    if (session === taskSession &&
-        `${taskSession.gentlingIntent?.actionId}:${taskSession.gentlingIntent?.slotNumber}:${taskSession.gentlingIntent?.operationId}` === taskIdentity) {
-      session.submitting = false;
-        if (caughtUnexpectedError) render();
-    }
   }
-  if (session !== taskSession) return;
-  if (result.status !== "applied") {
-    setError(result.reason);
+  if (!preview.ok || preview.stage !== "complete") {
+    if (["stale-context", "stale-slot", "sequence-conflict",
+      "revalidation-required", "unavailable"].includes(preview.code)) {
+      session.readOnly = true;
+      session.gentlingStale = true;
+    }
+    setError(preview.reason ?? "Gentling Touch result is not ready.");
+    render();
+    return;
+  }
+  const result = runCompletedGentlingMutation(session, preview.request, intent.operationId);
+  if (result.status === "replaced" || session?.workspaceSessionId !== intent.workspaceSessionId ||
+      !isWorkspaceOwnerCurrent(intent.owner)) return;
+  if (result.status === "verification-required") {
+    session.readOnly = true;
+    session.gentlingVerificationRequired = true;
+    setError("Не удалось подтвердить применение Gentling Touch. Повтор заблокирован; проверьте запись и сохраните состояние.");
+    render();
+    return;
+  }
+  if (result.status !== "applied" && result.status !== "replayed") {
+    if (result.reason === "stale-session" || result.reason === "operation-collision") {
+      session.readOnly = true;
+      session.gentlingStale = true;
+    }
+    setError(result.reason ?? "Gentling Touch не применён.");
     render();
     return;
   }
   refreshWorkspaceOwnerRevision();
-  const sequenceAfter = getWorkspaceAttackSequence(getState(), session.sequenceId);
+  const stateAfter = getState();
+  const sequenceAfter = getWorkspaceAttackSequence(stateAfter, intent.sequenceId);
+  let receipt;
+  try {
+    receipt = readWorkspaceCompletedGentlingTouchReceipt(stateAfter, intent.operationId);
+  } catch (error) {
+    session.readOnly = true;
+    session.gentlingVerificationRequired = true;
+    setError(error?.message ?? "Gentling Touch receipt inspection failed.");
+    render();
+    return;
+  }
+  if (receipt?.conflict || !receipt ||
+      receipt.sequence?.id !== intent.sequenceId ||
+      receipt.result?.slotNumber !== intent.slotNumber) {
+    session.readOnly = true;
+    session.gentlingVerificationRequired = true;
+    setError("Gentling Touch записан, но результат не удалось однозначно отобразить.");
+    render();
+    return;
+  }
   session.dirty = false;
-  if (result.replayed !== true) {
+  if (result.status !== "replayed") {
     session.appliedUnsaved = result.persistence?.ok === false;
   }
+  session.gentlingRecovery = session.appliedUnsaved
+    ? { sequenceId: intent.sequenceId, operationId: intent.operationId }
+    : null;
   session.gentlingIntent = null;
   session.capabilities.canContinueSequence = Boolean(sequenceAfter &&
     sequenceAfter.status === "open" &&
@@ -4278,11 +4340,109 @@ function submitGentlingTouch() {
     session.rawInputsByStep[stepKey("attack-input", nextId)] ??= {};
     session.currentStep = "attack-input";
     session.currentStepKey = stepKey("attack-input", nextId);
+    session.isExistingSequence = true;
+    session.firstAttempt = false;
+    session.relevantPreviewFingerprint = getNormalAttackFingerprint(
+      stateAfter, session.sequenceId, false,
+    );
+    session.confirmationRequired = false;
+    session.strikeParent = null;
+    session.selectedDamage = null;
     session.capabilities.canRecordAttack = true;
   } else {
     session.currentStep = "summary";
     session.currentStepKey = stepKey("summary", session.sequenceId);
     session.capabilities.canRecordAttack = false;
+  }
+  render();
+}
+
+function runCompletedGentlingMutation(capturedSession, request, operationIdValue) {
+  const sessionId = capturedSession.workspaceSessionId;
+  let preview;
+  try {
+    preview = previewWorkspaceCompletedGentlingTouch(getState(), request);
+  } catch (error) {
+    return { status: "rejected", reason: error?.message ?? "Gentling Touch preview failed." };
+  }
+  if (!preview.ok || preview.stage !== "complete") {
+    return { status: "rejected", reason: preview.reason };
+  }
+  if (session !== capturedSession || !isWorkspaceOwnerCurrent(capturedSession.owner)) {
+    return { status: "replaced" };
+  }
+  refreshWorkspaceOwnerRevision();
+  const owner = { ...capturedSession.owner };
+  let result;
+  let thrown = null;
+  capturedSession.submitting = true;
+  try {
+    result = submitWorkspaceCompletedGentlingTouch(owner, preview.request, operationIdValue);
+  } catch (error) {
+    thrown = error;
+  } finally {
+    if (session === capturedSession && session.workspaceSessionId === sessionId &&
+        isWorkspaceOwnerCurrent(owner)) capturedSession.submitting = false;
+  }
+  if (session !== capturedSession || session.workspaceSessionId !== sessionId ||
+      !isWorkspaceOwnerCurrent(owner)) return { status: "replaced" };
+  if (!thrown) return result;
+  try {
+    const receipt = readWorkspaceCompletedGentlingTouchReceipt(getState(), operationIdValue);
+    if (receipt && !receipt.conflict &&
+        stableRequestString(receipt.request) === stableRequestString(preview.request)) {
+      return { status: "applied", recovered: true, persistence: { ok: false } };
+    }
+  } catch {
+    return { status: "verification-required", error: thrown };
+  }
+  return { status: "verification-required", error: thrown };
+}
+
+function cancelGentlingDraft() {
+  if (!session || session.currentStep !== "gentling-input" ||
+      session.submitting || session.appliedUnsaved || session.readOnly ||
+      session.gentlingVerificationRequired || !requireCurrentOwnerSession()) return;
+  const intent = session.gentlingIntent;
+  const state = getState();
+  const sequences = state.monk?.combatAssistant?.activeSequences ?? [];
+  const matches = sequences.filter((entry) => entry.id === intent?.sequenceId);
+  const sequence = matches[0] ?? null;
+  const battle = state.battleConsole?.current ?? null;
+  const contextCurrent = intent &&
+    intent.workspaceSessionId === session.workspaceSessionId &&
+    intent.owner.characterId === session.owner.characterId &&
+    intent.owner.sessionGeneration === session.owner.sessionGeneration &&
+    matches.length <= 1 &&
+    Boolean(sequence) === intent.expectedSequenceExists &&
+    (!sequence || sequence.status === "open" &&
+      sequence.kind === "attack-action" &&
+      getUsedAttackSlots(sequence) === intent.expectedUsedSlots) &&
+    (sequence || !sequences.some((entry) => entry.status === "open" &&
+      !["flurry", "bonus-unarmed"].includes(entry.kind))) &&
+    buildWorkspaceGentlingMechanicsBasis(state, sequence) ===
+      intent.expectedMechanicsBasis &&
+    (battle?.id ?? null) === intent.battleId &&
+    (battle?.phase ?? "waiting") === intent.phaseAtOpen &&
+    (battle?.phase === "own-turn" ? battle.ownTurnId : null) === intent.ownTurnId &&
+    Number(state.ui?.turn?.turnNumber ?? 1) === intent.turnMarker;
+  session.gentlingIntent = null;
+  session.error = "";
+  if (contextCurrent && intent.returnTo) {
+    session.currentStep = intent.returnTo.step;
+    session.attackId = intent.returnTo.attackId;
+    session.currentStepKey = intent.returnTo.stepKey;
+    session.dirty = intent.returnTo.dirty === true;
+    session.stepLabel = ({
+      "attack-input": "Физический бросок · проверка попадания",
+      checkpoint: "Результат записан · выберите продолжение",
+    })[session.currentStep] ?? session.stepLabel;
+  } else {
+    session.currentStep = "summary";
+    session.currentStepKey = stepKey("summary", session.sequenceId);
+    session.readOnly = true;
+    session.dirty = false;
+    session.error = "Исходный контекст изменился. Черновик отменён; доступен только просмотр.";
   }
   render();
 }
@@ -4444,9 +4604,53 @@ function retrySave() {
     render();
     return;
   }
-  session.appliedUnsaved = false;
-  session.status = "Сохранение выполнено.";
+  if (session.gentlingRecovery) {
+    refreshWorkspaceOwnerRevision();
+    continueAfterGentlingPersistence(session, getState());
+  } else {
+    session.appliedUnsaved = false;
+    session.status = "Сохранение выполнено.";
+  }
   render();
+}
+
+function continueAfterGentlingPersistence(active, state) {
+  if (session !== active || !active.gentlingRecovery ||
+      !isWorkspaceOwnerCurrent(active.owner)) return;
+  const { sequenceId, operationId: receiptId } = active.gentlingRecovery;
+  const receipt = readWorkspaceCompletedGentlingTouchReceipt(state, receiptId);
+  if (!receipt || receipt.conflict || receipt.sequence?.id !== sequenceId) {
+    active.readOnly = true;
+    active.gentlingVerificationRequired = true;
+    active.error = "Сохранение выполнено, но Gentling Touch не удалось подтвердить.";
+    return;
+  }
+  const sequence = getWorkspaceAttackSequence(state, sequenceId);
+  active.appliedUnsaved = false;
+  active.gentlingRecovery = null;
+  active.status = "Сохранение выполнено.";
+  if (sequence && sequence.status === "open" &&
+      sequenceCurrentForAttack(sequence, state) &&
+      getUsedAttackSlots(sequence) < sequence.maximumAttacks) {
+    const attackId = createId("sara-attack");
+    active.attackId = attackId;
+    active.rawInputsByStep[stepKey("attack-input", attackId)] = {};
+    active.currentStep = "attack-input";
+    active.currentStepKey = stepKey("attack-input", attackId);
+    active.isExistingSequence = true;
+    active.firstAttempt = false;
+    active.readOnly = false;
+    active.capabilities.canContinueSequence = true;
+    active.capabilities.canRecordAttack = true;
+    active.relevantPreviewFingerprint = getNormalAttackFingerprint(state, sequenceId, false);
+    active.confirmationRequired = false;
+  } else {
+    active.currentStep = "summary";
+    active.currentStepKey = stepKey("summary", sequenceId);
+    active.readOnly = true;
+    active.capabilities.canContinueSequence = false;
+    active.capabilities.canRecordAttack = false;
+  }
 }
 
 function updateRollResult(result) {
@@ -4720,17 +4924,8 @@ function handleAction(action, button = null) {
   } else if (action === "submit-gentling") {
     submitGentlingTouch();
   } else if (action === "cancel-contextual" &&
-      session.currentStep === "gentling-input" && !session.submitting &&
-      !session.appliedUnsaved) {
-    session.dirty = false;
-    const returnTo = session.gentlingIntent?.returnTo;
-    session.gentlingIntent = null;
-    session.currentStep = returnTo?.step ??
-      (getUsedAttackSlots(getSequence()) > 0 ? "checkpoint" : "attack-input");
-    session.attackId = returnTo?.attackId ?? session.attackId;
-    session.currentStepKey = returnTo?.stepKey ??
-      stepKey(session.currentStep, session.attackId);
-    render();
+      session.currentStep === "gentling-input") {
+    cancelGentlingDraft();
   } else if (action === "open-strike") {
     openStrikeInput();
   } else if (action === "no-technique-continue") {
@@ -4874,6 +5069,9 @@ export function reconcileWorkspaceAfterStateChange(state, metadata = null) {
   }
   if (session.currentStep === "damage-input" && workspaceHostIsOpen()) {
     renderWorkspaceDamagePreview(session);
+  }
+  if (session.currentStep === "gentling-input" && workspaceHostIsOpen()) {
+    render();
   }
 }
 

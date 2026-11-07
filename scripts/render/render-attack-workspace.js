@@ -6,7 +6,9 @@ import {
   previewWorkspaceCompletedSeekingStrike,
   getCurrentWorkspaceStrikeParent,
   getSaraAttackCount,
+  previewWorkspaceCompletedGentlingTouch,
 } from "../workspace/attack-adapter.js";
+import { gentlingPreview } from "../sara-functional.js";
 import { MONK_TECHNIQUES, MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
 import { getEffectiveSelectedTechniqueIds } from "../selectors/techniques.js";
 import { getWorkspaceHost } from "../workspace/host.js";
@@ -89,7 +91,10 @@ function techniqueUnavailableReason(state, sequence, attack, technique, paymentM
 
 function renderAttackForm(session, state) {
   const values = currentInputs(session);
-  const actionUsed = !session.isExistingSequence && state.ui?.turn?.actionUsed === true;
+  const sequence = (state.monk?.combatAssistant?.activeSequences ?? [])
+    .find((entry) => entry.id === session.sequenceId);
+  const actionUsed = state.ui?.turn?.actionUsed === true &&
+    (!session.isExistingSequence || sequence?.actionFlagApplied !== true);
   const allProfiles = getDerivedStats(state).saraAttackProfiles;
   const profiles = Object.fromEntries(getEligibleAttackProfiles(
     session.sequenceKind ?? "attack-action", allProfiles, state,
@@ -102,8 +107,6 @@ function renderAttackForm(session, state) {
     firstD20: values.firstD20 ?? "",
     secondD20: values.secondD20 ?? "",
   });
-  const sequence = (state.monk?.combatAssistant?.activeSequences ?? [])
-    .find((entry) => entry.id === session.sequenceId);
   const attackNumber = getUsedAttackSlots(sequence) + 1;
   const maximumAttacks = sequence?.maximumAttacks ?? getSaraAttackCount(state);
   const hasNaturalException = session.naturalExceptionOutcome === "hit" ||
@@ -253,23 +256,97 @@ function renderSeekingForm(session) {
 }
 
 function renderGentlingForm(session, state) {
+  const projection = getWorkspaceGentlingProjection(session, state);
   const values = currentInputs(session);
-  const maximumExtraKi = Math.max(0, Math.min(
-    getDerivedStats(state).abilityModifiers.wisdom,
-    Number(state.combat?.ki?.current ?? 0) - 1,
-  ));
+  const preview = projection.completedPreview;
+  const result = preview?.ok ? preview.result : null;
+  const mechanics = projection.mechanics;
+  const outcome = result
+    ? result.thresholdMet
+      ? `Порог достигнут: ${result.sum} ≥ ${result.targetHp}.`
+      : `Порог не достигнут: ${result.sum} < ${result.targetHp}. При записи будут потрачены ${result.cost} ци и один слот Attack.`
+    : preview?.reason ?? "Укажите HP цели и физическую сумму.";
   return `<form data-workspace-form="gentling">
+    <h3>Gentling Touch · слот ${session.gentlingIntent?.slotNumber ?? 1}/${projection.maximumAttacks}</h3>
+    <p>Замена одного свободного слота действия Attack. Ки и слот расходуются только при записи результата.</p>
     ${field("extraKi", "Дополнительная ци", values.extraKi ?? "0", {
-      type: "number", min: 0, max: maximumExtraKi, required: true,
+      type: "number", min: 0, max: projection.maximumExtraKi, required: true,
     })}
     ${field("targetHp", "Текущие HP цели", values.targetHp ?? "", {
-      type: "number", min: 0, max: 9999, required: true,
+      type: "number", min: 0, required: true,
     })}
     ${field("sum", "Физическая сумма костей Боевых искусств", values.sum ?? "", {
-      type: "number", min: 1, max: 9999, required: true,
+      type: "number", min: mechanics?.dice ?? 5,
+      max: mechanics ? mechanics.dice * mechanics.sides : null, required: true,
     })}
+    <p data-gentling-mechanics>${mechanics
+      ? `Бросьте: ${mechanics.dice}d${mechanics.sides} · допустимая сумма ${mechanics.dice}..${mechanics.dice * mechanics.sides} · стоимость ${mechanics.cost} ци.`
+      : "Дополнительная ци должна быть целым числом в пределах Wisdom."}</p>
+    <p data-gentling-preview role="status">${escapeHtml(outcome)}</p>
     ${session.error ? `<p class="workspace-error" role="alert">${escapeHtml(session.error)}</p>` : ""}
   </form>`;
+}
+
+export function getWorkspaceGentlingProjection(session, state) {
+  const values = currentInputs(session);
+  const derived = getDerivedStats(state);
+  const maximumExtraKi = Math.max(0, derived.abilityModifiers.wisdom);
+  const extra = Number(String(values.extraKi ?? "0").trim());
+  const validExtra = Number.isSafeInteger(extra) && extra >= 0 &&
+    extra <= Math.max(0, derived.abilityModifiers.wisdom);
+  let mechanics = null;
+  if (validExtra) {
+    try {
+      mechanics = gentlingPreview({
+        extraKi: extra,
+        targetHp: 0,
+        sum: 5 + extra,
+        martialDieSides: derived.monk.martialDieSides,
+        wisdomModifier: derived.abilityModifiers.wisdom,
+      });
+    } catch {
+      mechanics = null;
+    }
+  }
+  if (!mechanics) {
+    try {
+      mechanics = gentlingPreview({
+        extraKi: 0,
+        targetHp: 0,
+        sum: 5,
+        martialDieSides: derived.monk.martialDieSides,
+        wisdomModifier: derived.abilityModifiers.wisdom,
+      });
+    } catch {
+      mechanics = null;
+    }
+  }
+  const intent = session.gentlingIntent;
+  const completedPreview = intent
+    ? previewWorkspaceCompletedGentlingTouch(state, {
+      sequenceId: intent.sequenceId,
+      sequenceKind: "attack-action",
+      battleId: intent.battleId,
+      phaseAtOpen: intent.phaseAtOpen,
+      ownTurnId: intent.ownTurnId,
+      turnMarker: intent.turnMarker,
+      expectedSequenceExists: intent.expectedSequenceExists,
+      expectedUsedSlots: intent.expectedUsedSlots,
+      expectedMechanicsBasis: intent.expectedMechanicsBasis,
+      confirmSeparateAction: intent.confirmSeparateAction,
+      extraKi: values.extraKi ?? "",
+      targetHp: values.targetHp ?? "",
+      sum: values.sum ?? "",
+    })
+    : null;
+  const sequence = state.monk?.combatAssistant?.activeSequences?.find((entry) =>
+    entry.id === intent?.sequenceId);
+  return {
+    maximumExtraKi,
+    maximumAttacks: sequence?.maximumAttacks ?? getSaraAttackCount(state),
+    mechanics,
+    completedPreview,
+  };
 }
 
 function attackNumber(state, session) {
@@ -502,9 +579,14 @@ export function renderAttackWorkspace(session, state) {
         ? `<button type="button" class="btn btn--utility" data-workspace-action="cancel-seeking-draft">Отмена Seeking Strike</button>` : ""}`;
   } else if (session.currentStep === "gentling-input") {
     body = renderGentlingForm(session, state);
+    const projection = getWorkspaceGentlingProjection(session, state);
+    const preview = projection.completedPreview;
+    const canApply = preview?.ok === true && preview.stage === "complete";
+    const cost = preview?.ok ? preview.result.cost : projection.mechanics?.cost ?? 1;
     footer = `<button type="button" class="primary" data-workspace-action="submit-gentling"
-      ${session.submitting || session.appliedUnsaved || session.readOnly ? "disabled" : ""}>Применить замену слота</button>
-      <button type="button" data-workspace-action="cancel-contextual">Отмена</button>`;
+      ${session.submitting || session.appliedUnsaved || session.readOnly || !canApply ? "disabled" : ""}>Записать результат · ${cost} ци</button>
+      <button type="button" data-workspace-action="cancel-contextual"
+        ${session.submitting || session.appliedUnsaved || session.readOnly ? "disabled" : ""}>Отмена</button>`;
   } else if (session.currentStep === "strike-input") {
     body = renderStrikeForm(session, state);
     const technique = MONK_TECHNIQUE_BY_ID.get(currentInputs(session).techniqueId);

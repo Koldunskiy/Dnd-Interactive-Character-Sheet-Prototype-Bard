@@ -844,44 +844,36 @@ test("same-owner workspace replacement is untouched by the old completed Seeking
   unsubscribe();
 });
 
-test("Gentling sequence-create and submit exceptions rerender after releasing submitting", () => {
+test("Gentling begin is free and uncertain submit is locked pending verification", () => {
   const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
   updateState((draft) => {
     draft.monk.ordinaryTechniqueIds[0] = "ll-monk:gentling-touch";
     return draft;
   });
   assert.equal(openNormalAttack().ok, true);
-  const originalClone = globalThis.structuredClone;
-  let failCreateOnce = true;
-  globalThis.structuredClone = (value) => {
-    if (failCreateOnce) {
-      failCreateOnce = false;
-      throw new Error("Gentling pre-mutation test failure");
-    }
-    return originalClone(value);
-  };
-  try {
-    fireWorkspaceAction(dialog, "begin-gentling");
-  } finally {
-    globalThis.structuredClone = originalClone;
-  }
+  const before = structuredClone(getState());
+  const revision = getSessionContext().stateRevision;
+  const storage = new Map(window.localStorage.values);
+  fireWorkspaceActionStrict(dialog, "begin-gentling");
   assert.equal(getWorkspaceSessionForTests().submitting, false);
-  assert.equal(getWorkspaceSessionForTests().currentStep, "attack-input");
-  assert.match(dialog.footer.innerHTML, /begin-gentling/);
-  assert.doesNotMatch(dialog.footer.innerHTML, /begin-gentling[^>]*disabled/);
+  assert.equal(getWorkspaceSessionForTests().currentStep, "gentling-input");
   assert.equal(getState().monk.combatAssistant.activeSequences.length, 0);
+  assert.deepEqual(getState(), before);
+  assert.equal(getSessionContext().stateRevision, revision);
+  assert.deepEqual(window.localStorage.values, storage);
 
-  fireWorkspaceAction(dialog, "begin-gentling");
   const task = getWorkspaceSessionForTests();
-  assert.equal(task.currentStep, "gentling-input");
   const kiBefore = getState().combat.ki.current;
   dialog.forms.gentling = new FixtureForm("gentling", {
     extraKi: "0", targetHp: "7", sum: "20",
   }, {
     extraKi: { required: true, min: 0, max: 30, type: "number" },
-    targetHp: { required: true, min: 0, max: 9999, type: "number" },
-    sum: { required: true, min: 1, max: 9999, type: "number" },
+    targetHp: { required: true, min: 0, type: "number" },
+    sum: { required: true, min: 5, max: 30, type: "number" },
   });
+  fireWorkspaceInput(dialog, "targetHp", "7");
+  fireWorkspaceInput(dialog, "sum", "20");
+  const originalClone = globalThis.structuredClone;
   let failSubmitOnce = true;
   globalThis.structuredClone = (value) => {
     if (failSubmitOnce) {
@@ -891,7 +883,7 @@ test("Gentling sequence-create and submit exceptions rerender after releasing su
     return originalClone(value);
   };
   try {
-    fireWorkspaceAction(dialog, "submit-gentling");
+    fireWorkspaceActionStrict(dialog, "submit-gentling", { apply: true });
   } finally {
     globalThis.structuredClone = originalClone;
   }
@@ -899,10 +891,12 @@ test("Gentling sequence-create and submit exceptions rerender after releasing su
   assert.equal(recovered.submitting, false);
   assert.equal(recovered.appliedUnsaved, false);
   assert.equal(recovered.currentStep, "gentling-input");
+  assert.equal(recovered.readOnly, true);
+  assert.equal(recovered.gentlingVerificationRequired, true);
   assert.equal(getState().combat.ki.current, kiBefore);
-  assert.match(dialog.body.innerHTML, /результат не обнаружен/i);
-  assert.match(dialog.footer.innerHTML, /submit-gentling/);
-  assert.doesNotMatch(dialog.footer.innerHTML, /submit-gentling[^>]*disabled/);
+  assert.equal(getState().monk.combatAssistant.activeSequences.length, 0);
+  assert.match(dialog.body.innerHTML, /Gentling Touch/);
+  assert.match(dialog.footer.innerHTML, /submit-gentling[^>]*disabled/);
   unsubscribe();
 });
 
