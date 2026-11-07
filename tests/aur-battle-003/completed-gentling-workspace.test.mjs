@@ -10,6 +10,7 @@ import {
 import { executeBattleCommand } from "../../scripts/battle/commands.js";
 import {
   disposeWorkspaceOwner,
+  getActiveWorkspaceSession,
   getWorkspaceSessionForTests,
   openNormalAttack,
   resumeWorkspace,
@@ -333,6 +334,7 @@ test("W19: storage retry success with receipt inspection failure stays verificat
     submit(dialog);
     assert.equal(getWorkspaceSessionForTests().appliedUnsaved, true);
     assert.ok(getWorkspaceSessionForTests().gentlingRecovery);
+    assert.equal(getActiveWorkspaceSession().appliedUnsaved, true);
     const sequence = getState().monk.combatAssistant.activeSequences[0];
     assert.equal(sequence.replacementResults.length, 1);
     const revision = getSessionContext().stateRevision;
@@ -371,6 +373,17 @@ test("W19: storage retry success with receipt inspection failure stays verificat
     assert.equal(session.appliedUnsaved, false);
     assert.equal(session.readOnly, true);
     assert.equal(session.gentlingVerificationRequired, true);
+    assert.deepEqual(getActiveWorkspaceSession(), {
+      workspaceSessionId: session.workspaceSessionId,
+      appliedUnsaved: false,
+      dirty: false,
+      submitting: false,
+      stage: session.currentStep,
+      verificationRequired: true,
+      readOnly: true,
+      gentlingVerificationRequired: true,
+      workspaceType: "attack",
+    });
     assert.equal(session.gentlingRecovery.sequenceId, sequence.id);
     assert.match(session.error, /Gentling Touch/);
     assert.match(dialog.body.innerHTML, /Gentling Touch/);

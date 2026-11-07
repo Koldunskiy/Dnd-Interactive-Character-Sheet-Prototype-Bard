@@ -5158,8 +5158,14 @@ export function getWorkspaceSessions() {
     workspaceType: entry.workspaceType,
     scenarioId: entry.scenarioId ?? null,
     dirty: entry.dirty === true,
+    submitting: entry.submitting === true,
     draft: isUnrecordedWorkspaceDraft(entry),
     appliedUnsaved: entry.appliedUnsaved === true,
+    readOnly: entry.readOnly === true,
+    verificationRequired: entry.currentStep === "verification" ||
+      entry.incomingDraft?.stage === "verification" ||
+      entry.gentlingVerificationRequired === true,
+    gentlingVerificationRequired: entry.gentlingVerificationRequired === true,
     minimized: entry.minimized === true,
     suspended: entry.suspended === true,
     sequenceId: entry.sequenceId ?? null,
@@ -5181,7 +5187,10 @@ export function getActiveWorkspaceSession() {
     submitting: session.submitting === true,
     stage: session.currentStep ?? null,
     verificationRequired: session.currentStep === "verification" ||
-      session.incomingDraft?.stage === "verification",
+      session.incomingDraft?.stage === "verification" ||
+      session.gentlingVerificationRequired === true,
+    readOnly: session.readOnly === true,
+    gentlingVerificationRequired: session.gentlingVerificationRequired === true,
     workspaceType: session.workspaceType,
   };
 }

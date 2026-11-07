@@ -21,6 +21,7 @@ import { getState, getSessionContext } from "../state.js";
 import {
   getPlayerHubViewModel,
   getSavedPlayerRecords,
+  getOwnTurnContinuationTasks,
 } from "../battle/player-hub.js";
 import { getSaraInitiativeSnapshot } from "../battle/providers/sara.js";
 import {
@@ -117,51 +118,67 @@ function renderPlayerWork(work) {
   return "";
 }
 
-function renderSavedRecords(records, owner) {
-  const ownerAttrs = `data-record-character="${escapeHtml(owner.characterId ?? "")}"
-    data-record-generation="${escapeHtml(owner.sessionGeneration ?? "")}"`;
-  const attacks = records.sequences.flatMap((sequence) => sequence.attacks.map((attack) => ({
-    sequence, attack,
-  })));
+function renderSavedRecords(records, owner, continuationIds) {
+  const ownerAttrs = owner
+    ? `data-record-character="${escapeHtml(owner.characterId)}"
+      data-record-generation="${escapeHtml(owner.sessionGeneration)}"`
+    : "";
+  const canOpen = Boolean(owner);
   const items = [];
-  for (const { sequence, attack } of attacks) {
-    const seeking = attack.seeking.map((entry) => `<p>Seeking · ${escapeHtml(entry.amendmentId)} ·
-      ${entry.status === "awaiting-replacement" ? "ожидается замена" : "результат записан"}
-      ${entry.kiPaid === 1 ? "· 1 ци уплачена" : ""}</p>
-      ${entry.status === "awaiting-replacement" ? `<button type="button" ${ownerAttrs}
-        data-saved-seeking-sequence="${escapeHtml(sequence.sequenceId)}"
-        data-saved-seeking-attack="${escapeHtml(attack.attackId)}"
-        data-saved-seeking-amendment="${escapeHtml(entry.amendmentId)}">Записать оплаченный результат</button>` : ""}`).join("");
-    const damageAction = attack.damageStatus === "awaiting-damage"
-      ? `<button type="button" ${ownerAttrs} data-saved-damage-sequence="${escapeHtml(sequence.sequenceId)}"
-        data-saved-damage-attack="${escapeHtml(attack.attackId)}">Записать урон</button>` : "";
-    items.push(`<article class="saved-record">
-      <strong>${escapeHtml(sequence.kind)} · ${escapeHtml(sequence.status)} · использовано ${sequence.usedSlots}/${sequence.maximumAttacks}</strong>
-      <p>Удар ${escapeHtml(attack.slotNumber ?? "—")}: ${escapeHtml(attack.hitResult ?? "исход не записан")},
-        ${attack.recordedDamage == null ? "урон не записан" : `урон ${escapeHtml(attack.recordedDamage)}`}</p>
-      ${attack.seekingConflict ? `<p role="alert">История Seeking противоречива; изменение недоступно.</p>` : seeking}
-      ${attack.seekingConflict ? "" : damageAction}</article>`);
+  for (const sequence of records.sequences) {
+    const attacks = sequence.attacks.map((attack) => {
+      const hitLabel = attack.hitResult === "miss" ? "промах"
+        : attack.damageStatus === "not-applicable" ? "урон не применяется"
+          : attack.hitResult === "hit" ? "попадание" : attack.hitResult ?? "исход не записан";
+      const damageLabel = attack.damageStatus === "recorded"
+        ? `урон ${escapeHtml(attack.recordedDamage ?? "—")}`
+        : attack.damageStatus === "recorded-outside-app" ? "урон учтён вне приложения"
+          : attack.damageStatus === "awaiting-damage" ? "ожидается запись урона" : "";
+      const seeking = attack.seeking.map((entry) => {
+        const result = entry.result
+          ? ` · сумма ${escapeHtml(entry.result.attackTotal ?? "—")} · ${escapeHtml(entry.result.hitResult ?? "—")}${entry.result.critical ? " · критический" : ""}`
+          : "";
+        const control = canOpen && entry.status === "awaiting-replacement"
+          ? `<button type="button" ${ownerAttrs} data-saved-seeking-sequence="${escapeHtml(sequence.sequenceId)}"
+              data-saved-seeking-attack="${escapeHtml(attack.attackId)}"
+              data-saved-seeking-amendment="${escapeHtml(entry.amendmentId)}">Записать оплаченный результат</button>` : "";
+        return `<p>Seeking · ${escapeHtml(entry.amendmentId)} ·
+          ${entry.status === "awaiting-replacement" ? "ожидается замена" : "результат записан"}
+          ${entry.kiPaid === 1 ? "· 1 ци уплачена" : ""}${result}</p>${control}`;
+      }).join("");
+      const damageAction = canOpen && attack.damageStatus === "awaiting-damage"
+        ? `<button type="button" ${ownerAttrs} data-saved-damage-sequence="${escapeHtml(sequence.sequenceId)}"
+          data-saved-damage-attack="${escapeHtml(attack.attackId)}">Записать урон</button>` : "";
+      return `<li><p>Удар ${escapeHtml(attack.slotNumber ?? "—")}: ${escapeHtml(hitLabel)}${damageLabel ? ` · ${damageLabel}` : ""}</p>
+        ${attack.seekingConflict ? `<p role="alert">История Seeking противоречива; изменение недоступно.</p>` : seeking}
+        ${attack.seekingConflict ? "" : damageAction}</li>`;
+    }).join("");
+    const replacements = sequence.replacementResults.map((entry) =>
+      `<li>Gentling · слот ${escapeHtml(entry.slotNumber ?? "—")} · сумма ${escapeHtml(entry.sum ?? "—")} ·
+        цель ${escapeHtml(entry.targetHp ?? "—")} · ${entry.thresholdMet ? "порог достигнут" : "порог не достигнут"} ·
+        ${escapeHtml(entry.cost ?? "—")} ци · ${escapeHtml(entry.dice ?? "—")}к${escapeHtml(entry.sides ?? "—")}</li>`).join("");
+    const canContinue = canOpen && continuationIds.has(sequence.sequenceId);
+    items.push(`<article class="saved-record" data-record-sequence-id="${escapeHtml(sequence.sequenceId)}"><strong>${escapeHtml(sequence.kind)} · ${escapeHtml(sequence.status)} ·
+      использовано ${escapeHtml(sequence.usedSlots)}/${escapeHtml(sequence.maximumAttacks)}</strong>
+      ${attacks ? `<ul>${attacks}</ul>` : "<p>Атак нет.</p>"}${replacements ? `<ul>${replacements}</ul>` : ""}
+      ${canContinue ? `<button type="button" ${ownerAttrs}
+        data-saved-sequence="${escapeHtml(sequence.sequenceId)}">Продолжить последовательность</button>` : ""}</article>`);
   }
   for (const application of records.applications) {
     items.push(`<article class="saved-record"><strong>Применённая техника · ${escapeHtml(application.techniqueId ?? "—")}</strong>
       <p>СЛ ${escapeHtml(application.dc ?? "—")} · исход цели ${escapeHtml(application.targetOutcome ?? "unknown")}</p>
-      ${!["success", "failure"].includes(application.targetOutcome)
+      ${canOpen && !["success", "failure"].includes(application.targetOutcome)
         ? `<button type="button" ${ownerAttrs} data-saved-application="${escapeHtml(application.applicationId)}">Открыть исход цели</button>` : ""}</article>`);
   }
   for (const roll of records.rolls) {
     items.push(`<article class="saved-record"><strong>${escapeHtml(roll.label ?? roll.kind ?? "Бросок")}</strong>
       <p>${escapeHtml(roll.total ?? roll.outcome ?? "Результат сохранён")}
         ${roll.consequencePending ? "· последствие не записано" : ""}</p>
-      ${roll.consequencePending ? `<button type="button" ${ownerAttrs} data-saved-roll="${escapeHtml(roll.rollId)}">Открыть запись</button>` : ""}</article>`);
-  }
-  for (const sequence of records.sequences.filter((entry) => entry.status === "open" &&
-      !entry.attacks.some((attack) => attack.damageStatus === "awaiting-damage" ||
-        attack.seeking.some((invocation) => invocation.status === "awaiting-replacement")))) {
-    items.push(`<article class="saved-record"><strong>${escapeHtml(sequence.kind)} · последовательность открыта</strong>
-      <button type="button" ${ownerAttrs} data-saved-sequence="${escapeHtml(sequence.sequenceId)}">Продолжить последовательность</button></article>`);
+      ${canOpen && roll.consequencePending ? `<button type="button" ${ownerAttrs} data-saved-roll="${escapeHtml(roll.rollId)}">Открыть запись</button>` : ""}</article>`);
   }
   return `<section class="battle-saved-records" aria-label="Сохранённые записи"><h3>Сохранённые записи</h3>
-    ${items.length ? items.join("") : "<p>Сохранённых записей нет.</p>"}
+    ${records.sequences.length || records.applications.length || records.rolls.length
+      ? items.join("") : "<p>Сохранённых записей нет.</p>"}
     <button type="button" data-battle-menu="tools">Назад к инструментам</button></section>`;
 }
 
@@ -183,8 +200,20 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
   const initiativeSnapshot = getSaraInitiativeSnapshot(state);
   const saraHud = renderSaraHud(getSaraHudModel(state, derived));
   const savedRecords = getSavedPlayerRecords(state);
+  let savedRecordsOwner = null;
+  try {
+    const parsedOwner = JSON.parse(uiState.ownerKey ?? "");
+    if (Array.isArray(parsedOwner) && parsedOwner.length === 2 &&
+        typeof parsedOwner[0] === "string" && Number.isInteger(parsedOwner[1])) {
+      savedRecordsOwner = {
+        characterId: parsedOwner[0],
+        sessionGeneration: parsedOwner[1],
+      };
+    }
+  } catch {}
   const savedRecordsPanel = uiState.panel === "saved-records"
-    ? renderSavedRecords(savedRecords, getSessionContext()) : "";
+    ? renderSavedRecords(savedRecords, savedRecordsOwner,
+      new Set(view.continuations.map((entry) => entry.sequenceId))) : "";
   const minimized = getMinimizedWorkspaceSessions();
   const phaseLabels = {
     outside: "Исследование",
@@ -673,12 +702,16 @@ export function bindBattleConsole(root = document, { onNavigate } = {}) {
       liveContext.owner.characterId ?? null,
       liveContext.owner.sessionGeneration ?? null,
     ]);
+    const savedControl = event.target.closest("[data-saved-damage-sequence], [data-saved-seeking-sequence], [data-saved-application], [data-saved-roll], [data-saved-sequence]");
     if (shell && (shell.dataset.battleOwner !== liveOwnerKey ||
         shell.dataset.battleRenderContext !== liveContext.sceneKey)) {
+      const staleRecordControl = savedControl && root.contains(savedControl);
       rerender();
+      if (staleRecordControl) {
+        reportFailure("Запись устарела после смены сеанса или сцены; выберите её заново.");
+      }
       return;
     }
-    const savedControl = event.target.closest("[data-saved-damage-sequence], [data-saved-seeking-sequence], [data-saved-application], [data-saved-roll], [data-saved-sequence]");
     if (savedControl && root.contains(savedControl)) {
       if (savedControl.disabled) return;
       if (savedControl.dataset.recordCharacter !== String(liveContext.owner.characterId ?? "") ||
@@ -687,23 +720,30 @@ export function bindBattleConsole(root = document, { onNavigate } = {}) {
         return;
       }
       const workspace = getActiveWorkspaceSession();
-      if (workspace?.submitting) {
+      const workspaceBlocker = [workspace, ...getWorkspaceSessions()].find((entry) =>
+        entry && (entry.submitting || entry.appliedUnsaved ||
+          entry.verificationRequired || entry.gentlingVerificationRequired ||
+          entry.readOnly || entry.dirty));
+      if (workspaceBlocker?.submitting) {
         reportFailure("Сначала завершите сохранение текущего результата.");
         return;
       }
-      if (workspace?.appliedUnsaved) {
+      if (workspaceBlocker?.appliedUnsaved) {
         reportFailure("Сначала повторите сохранение применённого результата.");
         return;
       }
-      if (workspace?.verificationRequired || workspace?.stage === "verification") {
+      if (workspaceBlocker?.verificationRequired ||
+          workspaceBlocker?.gentlingVerificationRequired ||
+          workspaceBlocker?.stage === "verification" || workspaceBlocker?.readOnly) {
         reportFailure("Сначала проверьте результат текущего действия.");
         return;
       }
-      if (workspace?.dirty) {
+      if (workspaceBlocker?.dirty) {
         reportFailure("Сначала завершите или отмените текущий ввод.");
         return;
       }
-      const records = getSavedPlayerRecords(getState());
+      const currentCharacter = getState();
+      const records = getSavedPlayerRecords(currentCharacter);
       let result;
       if (savedControl.dataset.savedDamageSequence) {
         const { savedDamageSequence: sequenceId, savedDamageAttack: attackId } = savedControl.dataset;
@@ -726,22 +766,29 @@ export function bindBattleConsole(root = document, { onNavigate } = {}) {
         result = openNormalAttack({ sequenceId, attackId, invoker: savedControl });
       } else if (savedControl.dataset.savedApplication) {
         const applicationId = savedControl.dataset.savedApplication;
-        if (!records.applications.some((entry) => entry.applicationId === applicationId)) {
-          reportFailure("Запись исхода цели не найдена.");
+        const application = records.applications.find((entry) =>
+          entry.applicationId === applicationId);
+        if (!application || ["success", "failure"].includes(application.targetOutcome)) {
+          reportFailure(application ? "Исход цели уже записан." : "Запись исхода цели не найдена.");
           return;
         }
         result = openSaraBattleCommand(`pending-save:${applicationId}`, savedControl);
       } else if (savedControl.dataset.savedRoll) {
         const rollId = savedControl.dataset.savedRoll;
-        if (!records.rolls.some((entry) => entry.rollId === rollId)) {
-          reportFailure("Запись броска не найдена.");
+        const roll = records.rolls.find((entry) => entry.rollId === rollId);
+        if (!roll || !roll.consequencePending) {
+          reportFailure(roll ? "Последствие броска уже завершено." : "Запись броска не найдена.");
           return;
         }
         result = openSaraBattleCommand(`pending-roll:${rollId}`, savedControl);
       } else {
         const sequenceId = savedControl.dataset.savedSequence;
-        if (!records.sequences.some((entry) => entry.sequenceId === sequenceId && entry.status === "open")) {
-          reportFailure("Последовательность больше недоступна.");
+        const currentRemainder = getOwnTurnContinuationTasks(currentCharacter)
+          .some((entry) => entry.sequenceId === sequenceId);
+        if (!currentRemainder || !records.sequences.some((entry) =>
+          entry.sequenceId === sequenceId && entry.status === "open" &&
+          !entry.attacks.some((attack) => attack.seekingConflict))) {
+          reportFailure("Остаток последовательности больше недоступен в текущем контексте.");
           return;
         }
         result = openNormalAttack({ sequenceId, invoker: savedControl });
