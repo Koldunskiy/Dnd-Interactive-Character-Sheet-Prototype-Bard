@@ -1392,14 +1392,13 @@ export function buildSeekingParentBasis(sequence, attack, history) {
       techniqueApplicationId: attack?.techniqueApplicationId ?? null,
     },
     history: (history ?? []).map((entry) => ({
-      id: entry.id,
-      paidOperationId: entry.paidOperationId,
+      invocationId: entry.id ?? entry.paidOperationId ?? null,
+      parent: entry.parent ?? null,
       status: entry.status,
       kiPaid: entry.kiPaid,
       original: entry.original,
       replacement: entry.replacement ?? null,
       resolutionOperationId: entry.resolutionOperationId ?? null,
-      resolutionRequest: entry.resolutionRequest ?? null,
     })),
   }));
 }

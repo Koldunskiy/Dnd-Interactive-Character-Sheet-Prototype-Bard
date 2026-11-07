@@ -2827,7 +2827,8 @@ function submitAttack(outcome, button = null) {
 function submitDamage() {
   if (!session || session.currentStep !== "damage-input" ||
       session.submitting || session.appliedUnsaved ||
-      (session.readOnly && session.pendingAttackIntent) || !requireOwner()) return;
+      (session.readOnly && (session.pendingAttackIntent || session.pendingSeekingIntent)) ||
+      !requireOwner()) return;
   const form = getWorkspaceHost()?.querySelector('[data-workspace-form="damage"]');
   if (!form || !session.selectedDamage) return;
   const values = parseForm(form);
@@ -3701,6 +3702,8 @@ function submitMissileReturn() {
 
 function markDamageOutside() {
   if (!session || session.submitting || session.appliedUnsaved ||
+      session.readOnly && (session.pendingAttackIntent || session.pendingSeekingIntent) ||
+      session.pendingAttackIntent || session.pendingSeekingIntent ||
       session.currentStep !== "damage-input" || !session.selectedDamage ||
       !requireOwner()) return;
   const { sequence, attack } = session.selectedDamage;
@@ -3856,7 +3859,7 @@ function makeCompletedSeekingRequest(intent, values, damageRolls = []) {
     turnMarker: intent.turnMarker,
     expectedParentBasis: intent.expectedParentBasis,
     replacement: {
-      rollMode: values.rollMode ?? "normal",
+      rollMode: values.rollMode ?? session.seekingOriginalRollMode ?? "normal",
       firstD20: values.firstD20,
       secondD20: values.secondD20,
       targetArmorClass: values.targetArmorClass,
@@ -4747,7 +4750,8 @@ function handleAction(action, button = null) {
   } else if (action === "retry-save") {
     retrySave();
   } else if (action === "back" &&
-      !(session.readOnly && (session.pendingAttackIntent || session.pendingSeekingIntent))) {
+      !((session.pendingAttackIntent || session.pendingSeekingIntent) &&
+        (session.readOnly || session.submitting || session.appliedUnsaved))) {
     if (session.currentStep === "damage-input" && session.pendingSeekingIntent &&
         !session.readOnly && !session.submitting && !session.appliedUnsaved) {
       const intent = session.pendingSeekingIntent;

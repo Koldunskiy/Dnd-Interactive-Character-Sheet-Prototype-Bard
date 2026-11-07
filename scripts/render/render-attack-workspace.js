@@ -184,6 +184,7 @@ function renderDamageForm(session, state) {
   }
   const diceCount = attack.critical && attack.hitResult === "hit" ? 2 : 1;
   return `<form data-workspace-form="damage" novalidate>
+    ${session.pendingSeekingIntent ? "<p>1 ци списывается только при записи замены вместе с уроном, не при открытии этой формы.</p>" : ""}
     <p class="workspace-damage-origin">Попадание: ${recordedAttackFormula(attack)}</p>
     <section class="workspace-entry-options" aria-label="Кости урона">
       <span>${escapeHtml(snapshot.damageDice)} ${formatSigned(snapshot.damageModifier)}${attack.critical ? " · критическое попадание: две отдельные кости" : ""}</span>
@@ -455,8 +456,9 @@ export function renderAttackWorkspace(session, state) {
     footer = `<div class="workspace-task-actions">
       <button type="button" class="primary" data-workspace-action="submit-damage"
         ${session.submitting || session.appliedUnsaved ||
-          session.readOnly && session.pendingAttackIntent || !validDamage ? "disabled" : ""}>${session.pendingAttackIntent ? "Записать атаку и урон" : "Записать урон"}</button>
-      ${session.pendingAttackIntent ? "" : `<button type="button" data-workspace-action="outside-damage"
+          session.readOnly && (session.pendingAttackIntent || session.pendingSeekingIntent) ||
+          !validDamage ? "disabled" : ""}>${session.pendingAttackIntent ? "Записать атаку и урон" : session.pendingSeekingIntent ? "Записать замену и урон" : "Записать урон"}</button>
+      ${session.pendingAttackIntent || session.pendingSeekingIntent ? "" : `<button type="button" data-workspace-action="outside-damage"
         ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Урон учтён вне приложения</button>`}
     </div>`;
     if (session.pendingAttackIntent && !session.readOnly &&
@@ -465,8 +467,7 @@ export function renderAttackWorkspace(session, state) {
     }
     if (session.pendingSeekingIntent && !session.readOnly &&
         !session.submitting && !session.appliedUnsaved) {
-      footer += `<button type="button" class="btn btn--utility" data-workspace-action="back">Назад к замене</button>
-        <button type="button" class="btn btn--utility" data-workspace-action="cancel-seeking-draft">Отмена Seeking Strike</button>`;
+      footer += `<button type="button" class="btn btn--utility" data-workspace-action="cancel-seeking-draft">Отмена Seeking Strike</button>`;
     }
   } else if (session.currentStep === "seeking-input") {
     body = renderSeekingForm(session);
@@ -482,7 +483,7 @@ export function renderAttackWorkspace(session, state) {
         turnMarker: session.seekingIntent.turnMarker,
         expectedParentBasis: session.seekingIntent.expectedParentBasis,
         replacement: {
-          rollMode: seekingValues.rollMode ?? "normal",
+          rollMode: seekingValues.rollMode ?? session.seekingOriginalRollMode ?? "normal",
           firstD20: seekingValues.firstD20 ?? "",
           secondD20: seekingValues.secondD20 ?? "",
           targetArmorClass: seekingValues.targetArmorClass ?? "",
