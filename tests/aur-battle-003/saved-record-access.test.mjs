@@ -18,6 +18,7 @@ import {
 import {
   beginSeekingStrike,
   closeAttackSequence,
+  commitCompletedOpportunityAttack,
   recordAttackOutcome,
   startAttackSequence,
 } from "../../scripts/actions/sara-combat.js";
@@ -718,6 +719,64 @@ test("conflicting Seeking history is local and does not block another exact reco
   } finally {
     const active = getWorkspaceSessionForTests();
     if (active) disposeWorkspaceOwner(active.owner, "saved-record-test-cleanup");
+    unsubscribe();
+  }
+});
+
+test("legacy opportunity awaiting-damage opens exact saved IDs and records without another reaction", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture();
+  try {
+    const sequenceId = "legacy-opportunity-sequence";
+    const attackId = "legacy-opportunity-attack";
+    const request = {
+      sequenceId, attackId, battleId: null, phaseAtOpen: "waiting",
+      ownTurnId: null, turnMarker: Number(getState().ui.turn.turnNumber),
+      expectedUsedSlots: 0, parentFeature: "opportunity-attack",
+      attack: {
+        profileId: "unarmed", rollMode: "normal", firstD20: "12",
+        secondD20: "", targetArmorClass: "1", dmHitResult: null,
+        targetLabel: "", dmExceptionConfirmed: false,
+      },
+      damageRolls: ["3"],
+    };
+    assert.equal(commitCompletedOpportunityAttack(
+      getSessionContext(), request, "legacy-opportunity-completed",
+    ).status, "applied");
+    updateState((state) => {
+      const attack = state.monk.combatAssistant.activeSequences
+        .find((entry) => entry.id === sequenceId).resolvedAttacks
+        .find((entry) => entry.id === attackId);
+      attack.damageStatus = "awaiting-damage";
+      attack.damageRolls = [];
+      attack.damageTotal = null;
+      return state;
+    });
+    const initialAttack = structuredClone(getState().monk.combatAssistant
+      .activeSequences.find((entry) => entry.id === sequenceId).resolvedAttacks[0]);
+    const root = makeBoundConsole();
+    clickControl(root, "battleSceneAction", "tools");
+    clickControl(root, "battleSceneAction", "saved-records");
+    clickControl(root, "savedDamageSequence", sequenceId);
+    const workspace = getWorkspaceSessionForTests();
+    assert.equal(workspace.sequenceId, sequenceId);
+    assert.equal(workspace.attackId, attackId);
+    assert.equal(workspace.currentStep, "damage-input");
+    dialog.forms.damage = new FixtureForm("damage", { damage1: "4" });
+    fireWorkspaceInput(dialog, "damage1", "4");
+    fireWorkspaceActionStrict(dialog, "submit-damage", { apply: true });
+    const savedSequence = getState().monk.combatAssistant.activeSequences
+      .find((entry) => entry.id === sequenceId);
+    const recorded = savedSequence.resolvedAttacks.find((entry) => entry.id === attackId);
+    assert.equal(recorded.damageStatus, "recorded");
+    assert.equal(getState().ui.turn.reactionUsed, true);
+    for (const field of ["profileSnapshot", "attackBonusSnapshot",
+      "damageModifierSnapshot", "sequenceId", "id"]) {
+      if (field === "sequenceId") continue;
+      assert.deepEqual(recorded[field], initialAttack[field]);
+    }
+    assert.equal(savedSequence.id, sequenceId);
+    assert.equal(recorded.id, attackId);
+  } finally {
     unsubscribe();
   }
 });

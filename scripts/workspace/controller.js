@@ -2090,6 +2090,9 @@ export function openSaraBattleCommand(commandId, invoker = null, options = {}) {
     return { ok: false, reason: "Рабочая панель относится к другому сеансу персонажа." };
   }
   if (sameOwner) {
+    if (hasExplicitWorkspaceVerification(session)) {
+      return { ok: false, reason: "Сначала завершите проверку текущей операции." };
+    }
     if (commandId === "opportunity-unarmed" &&
         session.workspaceType === "attack" &&
         session.scenarioId === "opportunity-unarmed" &&

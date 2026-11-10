@@ -908,8 +908,18 @@ function opportunityEvidenceMatches(state, receipt) {
   if (!expectedDamageStatus || attack.damageStatus !== expectedDamageStatus) return false;
   if (!history.length) return effectiveOutcome === receipt.outcome;
   if (receipt.outcome !== "miss" || !["hit", "miss"].includes(effectiveOutcome)) return false;
+  const latest = history.at(-1);
+  const replacement = latest?.replacement;
   return history.some((entry) => entry.status === "resolved" &&
-    originalSeekingEvidenceMatches(state, receipt, attack, entry.original));
+      originalSeekingEvidenceMatches(state, receipt, attack, entry.original)) &&
+    replacement && replacement.hitResult === attack.hitResult &&
+    replacement.chosenD20 === attack.chosenD20 &&
+    replacement.attackTotal === attack.attackTotal &&
+    replacement.critical === attack.critical &&
+    replacement.hitResolutionSource === attack.hitResolutionSource &&
+    replacement.rollMode === attack.rollMode &&
+    replacement.attackBonusSnapshot === attack.attackBonusSnapshot &&
+    JSON.stringify(replacement.rawD20Rolls) === JSON.stringify(attack.rawD20Rolls);
 }
 
 function originalSeekingEvidenceMatches(state, receipt, attack, original) {
@@ -959,37 +969,47 @@ export function readCompletedOpportunityAttackReceipt(state, operationId) {
 }
 
 function hasRetainedOperationEvidence(state, operationId) {
-  try {
-    if (readIncomingReplyReceipt(state, operationId) ||
-        readCompletedSeekingStrikeReceipt(state, operationId) ||
-        readCompletedGentlingTouchReceipt(state, operationId) ||
-        readCompletedNormalAttackReceipt(state, operationId) ||
-        readCompletedBonusAttackReceipt(state, operationId)) return true;
-    const assistant = state?.monk?.combatAssistant;
-    for (const sequence of assistant?.activeSequences ?? []) {
-      if (sequence.incomingReply?.operationId === operationId ||
-          sequence.replacementResults?.some((entry) =>
-            entry.operationId === operationId || entry.outcome?.operationId === operationId)) {
-        return true;
-      }
-      for (const attack of sequence.resolvedAttacks ?? []) {
-        if (attack.completedOperation?.operationId === operationId) return true;
-        const seekingEntries = [
-          ...(Array.isArray(attack.seekingAmendments) ? attack.seekingAmendments : []),
-          ...(attack.seekingAmendment ? [attack.seekingAmendment] : []),
-        ];
-        if (seekingEntries.some((entry) =>
-          entry?.id === operationId ||
+  const assistant = state?.monk?.combatAssistant;
+  for (const sequence of Array.isArray(assistant?.activeSequences)
+    ? assistant.activeSequences : []) {
+    if (sequence?.incomingReply?.operationId === operationId) return true;
+    const results = Array.isArray(sequence?.replacementResults)
+      ? sequence.replacementResults : [sequence?.replacementResults];
+    if (results.some((entry) => entry &&
+        (entry.operationId === operationId || entry.id === operationId ||
+         entry.outcome?.operationId === operationId ||
+         entry.completedGentlingOperation?.operationId === operationId))) return true;
+    const attacks = Array.isArray(sequence?.resolvedAttacks) ? sequence.resolvedAttacks : [];
+    for (const attack of attacks) {
+      if (attack?.completedOperation?.operationId === operationId) return true;
+      const entries = [
+        ...(Array.isArray(attack?.seekingAmendments) ? attack.seekingAmendments : []),
+        ...(attack?.seekingAmendment ? [attack.seekingAmendment] : []),
+      ];
+      if (entries.some((entry) => entry?.id === operationId ||
           entry?.paidOperationId === operationId ||
           entry?.resolutionOperationId === operationId ||
           entry?.completedSeekingOperation?.operationId === operationId)) return true;
-      }
     }
-    return assistant?.recentlyCompletedSummaries?.some((entry) =>
-      entry.id === operationId || entry.operationId === operationId) === true;
-  } catch {
-    return true;
   }
+  if ((Array.isArray(assistant?.recentlyCompletedSummaries)
+    ? assistant.recentlyCompletedSummaries : []).some((entry) =>
+    entry?.id === operationId || entry?.operationId === operationId)) return true;
+
+  for (const reader of [
+    readIncomingReplyReceipt,
+    readCompletedSeekingStrikeReceipt,
+    readCompletedGentlingTouchReceipt,
+    readCompletedNormalAttackReceipt,
+    readCompletedBonusAttackReceipt,
+  ]) {
+    try {
+      if (reader(state, operationId)) return true;
+    } catch {
+      continue;
+    }
+  }
+  return false;
 }
 
 export function previewCompletedOpportunityAttack(state, request) {
