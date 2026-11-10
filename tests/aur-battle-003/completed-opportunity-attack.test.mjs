@@ -7,6 +7,7 @@ import {
   updateState,
 } from "../../scripts/state.js";
 import {
+  commitCompletedNormalAttack,
   buildSeekingParentBasis,
   commitCompletedSeekingStrike,
   commitCompletedOpportunityAttack,
@@ -89,6 +90,47 @@ test("canonical replay survives session reload and mismatched requests collide",
   assert.equal(getSessionContext().stateRevision, revision);
 });
 
+test("opportunity rejects a retained normal-attack operation ID after canonical reload", () => {
+  openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+  const normal = {
+    sequenceId: "retained-normal-sequence",
+    attackId: "retained-normal-attack",
+    battleId: null,
+    ownTurnId: null,
+    turnMarker: 1,
+    expectedUsedSlots: 0,
+    attack: {
+      profileId: "unarmed",
+      rollMode: "normal",
+      firstD20: "10",
+      secondD20: "",
+      targetArmorClass: "",
+      dmHitResult: "miss",
+      targetLabel: "",
+    },
+    damageRolls: [],
+  };
+  assert.equal(commitCompletedNormalAttack(
+    getSessionContext(), normal, "shared-retained-operation",
+  ).status, "applied");
+  const persisted = structuredClone(getState());
+  openCharacterSession("sara-velaris", () => ({ status: "loaded", state: persisted }));
+  const before = structuredClone(getState());
+  const revision = getSessionContext().stateRevision;
+  const collision = commitCompletedOpportunityAttack(
+    getSessionContext(),
+    request({
+      sequenceId: "fresh-opportunity-sequence",
+      attackId: "fresh-opportunity-attack",
+    }),
+    "shared-retained-operation",
+  );
+  assert.equal(collision.status, "rejected");
+  assert.equal(collision.reason, "operation-collision");
+  assert.deepEqual(getState(), before);
+  assert.equal(getSessionContext().stateRevision, revision);
+});
+
 test("opportunity rejects invalid physical damage, natural-rule exceptions, and occupied IDs", () => {
   openCharacterSession("sara-velaris", () => ({ status: "missing" }));
   const before = structuredClone(getState());
@@ -118,6 +160,66 @@ test("opportunity rejects invalid physical damage, natural-rule exceptions, and 
     "occupied-attack-collision");
   assert.equal(occupiedAttack.status, "rejected");
   assert.deepEqual(getState(), after);
+});
+
+test("free reaction cannot be claimed twice and occupied sequence/attack IDs reject independently", () => {
+  openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+  const first = request({
+    sequenceId: "first-reaction-sequence",
+    attackId: "first-reaction-attack",
+    attack: { ...request().attack, dmHitResult: "miss" },
+    damageRolls: [],
+  });
+  assert.equal(commitCompletedOpportunityAttack(
+    getSessionContext(), first, "first-reaction-operation",
+  ).status, "applied");
+  const afterFirst = structuredClone(getState());
+  const revisionAfterFirst = getSessionContext().stateRevision;
+  const second = commitCompletedOpportunityAttack(
+    getSessionContext(),
+    request({
+      sequenceId: "second-reaction-sequence",
+      attackId: "second-reaction-attack",
+      attack: { ...request().attack, dmHitResult: "miss" },
+      damageRolls: [],
+    }),
+    "second-reaction-operation",
+  );
+  assert.equal(second.status, "rejected");
+  assert.deepEqual(getState(), afterFirst);
+  assert.equal(getSessionContext().stateRevision, revisionAfterFirst);
+
+  for (const [sequenceId, attackId] of [
+    ["occupied-sequence", "free-attack"],
+    ["free-sequence", "occupied-attack"],
+  ]) {
+    openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+    updateState((draft) => {
+      draft.monk.combatAssistant.activeSequences.push({
+        id: "occupied-sequence",
+        kind: "reaction-unarmed",
+        status: "complete",
+        maximumAttacks: 1,
+        resolvedAttacks: [{ id: "occupied-attack" }],
+      });
+    });
+    const beforeCollision = structuredClone(getState());
+    const collisionRevision = getSessionContext().stateRevision;
+    const collision = commitCompletedOpportunityAttack(
+      getSessionContext(),
+      request({
+        sequenceId,
+        attackId,
+        attack: { ...request().attack, dmHitResult: "miss" },
+        damageRolls: [],
+      }),
+      `free-reaction-${sequenceId}-${attackId}`,
+    );
+    assert.equal(collision.status, "rejected");
+    assert.equal(getState().ui.turn.reactionUsed, false);
+    assert.deepEqual(getState(), beforeCollision);
+    assert.equal(getSessionContext().stateRevision, collisionRevision);
+  }
 });
 
 test("opportunity accepts all physical roll modes but rejects every non-unarmed profile", () => {

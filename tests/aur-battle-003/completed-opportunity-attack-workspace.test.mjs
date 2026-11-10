@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getState, getSessionContext, updateState } from "../../scripts/state.js";
+import { getState, getSessionContext, subscribe, updateState } from "../../scripts/state.js";
+import { getDerivedStats } from "../../scripts/calculations.js";
+import { getWorkspaceAttackFingerprint } from "../../scripts/workspace/attack-adapter.js";
 import {
+  getWorkspaceRecoverySessions,
   getWorkspaceSessionForTests,
   openSaraBattleCommand,
   openNormalAttack,
@@ -198,28 +201,75 @@ test("relevant profile change on transient damage blocks stale preview submissio
   const { dialog, unsubscribe } = installWorkspaceFixture();
   try {
     assert.equal(openSaraBattleCommand("opportunity-unarmed").ok, true);
-    const intent = getWorkspaceSessionForTests().opportunityIntent;
+    const initial = getWorkspaceSessionForTests();
+    const intent = initial.opportunityIntent;
     dialog.forms.attack = new FixtureForm("attack", {
-      profileId: "unarmed", rollMode: "normal", firstD20: "12", secondD20: "",
+      profileId: "unarmed", rollMode: "normal", firstD20: "19", secondD20: "",
     });
     fireWorkspaceActionStrict(dialog, "attack-hit", { apply: true });
-    dialog.forms.damage = new FixtureForm("damage", { damage1: "3" });
-    const pending = getWorkspaceSessionForTests().pendingAttackIntent;
-    updateState((state) => { state.abilities.strength = 18; });
+    const session = getWorkspaceSessionForTests();
+    dialog.forms.damage = new FixtureForm("damage", { damage1: "" });
+    const damageInput = dialog.body.querySelector('input[name="damage1"]');
+    assert.ok(damageInput?.isConnected);
+    fireWorkspaceInput(dialog, "damage1", "3");
+    const sourceProfile = structuredClone(getDerivedStats(getState()).saraAttackProfiles.unarmed);
+    const identity = {
+      workspaceSessionId: session.workspaceSessionId,
+      sequenceId: intent.sequenceId,
+      attackId: intent.attackId,
+      operationId: intent.operationId,
+    };
+    const rawAttack = structuredClone(session.rawInputsByStep[`attack-input:${intent.attackId}`]);
+    const rawDamage = Object.fromEntries(dialog.forms.damage.elements.map((entry) =>
+      [entry.name, entry.value]));
+    const pendingFingerprint = session.pendingAttackIntent.previewFingerprint;
+    const currentDexterity = getState().abilities.dexterity;
+    const changedDexterity = currentDexterity <= 10 ? 20 : 8;
+    updateState((state) => { state.abilities.dexterity = changedDexterity; });
+    const changedProfile = getDerivedStats(getState()).saraAttackProfiles.unarmed;
+    assert.notEqual(changedProfile.attackBonus, sourceProfile.attackBonus);
+    assert.notEqual(getWorkspaceAttackFingerprint(
+      getState(), intent.sequenceId, "reaction-unarmed", true,
+    ), pendingFingerprint);
     const beforeSubmit = structuredClone(getState());
     const revision = getSessionContext().stateRevision;
     const storage = new Map(window.localStorage.values);
-    fireWorkspaceActionStrict(dialog, "submit-damage");
+    fireWorkspaceActionStrict(dialog, "submit-damage", { apply: true });
     const current = getWorkspaceSessionForTests();
-    assert.equal(current.currentStep, "checkpoint");
-    assert.equal(current.opportunityIntent.sequenceId, intent.sequenceId);
-    assert.equal(current.opportunityIntent.attackId, intent.attackId);
+    assert.equal(current.currentStep, "attack-input");
+    assert.equal(current.workspaceSessionId, identity.workspaceSessionId);
+    assert.equal(current.opportunityIntent.sequenceId, identity.sequenceId);
+    assert.equal(current.opportunityIntent.attackId, identity.attackId);
+    assert.equal(current.opportunityIntent.operationId, identity.operationId);
     assert.equal(current.pendingAttackIntent, null);
+    assert.equal(current.selectedDamage, null);
+    assert.deepEqual(current.rawInputsByStep[`attack-input:${intent.attackId}`], rawAttack);
     assert.equal(current.rawInputsByStep[`damage-input:${intent.attackId}`].damage1, "3");
+    assert.deepEqual(rawDamage, { damage1: "3" });
+    assert.match(dialog.body.innerHTML, /Профиль или боевой контекст изменился/);
+    assert.equal(getState().monk?.combatAssistant?.activeSequences?.length ?? 0, 0);
+    assert.equal(getState().ui.turn.reactionUsed, false);
     assert.deepEqual(getState(), beforeSubmit);
     assert.equal(getSessionContext().stateRevision, revision);
     assert.deepEqual(window.localStorage.values, storage);
-    assert.ok(pending);
+
+    dialog.forms.attack = new FixtureForm("attack", {
+      profileId: "unarmed", rollMode: "normal", firstD20: "19", secondD20: "",
+    });
+    fireWorkspaceActionStrict(dialog, "attack-hit", { apply: true });
+    const updatedDamageInput = dialog.body.querySelector('input[name="damage1"]');
+    assert.ok(updatedDamageInput?.isConnected);
+    assert.equal(getWorkspaceSessionForTests().currentStep, "damage-input");
+    assert.equal(getWorkspaceSessionForTests().opportunityIntent.operationId, identity.operationId);
+    assert.ok(dialog.body.innerHTML.includes(
+      `${changedProfile.damageDice} ${changedProfile.damageModifier >= 0 ? "+" : "-"} ${Math.abs(changedProfile.damageModifier)}`,
+    ));
+    fireWorkspaceActionStrict(dialog, "submit-damage", { apply: true });
+    assert.equal(getState().ui.turn.reactionUsed, true);
+    const sequence = getState().monk.combatAssistant.activeSequences.find((entry) =>
+      entry.parentFeature === "opportunity-attack");
+    assert.equal(sequence.resolvedAttacks.length, 1);
+    assert.equal(sequence.resolvedAttacks[0].damageStatus, "recorded");
   } finally {
     unsubscribe();
   }
@@ -249,6 +299,116 @@ test("critical opportunity damage requires two physical dice before enabling the
     assert.equal(getState().monk.combatAssistant.activeSequences[0]
       .resolvedAttacks[0].damageRolls.length, 2);
   } finally {
+    unsubscribe();
+  }
+});
+
+test("opportunity miss and hit-damage recover matching receipts after subscriber failures", () => {
+  for (const outcome of ["miss", "hit"]) {
+    const { dialog, unsubscribe } = installWorkspaceFixture();
+    let removeThrowingSubscriber;
+    try {
+      assert.equal(openSaraBattleCommand("opportunity-unarmed").ok, true);
+      dialog.forms.attack = new FixtureForm("attack", {
+        profileId: "unarmed",
+        rollMode: "normal",
+        firstD20: "10",
+        secondD20: "",
+        confirmSeparateAction: false,
+      });
+      if (outcome === "miss") {
+        removeThrowingSubscriber = subscribe(() => {
+          throw new Error("opportunity miss post-commit subscriber failure");
+        });
+        fireWorkspaceActionStrict(dialog, "attack-miss", { apply: true });
+      } else {
+        fireWorkspaceActionStrict(dialog, "attack-hit", { apply: true });
+        dialog.forms.damage = new FixtureForm("damage", { damage1: "" });
+        fireWorkspaceInput(dialog, "damage1", "3");
+        removeThrowingSubscriber = subscribe(() => {
+          throw new Error("opportunity hit post-commit subscriber failure");
+        });
+        fireWorkspaceActionStrict(dialog, "submit-damage", { apply: true });
+      }
+      removeThrowingSubscriber();
+      removeThrowingSubscriber = null;
+      const session = getWorkspaceSessionForTests();
+      const sequence = getState().monk.combatAssistant.activeSequences.find((entry) =>
+        entry.parentFeature === "opportunity-attack");
+      assert.equal(sequence.resolvedAttacks.length, 1);
+      assert.equal(sequence.resolvedAttacks[0].hitResult, outcome);
+      assert.equal(getState().ui.turn.reactionUsed, true);
+      assert.equal(session.appliedUnsaved, true);
+      assert.equal(Boolean(session.operationVerificationRequired), false);
+      assert.equal(session.pendingAttackIntent, null);
+    } finally {
+      removeThrowingSubscriber?.();
+      unsubscribe();
+    }
+  }
+});
+
+test("opportunity receipt inspection failure requires read-only verification", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture();
+  let removeThrowingSubscriber;
+  let stateForRestore;
+  let savedSequences;
+  try {
+    assert.equal(openSaraBattleCommand("opportunity-unarmed").ok, true);
+    dialog.forms.attack = new FixtureForm("attack", {
+      profileId: "unarmed",
+      rollMode: "normal",
+      firstD20: "10",
+      secondD20: "",
+    });
+    let throwOnRead = true;
+    removeThrowingSubscriber = subscribe((state) => {
+      stateForRestore = state;
+      savedSequences = state.monk.combatAssistant.activeSequences;
+      Object.defineProperty(state.monk.combatAssistant, "activeSequences", {
+        configurable: true,
+        enumerable: true,
+        get() {
+          if (throwOnRead) {
+            throwOnRead = false;
+            throw new Error("opportunity receipt inspection failure");
+          }
+          return savedSequences;
+        },
+      });
+      throw new Error("opportunity post-commit subscriber failure");
+    });
+    fireWorkspaceActionStrict(dialog, "attack-miss", { apply: true });
+    removeThrowingSubscriber();
+    removeThrowingSubscriber = null;
+    Object.defineProperty(stateForRestore.monk.combatAssistant, "activeSequences", {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: savedSequences,
+    });
+    const session = getWorkspaceSessionForTests();
+    assert.equal(savedSequences.length, 1);
+    assert.equal(session.readOnly, true);
+    assert.equal(session.operationVerificationRequired, true);
+    assert.ok(session.opportunityIntent);
+    assert.equal(session.opportunityIntent.normalizedRequest.sequenceId,
+      session.opportunityIntent.sequenceId);
+    assert.equal(session.opportunityIntent.operationId.length > 0, true);
+    assert.equal(session.rawInputsByStep[`attack-input:${session.opportunityIntent.attackId}`].firstD20, "10");
+    assert.equal(getWorkspaceRecoverySessions().some((entry) =>
+      entry.workspaceSessionId === session.workspaceSessionId &&
+      entry.recoveryKind === "verification"), true);
+  } finally {
+    removeThrowingSubscriber?.();
+    if (stateForRestore?.monk?.combatAssistant && savedSequences) {
+      Object.defineProperty(stateForRestore.monk.combatAssistant, "activeSequences", {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: savedSequences,
+      });
+    }
     unsubscribe();
   }
 });
