@@ -269,7 +269,11 @@ test("relevant profile change on transient damage blocks stale preview submissio
     const sequence = getState().monk.combatAssistant.activeSequences.find((entry) =>
       entry.parentFeature === "opportunity-attack");
     assert.equal(sequence.resolvedAttacks.length, 1);
-    assert.equal(sequence.resolvedAttacks[0].damageStatus, "recorded");
+    const recordedAttack = sequence.resolvedAttacks[0];
+    assert.equal(recordedAttack.damageStatus, "recorded");
+    assert.deepEqual(recordedAttack.profileSnapshot, changedProfile);
+    assert.equal(recordedAttack.attackBonusSnapshot, changedProfile.attackBonus);
+    assert.equal(recordedAttack.damageModifierSnapshot, changedProfile.damageModifier);
   } finally {
     unsubscribe();
   }
