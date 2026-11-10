@@ -893,6 +893,49 @@ function completedOpportunityEvidence(state, operationId) {
   return matches;
 }
 
+function opportunityEvidenceMatches(state, receipt) {
+  const { sequence, attack } = receipt;
+  const parent = { actionId: sequence.id, attackId: attack.id };
+  let history;
+  try {
+    history = readSeekingHistory(attack, parent);
+  } catch {
+    return false;
+  }
+  const effectiveOutcome = attack.hitResult;
+  const expectedDamageStatus = effectiveOutcome === "hit" ? "recorded"
+    : effectiveOutcome === "miss" ? "not-applicable" : null;
+  if (!expectedDamageStatus || attack.damageStatus !== expectedDamageStatus) return false;
+  if (!history.length) return effectiveOutcome === receipt.outcome;
+  if (receipt.outcome !== "miss" || !["hit", "miss"].includes(effectiveOutcome)) return false;
+  return history.some((entry) => entry.status === "resolved" &&
+    originalSeekingEvidenceMatches(state, receipt, attack, entry.original));
+}
+
+function originalSeekingEvidenceMatches(state, receipt, attack, original) {
+  if (!original || original.hitResult !== "miss" ||
+      !Number.isFinite(Number(original.attackBonusSnapshot))) return false;
+  const calculated = calculateAttackPreviewFromSnapshot(
+    state,
+    receipt.request.attack,
+    attack.profileSnapshot,
+    original.attackBonusSnapshot,
+  );
+  if (!calculated.ok) return false;
+  const originalOutcome = calculated.hitResult == null
+    ? calculated.naturalMiss ? false : calculated.critical ? true : null
+    : calculated.hitResult;
+  return originalOutcome === false &&
+    original.hitResolutionSource === (calculated.hitResolutionSource ??
+      (calculated.naturalMiss || calculated.critical ? "natural-rule" : null)) &&
+    original.chosenD20 === calculated.chosenD20 &&
+    original.attackTotal === calculated.attackTotal &&
+    original.attackBonusSnapshot === calculated.attackBonusSnapshot &&
+    original.critical === calculated.critical &&
+    JSON.stringify(original.rawD20Rolls) === JSON.stringify(calculated.rawD20Rolls) &&
+    original.rollMode === calculated.rollMode;
+}
+
 export function readCompletedOpportunityAttackReceipt(state, operationId) {
   if (typeof operationId !== "string" || !operationId.trim()) return null;
   const matches = completedOpportunityEvidence(state, operationId);
@@ -909,12 +952,44 @@ export function readCompletedOpportunityAttackReceipt(state, operationId) {
       receipt.sequence.id !== receipt.request?.sequenceId ||
       receipt.attack.id !== receipt.request?.attackId ||
       receipt.attack.profileId !== "unarmed" ||
-      receipt.attack.hitResult !== receipt.outcome ||
-      (receipt.outcome === "hit" && receipt.attack.damageStatus !== "recorded") ||
-      (receipt.outcome === "miss" && receipt.attack.damageStatus !== "not-applicable")) {
+      !opportunityEvidenceMatches(state, receipt)) {
     return { malformed: true };
   }
   return receipt;
+}
+
+function hasRetainedOperationEvidence(state, operationId) {
+  try {
+    if (readIncomingReplyReceipt(state, operationId) ||
+        readCompletedSeekingStrikeReceipt(state, operationId) ||
+        readCompletedGentlingTouchReceipt(state, operationId) ||
+        readCompletedNormalAttackReceipt(state, operationId) ||
+        readCompletedBonusAttackReceipt(state, operationId)) return true;
+    const assistant = state?.monk?.combatAssistant;
+    for (const sequence of assistant?.activeSequences ?? []) {
+      if (sequence.incomingReply?.operationId === operationId ||
+          sequence.replacementResults?.some((entry) =>
+            entry.operationId === operationId || entry.outcome?.operationId === operationId)) {
+        return true;
+      }
+      for (const attack of sequence.resolvedAttacks ?? []) {
+        if (attack.completedOperation?.operationId === operationId) return true;
+        const seekingEntries = [
+          ...(Array.isArray(attack.seekingAmendments) ? attack.seekingAmendments : []),
+          ...(attack.seekingAmendment ? [attack.seekingAmendment] : []),
+        ];
+        if (seekingEntries.some((entry) =>
+          entry?.id === operationId ||
+          entry?.paidOperationId === operationId ||
+          entry?.resolutionOperationId === operationId ||
+          entry?.completedSeekingOperation?.operationId === operationId)) return true;
+      }
+    }
+    return assistant?.recentlyCompletedSummaries?.some((entry) =>
+      entry.id === operationId || entry.operationId === operationId) === true;
+  } catch {
+    return true;
+  }
 }
 
 export function previewCompletedOpportunityAttack(state, request) {
@@ -980,6 +1055,9 @@ export function commitCompletedOpportunityAttack(context, request, operationId) 
   if (prior?.malformed) return reject("operation-collision");
   if (prior) return JSON.stringify(prior.request) === JSON.stringify(input)
     ? { status: "replayed", receipt: prior } : reject("operation-collision");
+  if (hasRetainedOperationEvidence(state, operationId)) {
+    return reject("operation-collision");
+  }
   const preview = previewCompletedOpportunityAttack(state, input);
   if (!preview.ok || preview.stage !== "complete") {
     return reject(preview.reason ?? "Полный результат провоцированной атаки не готов.");

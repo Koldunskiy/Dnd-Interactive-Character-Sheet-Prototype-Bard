@@ -4,6 +4,7 @@ import { getState, getSessionContext, updateState } from "../../scripts/state.js
 import {
   getWorkspaceSessionForTests,
   openSaraBattleCommand,
+  openNormalAttack,
 } from "../../scripts/workspace/controller.js";
 import {
   fireWorkspaceActionStrict,
@@ -133,6 +134,9 @@ test("irrelevant updates retain the transient opportunity attack and damage cont
     const sessionId = getWorkspaceSessionForTests().workspaceSessionId;
     const initialFingerprint = getWorkspaceSessionForTests().opportunityIntent.previewFingerprint;
     const attackInput = dialog.body.querySelector('input[name="firstD20"]');
+    attackInput.value = "14";
+    attackInput.focus();
+    attackInput.setSelectionRange(1, 2);
     fireWorkspaceInput(dialog, "firstD20", "14");
     updateState((state) => { state.ui.unrelatedOpportunityTest = true; });
     assert.equal(getWorkspaceSessionForTests().opportunityIntent.previewFingerprint,
@@ -141,6 +145,10 @@ test("irrelevant updates retain the transient opportunity attack and damage cont
     assert.equal(getWorkspaceSessionForTests().currentStep, "attack-input");
     assert.equal(Boolean(getWorkspaceSessionForTests().confirmationRequired), false);
     assert.equal(dialog.body.querySelector('input[name="firstD20"]'), attackInput);
+    assert.equal(attackInput.isConnected, true);
+    assert.equal(globalThis.document.activeElement, attackInput);
+    assert.deepEqual([attackInput.selectionStart, attackInput.selectionEnd], [1, 2]);
+    assert.equal(attackInput.value, "14");
     assert.equal(getWorkspaceSessionForTests().rawInputsByStep[
       getWorkspaceSessionForTests().currentStepKey].firstD20, "14");
     dialog.forms.attack = new FixtureForm("attack", {
@@ -148,14 +156,70 @@ test("irrelevant updates retain the transient opportunity attack and damage cont
     });
     fireWorkspaceActionStrict(dialog, "attack-hit", { apply: true });
     const damageInput = dialog.body.querySelector('input[name="damage1"]');
+    damageInput.value = "3";
+    damageInput.focus();
+    damageInput.setSelectionRange(0, 1);
     fireWorkspaceInput(dialog, "damage1", "3");
     updateState((state) => { state.ui.unrelatedOpportunityTest = false; });
     assert.equal(getWorkspaceSessionForTests().workspaceSessionId, sessionId);
     assert.equal(getWorkspaceSessionForTests().currentStep, "damage-input");
     assert.equal(dialog.body.querySelector('input[name="damage1"]'), damageInput);
+    assert.equal(damageInput.isConnected, true);
+    assert.equal(globalThis.document.activeElement, damageInput);
+    assert.deepEqual([damageInput.selectionStart, damageInput.selectionEnd], [0, 1]);
+    assert.equal(damageInput.value, "3");
     assert.equal(getWorkspaceSessionForTests().rawInputsByStep[
       getWorkspaceSessionForTests().currentStepKey].damage1, "3");
     assert.equal(getState().monk?.combatAssistant?.activeSequences?.length ?? 0, 0);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("normal attack remains unavailable while opportunity is available in waiting", () => {
+  const { unsubscribe } = installWorkspaceFixture();
+  try {
+    updateState((state) => {
+      state.battleConsole.current = {
+        id: "opportunity-waiting-window",
+        phase: "waiting",
+        ownTurnId: null,
+      };
+    });
+    assert.equal(openNormalAttack().ok, false);
+    assert.equal(openSaraBattleCommand("opportunity-unarmed").ok, true);
+    assert.equal(getWorkspaceSessionForTests().opportunityIntent.phaseAtOpen, "waiting");
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("relevant profile change on transient damage blocks stale preview submission", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture();
+  try {
+    assert.equal(openSaraBattleCommand("opportunity-unarmed").ok, true);
+    const intent = getWorkspaceSessionForTests().opportunityIntent;
+    dialog.forms.attack = new FixtureForm("attack", {
+      profileId: "unarmed", rollMode: "normal", firstD20: "12", secondD20: "",
+    });
+    fireWorkspaceActionStrict(dialog, "attack-hit", { apply: true });
+    dialog.forms.damage = new FixtureForm("damage", { damage1: "3" });
+    const pending = getWorkspaceSessionForTests().pendingAttackIntent;
+    updateState((state) => { state.abilities.strength = 18; });
+    const beforeSubmit = structuredClone(getState());
+    const revision = getSessionContext().stateRevision;
+    const storage = new Map(window.localStorage.values);
+    fireWorkspaceActionStrict(dialog, "submit-damage");
+    const current = getWorkspaceSessionForTests();
+    assert.equal(current.currentStep, "checkpoint");
+    assert.equal(current.opportunityIntent.sequenceId, intent.sequenceId);
+    assert.equal(current.opportunityIntent.attackId, intent.attackId);
+    assert.equal(current.pendingAttackIntent, null);
+    assert.equal(current.rawInputsByStep[`damage-input:${intent.attackId}`].damage1, "3");
+    assert.deepEqual(getState(), beforeSubmit);
+    assert.equal(getSessionContext().stateRevision, revision);
+    assert.deepEqual(window.localStorage.values, storage);
+    assert.ok(pending);
   } finally {
     unsubscribe();
   }

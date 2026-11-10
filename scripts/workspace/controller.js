@@ -2863,11 +2863,13 @@ function submitAttack(outcome, button = null) {
       render();
       return;
     }
+    const normalizedRequest = completedPreview.request;
     const operationIdValue = intent.operationId;
+    intent.normalizedRequest = normalizedRequest;
     if (outcome === "hit") {
       session.pendingAttackIntent = {
         operationId: operationIdValue,
-        request,
+        request: normalizedRequest,
         previewFingerprint: fingerprint,
         workspaceSessionId: intent.workspaceSessionId,
         owner: { ...intent.owner },
@@ -2886,7 +2888,7 @@ function submitAttack(outcome, button = null) {
       setStep("damage-input", intent.attackId);
       return;
     }
-    const result = runCompletedOpportunityMutation(session, request, operationIdValue);
+    const result = runCompletedOpportunityMutation(session, normalizedRequest, operationIdValue);
     if (result.status === "replaced") return;
     if (result.status === "verification-required") {
       session.readOnly = true;
@@ -3147,7 +3149,10 @@ function submitDamage() {
       render();
       return;
     }
-    const result = runCompletedOpportunityMutation(session, request, intent.operationId);
+    const normalizedRequest = preview.request;
+    opportunity.normalizedRequest = normalizedRequest;
+    intent.request = normalizedRequest;
+    const result = runCompletedOpportunityMutation(session, normalizedRequest, intent.operationId);
     if (result.status === "replaced" ||
         session?.workspaceSessionId !== intent.workspaceSessionId ||
         !isWorkspaceOwnerCurrent(intent.owner)) return;
@@ -3165,9 +3170,9 @@ function submitDamage() {
     }
     refreshWorkspaceOwnerRevision();
     const after = getState();
-    const committedSequence = getWorkspaceAttackSequence(after, request.sequenceId);
+    const committedSequence = getWorkspaceAttackSequence(after, normalizedRequest.sequenceId);
     const committedAttack = committedSequence?.resolvedAttacks?.find((entry) =>
-      entry.id === request.attackId);
+      entry.id === normalizedRequest.attackId);
     session.pendingAttackIntent = null;
     session.opportunityIntent = null;
     session.selectedDamage = null;
@@ -3178,7 +3183,7 @@ function submitDamage() {
     session.strikeParent = committedAttack
       ? { sequenceId: committedSequence.id, attackId: committedAttack.id } : null;
     session.status = "Атака и физический урон записаны атомарно.";
-    setStep("checkpoint", request.attackId);
+    setStep("checkpoint", normalizedRequest.attackId);
     return;
   }
   if (session.pendingAttackIntent &&
