@@ -869,6 +869,51 @@ test("opportunity evidence rejects an effective result that disagrees with valid
   }
 });
 
+test("opportunity evidence rejects damage fields that disagree with the latest Seeking replacement", () => {
+  for (const [field, corrupt] of [
+    ["damageRolls", (value) => [...value, "1"]],
+    ["damageModifierSnapshot", (value) => value + 1],
+    ["damageTotalBeforeTargetModifiers", (value) => value + 1],
+  ]) {
+    const saved = new Map();
+    const previousWindow = globalThis.window;
+    globalThis.window = {
+      localStorage: {
+        getItem: (key) => saved.get(key) ?? null,
+        setItem: (key, value) => saved.set(key, value),
+        removeItem: (key) => saved.delete(key),
+      },
+    };
+    try {
+      const opportunity = createSeekingOpportunityMiss();
+      resolveOpportunitySeeking("hit", `damage-seeking-${field}`);
+      const sequence = getState().monk.combatAssistant.activeSequences[0];
+      const attack = structuredClone(sequence.resolvedAttacks[0]);
+      assert.equal(attack[field] === null || attack[field] === undefined
+        ? false : true, true, `${field} must have recorded hit evidence`);
+      attack[field] = corrupt(attack[field]);
+      updateState((state) => {
+        state.monk.combatAssistant.activeSequences[0].resolvedAttacks[0] = attack;
+        return state;
+      });
+      const before = structuredClone(getState());
+      const revision = getSessionContext().stateRevision;
+      const storage = new Map(saved);
+      assert.equal(readCompletedOpportunityAttackReceipt(
+        getState(), "seeking-opportunity-miss-op",
+      ).malformed, true, field);
+      assert.equal(commitCompletedOpportunityAttack(
+        getSessionContext(), opportunity, "seeking-opportunity-miss-op",
+      ).status, "rejected", field);
+      assert.deepEqual(getState(), before);
+      assert.equal(getSessionContext().stateRevision, revision);
+      assert.deepEqual(saved, storage);
+    } finally {
+      globalThis.window = previousWindow;
+    }
+  }
+});
+
 test("opportunity evidence rejects ambiguous matching Seeking history", () => {
   const storage = installOpportunityCollisionStorage();
   try {

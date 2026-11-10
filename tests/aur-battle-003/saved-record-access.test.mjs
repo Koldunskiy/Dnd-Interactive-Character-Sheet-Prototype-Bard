@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { getSavedPlayerRecords } from "../../scripts/battle/player-hub.js";
+import { getDerivedStats } from "../../scripts/calculations.js";
 import { renderBattleConsole } from "../../scripts/render/render-battle-console.js";
 import { getSessionContext } from "../../scripts/state.js";
 import {
@@ -20,6 +21,7 @@ import {
   closeAttackSequence,
   commitCompletedOpportunityAttack,
   recordAttackOutcome,
+  readCompletedOpportunityAttackReceipt,
   startAttackSequence,
 } from "../../scripts/actions/sara-combat.js";
 import { getState, openCharacterSession, updateState } from "../../scripts/state.js";
@@ -728,31 +730,37 @@ test("legacy opportunity awaiting-damage opens exact saved IDs and records witho
   try {
     const sequenceId = "legacy-opportunity-sequence";
     const attackId = "legacy-opportunity-attack";
-    const request = {
-      sequenceId, attackId, battleId: null, phaseAtOpen: "waiting",
-      ownTurnId: null, turnMarker: Number(getState().ui.turn.turnNumber),
-      expectedUsedSlots: 0, parentFeature: "opportunity-attack",
-      attack: {
-        profileId: "unarmed", rollMode: "normal", firstD20: "12",
-        secondD20: "", targetArmorClass: "1", dmHitResult: null,
-        targetLabel: "", dmExceptionConfirmed: false,
-      },
-      damageRolls: ["3"],
-    };
-    assert.equal(commitCompletedOpportunityAttack(
-      getSessionContext(), request, "legacy-opportunity-completed",
-    ).status, "applied");
     updateState((state) => {
-      const attack = state.monk.combatAssistant.activeSequences
-        .find((entry) => entry.id === sequenceId).resolvedAttacks
-        .find((entry) => entry.id === attackId);
-      attack.damageStatus = "awaiting-damage";
-      attack.damageRolls = [];
-      attack.damageTotal = null;
+      state.battleConsole.current = {
+        id: "legacy-opportunity-battle", phase: "waiting", ownTurnId: null,
+      };
       return state;
     });
-    const initialAttack = structuredClone(getState().monk.combatAssistant
-      .activeSequences.find((entry) => entry.id === sequenceId).resolvedAttacks[0]);
+    assert.equal(startAttackSequence(getSessionContext(), {
+      sequenceId, kind: "reaction-unarmed", triggerConfirmed: true,
+      parentFeature: "opportunity-attack", trigger: "opportunity-attack",
+    }, "legacy-opportunity-start").status, "applied");
+    assert.equal(recordAttackOutcome(getSessionContext(), sequenceId, attackId, {
+      kind: "reaction-unarmed", profileId: "unarmed", rollMode: "normal",
+      firstD20: "12", secondD20: "", targetArmorClass: "1",
+    }, "legacy-opportunity-hit").status, "applied");
+    const pendingSequence = getState().monk.combatAssistant.activeSequences
+      .find((entry) => entry.id === sequenceId);
+    const initialAttack = structuredClone(pendingSequence.resolvedAttacks[0]);
+    assert.equal(pendingSequence.kind, "reaction-unarmed");
+    assert.equal(pendingSequence.parentFeature, "opportunity-attack");
+    assert.equal(pendingSequence.status, "complete");
+    assert.equal(initialAttack.hitResult, "hit");
+    assert.equal(initialAttack.damageStatus, "awaiting-damage");
+    assert.equal(readCompletedOpportunityAttackReceipt(
+      getState(), "legacy-opportunity-completed",
+    ), null);
+    assert.equal(getState().ui.turn.reactionUsed, true);
+    updateState((state) => {
+      state.abilities.dexterity = 10;
+      state.abilities.strength = 18;
+      return state;
+    });
     const root = makeBoundConsole();
     clickControl(root, "battleSceneAction", "tools");
     clickControl(root, "battleSceneAction", "saved-records");
@@ -769,13 +777,61 @@ test("legacy opportunity awaiting-damage opens exact saved IDs and records witho
     const recorded = savedSequence.resolvedAttacks.find((entry) => entry.id === attackId);
     assert.equal(recorded.damageStatus, "recorded");
     assert.equal(getState().ui.turn.reactionUsed, true);
+    assert.deepEqual(recorded.profileSnapshot, initialAttack.profileSnapshot);
+    assert.notEqual(recorded.profileSnapshot.damageModifier,
+      getDerivedStats(getState()).damageModifier);
     for (const field of ["profileSnapshot", "attackBonusSnapshot",
-      "damageModifierSnapshot", "sequenceId", "id"]) {
+      "sequenceId", "id"]) {
       if (field === "sequenceId") continue;
       assert.deepEqual(recorded[field], initialAttack[field]);
     }
+    assert.equal(recorded.damageModifierSnapshot,
+      initialAttack.profileSnapshot.damageModifier);
     assert.equal(savedSequence.id, sequenceId);
     assert.equal(recorded.id, attackId);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("completed opportunity is read-only in the connected saved-records panel", () => {
+  const { unsubscribe } = installWorkspaceFixture();
+  try {
+    const sequenceId = "completed-opportunity-saved-sequence";
+    const attackId = "completed-opportunity-saved-attack";
+    assert.equal(commitCompletedOpportunityAttack(getSessionContext(), {
+      sequenceId, attackId, battleId: null, phaseAtOpen: "waiting",
+      ownTurnId: null, turnMarker: Number(getState().ui.turn.turnNumber),
+      expectedUsedSlots: 0, parentFeature: "opportunity-attack",
+      attack: {
+        profileId: "unarmed", rollMode: "normal", firstD20: "12",
+        secondD20: "", targetArmorClass: "1", dmHitResult: null,
+        targetLabel: "", dmExceptionConfirmed: false,
+      },
+      damageRolls: ["3"],
+    }, "completed-opportunity-saved-completion").status, "applied");
+    const stateBeforeView = structuredClone(getState());
+    const revisionBeforeView = getSessionContext().stateRevision;
+    const storageBeforeView = new Map(window.localStorage.values);
+    const root = makeBoundConsole();
+    clickControl(root, "battleSceneAction", "tools");
+    clickControl(root, "battleSceneAction", "saved-records");
+    const markup = [...root.shell.regions.values()]
+      .map((region) => region.innerHTML).join("");
+    const card = markup.match(
+      new RegExp(`<article class="saved-record" data-record-sequence-id="${sequenceId}">([\\s\\S]*?)<\\/article>`),
+    )?.[0];
+    assert.ok(card, `Expected saved opportunity sequence ${sequenceId}`);
+    assert.match(card, new RegExp(`Удар 1: попадание · урон`));
+    const recordedDamage = getState().monk.combatAssistant.activeSequences
+      .find((entry) => entry.id === sequenceId).resolvedAttacks[0]
+      .damageTotalBeforeTargetModifiers;
+    assert.match(card, new RegExp(`урон ${recordedDamage}`));
+    assert.doesNotMatch(card, /ожидается запись урона|Продолжить последовательность|Закрыть остаток/);
+    assert.doesNotMatch(card, /data-saved-(?:damage|sequence)=/);
+    assert.deepEqual(getState(), stateBeforeView);
+    assert.equal(getSessionContext().stateRevision, revisionBeforeView);
+    assert.deepEqual(window.localStorage.values, storageBeforeView);
   } finally {
     unsubscribe();
   }

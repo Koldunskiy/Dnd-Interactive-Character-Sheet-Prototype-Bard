@@ -919,7 +919,11 @@ function opportunityEvidenceMatches(state, receipt) {
     replacement.hitResolutionSource === attack.hitResolutionSource &&
     replacement.rollMode === attack.rollMode &&
     replacement.attackBonusSnapshot === attack.attackBonusSnapshot &&
-    JSON.stringify(replacement.rawD20Rolls) === JSON.stringify(attack.rawD20Rolls);
+    JSON.stringify(replacement.rawD20Rolls) === JSON.stringify(attack.rawD20Rolls) &&
+    JSON.stringify(replacement.damageRolls) === JSON.stringify(attack.damageRolls) &&
+    replacement.damageModifierSnapshot === attack.damageModifierSnapshot &&
+    replacement.damageTotalBeforeTargetModifiers ===
+      attack.damageTotalBeforeTargetModifiers;
 }
 
 function originalSeekingEvidenceMatches(state, receipt, attack, original) {

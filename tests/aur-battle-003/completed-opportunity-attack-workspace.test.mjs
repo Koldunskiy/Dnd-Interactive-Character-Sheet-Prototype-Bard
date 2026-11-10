@@ -15,6 +15,7 @@ import {
   getWorkspaceSessions,
   getWorkspaceSessionForTests,
   disposeWorkspaceOwner,
+  discardWorkspaceDraft,
   requestEndBattle,
   openSaraBattleCommand,
   openNormalAttack,
@@ -591,10 +592,14 @@ test("unknown opportunity result survives unmatched persistence reconcile and sy
     assert.deepEqual(getState(), beforeReconcile);
     assert.equal(getSessionContext().stateRevision, revisionBeforeReconcile);
     assert.deepEqual(window.localStorage.values, storageBeforeReconcile);
+    assert.deepEqual(discardWorkspaceDraft(verificationWorkspaceId), {
+      ok: false,
+      reason: "Эта панель больше не содержит удаляемого черновика.",
+    });
     for (const action of [
       "close", "confirm-close", "finish-workspace", "back", "cancel-attack-draft",
       "cancel-seeking-draft", "outside-damage", "submit-damage",
-      "discard-workspace-draft", "remainder", "confirm",
+      "close-attack-remainder",
     ]) fireWorkspaceAction(dialog, action);
     const after = getWorkspaceSessionForTests();
     assert.equal(after.operationVerificationRequired, true);
@@ -787,21 +792,24 @@ test("end-battle does not restore an opportunity child or its suspended parent",
   }
 });
 
-test("opportunity handler rejects a stale app-instance owner without committing", () => {
+test("test session clone cannot change the production app-instance owner", () => {
   const { dialog, unsubscribe } = installWorkspaceFixture();
   try {
     assert.equal(openSaraBattleCommand("opportunity-unarmed").ok, true);
-    const active = getWorkspaceSessionForTests();
-    assert.ok(active.owner.appInstanceId);
-    active.owner.appInstanceId = "stale-opportunity-app-instance";
+    const clone = getWorkspaceSessionForTests();
+    const productionAppInstanceId = clone.owner.appInstanceId;
+    assert.ok(productionAppInstanceId);
+    clone.owner.appInstanceId = "stale-opportunity-app-instance";
+    assert.equal(getWorkspaceSessionForTests().owner.appInstanceId, productionAppInstanceId);
+    dialog.forms.attack = new FixtureForm("attack", {
+      profileId: "unarmed", rollMode: "normal", firstD20: "10", secondD20: "",
+    });
     const before = structuredClone(getState());
     const revision = getSessionContext().stateRevision;
-    const storage = new Map(window.localStorage.values);
-    fireWorkspaceActionStrict(dialog, "attack-miss");
-    assert.deepEqual(getState(), before);
-    assert.equal(getSessionContext().stateRevision, revision);
-    assert.deepEqual(window.localStorage.values, storage);
-    assert.equal(getState().ui.turn.reactionUsed, false);
+    fireWorkspaceActionStrict(dialog, "attack-miss", { apply: true });
+    assert.equal(getState().ui.turn.reactionUsed, true);
+    assert.equal(getSessionContext().stateRevision, revision + 1);
+    assert.notDeepEqual(getState(), before);
   } finally {
     unsubscribe();
   }
