@@ -255,8 +255,7 @@ function renderCommandForm(session, state) {
       ${check("triggerConfirmed", "Подтверждаю, что по мне промахнулись вблизи.")}`;
   }
   if (id === "opportunity-unarmed") {
-    return `<p>Один безоружный ответ реакцией; это не действие «Атака» и не Extra Attack.</p>
-      ${check("triggerConfirmed", "Подтверждаю провоцированный триггер по решению игрока/ведущего.")}`;
+    return `<p>Один безоружный удар реакцией. Выбор этой команды подтверждает подходящий триггер; это не действие «Атака» и не Extra Attack.</p>`;
   }
   if (id === "dash" || id === "disengage") {
     return `<p>${id === "dash"

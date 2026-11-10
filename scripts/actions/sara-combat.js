@@ -838,6 +838,233 @@ function normalizeCompletedBonusAttackRequest(request) {
   return { ok: true, request: normalized };
 }
 
+function normalizeCompletedOpportunityAttackRequest(request) {
+  const attack = request?.attack;
+  const validId = (value) => typeof value === "string" && value.trim().length > 0;
+  if (!request || !["sequenceId", "attackId"].every((key) => validId(request[key])) ||
+      request.parentFeature !== "opportunity-attack" ||
+      request.attack?.profileId !== "unarmed" ||
+      !["normal", "advantage", "disadvantage"].includes(attack?.rollMode) ||
+      !Array.isArray(request.damageRolls) ||
+      !Number.isInteger(request.turnMarker) ||
+      !Number.isInteger(request.expectedUsedSlots) || request.expectedUsedSlots !== 0 ||
+      !["waiting", "own-turn"].includes(request.phaseAtOpen) ||
+      (request.battleId != null && !validId(request.battleId)) ||
+      (request.ownTurnId != null && !validId(request.ownTurnId)) ||
+      request.phaseAtOpen === "own-turn" && !validId(request.ownTurnId) ||
+      request.phaseAtOpen === "waiting" && request.ownTurnId != null ||
+      request.battleId == null && (request.phaseAtOpen !== "waiting" || request.ownTurnId != null) ||
+      request.battleId != null && request.phaseAtOpen === "own-turn" && !validId(request.ownTurnId)) {
+    return { ok: false, reason: "Запрос провоцированной атаки имеет неверный формат." };
+  }
+  const normalized = {
+    sequenceId: request.sequenceId.trim(),
+    attackId: request.attackId.trim(),
+    battleId: request.battleId?.trim() ?? null,
+    phaseAtOpen: request.phaseAtOpen,
+    ownTurnId: request.ownTurnId?.trim() ?? null,
+    turnMarker: request.turnMarker,
+    expectedUsedSlots: 0,
+    parentFeature: "opportunity-attack",
+    attack: {
+      profileId: "unarmed",
+      rollMode: attack.rollMode,
+      firstD20: attack.firstD20 == null ? "" : String(attack.firstD20),
+      secondD20: attack.secondD20 == null ? "" : String(attack.secondD20),
+      targetArmorClass: attack.targetArmorClass == null ? "" : String(attack.targetArmorClass),
+      dmHitResult: ["hit", "miss"].includes(attack.dmHitResult) ? attack.dmHitResult : null,
+      targetLabel: String(attack.targetLabel ?? "").trim(),
+      dmExceptionConfirmed: attack.dmExceptionConfirmed === true,
+    },
+    damageRolls: request.damageRolls.map((roll) => String(roll)),
+  };
+  return { ok: true, request: normalized };
+}
+
+function completedOpportunityEvidence(state, operationId) {
+  const matches = [];
+  for (const sequence of state?.monk?.combatAssistant?.activeSequences ?? []) {
+    for (const attack of sequence.resolvedAttacks ?? []) {
+      if (attack.completedOperation?.operationId === operationId) {
+        matches.push({ sequence, attack, ...attack.completedOperation });
+      }
+    }
+  }
+  return matches;
+}
+
+export function readCompletedOpportunityAttackReceipt(state, operationId) {
+  if (typeof operationId !== "string" || !operationId.trim()) return null;
+  const matches = completedOpportunityEvidence(state, operationId);
+  if (matches.length !== 1) return matches.length ? { malformed: true } : null;
+  const receipt = matches[0];
+  const normalized = normalizeCompletedOpportunityAttackRequest(receipt.request);
+  if (receipt.sequence.kind !== "reaction-unarmed" ||
+      receipt.sequence.parentFeature !== "opportunity-attack" ||
+      receipt.sequence.maximumAttacks !== 1 ||
+      receipt.sequence.status !== "complete" ||
+      !["hit", "miss"].includes(receipt.outcome) ||
+      !normalized.ok ||
+      JSON.stringify(normalized.request) !== JSON.stringify(receipt.request) ||
+      receipt.sequence.id !== receipt.request?.sequenceId ||
+      receipt.attack.id !== receipt.request?.attackId ||
+      receipt.attack.profileId !== "unarmed" ||
+      receipt.attack.hitResult !== receipt.outcome ||
+      (receipt.outcome === "hit" && receipt.attack.damageStatus !== "recorded") ||
+      (receipt.outcome === "miss" && receipt.attack.damageStatus !== "not-applicable")) {
+    return { malformed: true };
+  }
+  return receipt;
+}
+
+export function previewCompletedOpportunityAttack(state, request) {
+  const normalized = normalizeCompletedOpportunityAttackRequest(request);
+  if (!normalized.ok) return normalized;
+  const input = normalized.request;
+  if (!isSara(state)) return { ok: false, reason: "Атака доступна только в листе Сары." };
+  const battle = state.battleConsole?.current;
+  if (input.battleId !== (battle?.id ?? null) ||
+      input.phaseAtOpen !== (battle?.phase ?? "waiting") ||
+      input.ownTurnId !== (battle?.phase === "own-turn" ? battle.ownTurnId : null) ||
+      Number(state.ui?.turn?.turnNumber ?? 1) !== input.turnMarker) {
+    return { ok: false, reason: "Контекст боя или хода изменился." };
+  }
+  if (battle && !["waiting", "own-turn"].includes(battle.phase)) {
+    return { ok: false, reason: "Реакция недоступна в приостановленной сцене." };
+  }
+  if (state.ui?.turn?.reactionUsed === true) {
+    return { ok: false, reason: "Реакция уже использована в этом ходу." };
+  }
+  const assistant = state.monk?.combatAssistant;
+  if ((assistant?.activeSequences ?? []).some((entry) => entry.id === input.sequenceId ||
+      entry.status === "open" && !mayRunAlongside("reaction-unarmed", entry.kind)) ||
+      (assistant?.activeSequences ?? []).some((entry) =>
+        entry.resolvedAttacks?.some((attack) => attack.id === input.attackId))) {
+    return { ok: false, reason: "Последовательность или удар уже заняты." };
+  }
+  const outcome = calculateAttackPreview(state, input.attack);
+  if (!outcome.ok) return outcome;
+  if (outcome.hitResult == null) {
+    if (outcome.naturalMiss || outcome.critical) {
+      outcome.hitResult = outcome.critical;
+      outcome.hitResolutionSource = "natural-rule";
+    } else {
+      return { ok: false, stage: "attack", reason: "Укажите КД или исход ведущего." };
+    }
+  } else if ((outcome.naturalMiss && outcome.hitResult ||
+      outcome.critical && !outcome.hitResult) && !input.attack.dmExceptionConfirmed) {
+    return { ok: false, stage: "attack", reason: "Противоречащий натуральному броску исход требует подтверждения ведущего." };
+  }
+  if (!outcome.hitResult) {
+    return { ok: true, stage: "complete", request: input, attack: outcome, damage: null };
+  }
+  if (!input.damageRolls.length) {
+    return { ok: true, stage: "damage", request: input, attack: outcome, damage: null };
+  }
+  const damage = calculateAttackDamage(outcome.profile, input.damageRolls, outcome.critical);
+  return damage.ok
+    ? { ok: true, stage: "complete", request: input, attack: outcome, damage }
+    : { ok: false, stage: "damage", reason: damage.reason };
+}
+
+export function commitCompletedOpportunityAttack(context, request, operationId) {
+  if (typeof operationId !== "string" || !operationId.trim()) {
+    return reject("Для операции требуется стабильный идентификатор.");
+  }
+  if (!isCurrentSession(context)) return reject("stale-session");
+  const normalized = normalizeCompletedOpportunityAttackRequest(request);
+  if (!normalized.ok) return reject(normalized.reason);
+  const input = normalized.request;
+  const state = getState();
+  const prior = readCompletedOpportunityAttackReceipt(state, operationId);
+  if (prior?.malformed) return reject("operation-collision");
+  if (prior) return JSON.stringify(prior.request) === JSON.stringify(input)
+    ? { status: "replayed", receipt: prior } : reject("operation-collision");
+  const preview = previewCompletedOpportunityAttack(state, input);
+  if (!preview.ok || preview.stage !== "complete") {
+    return reject(preview.reason ?? "Полный результат провоцированной атаки не готов.");
+  }
+  if ((state.monk?.combatAssistant?.activeSequences ?? []).some((sequence) =>
+    sequence.resolvedAttacks?.some((attack) => attack.completedOperation?.operationId === operationId))) {
+    return reject("operation-collision");
+  }
+  return commit(context, operationId, {
+    kind: "sara-completed-opportunity-attack",
+    sequenceId: input.sequenceId,
+    attackId: input.attackId,
+  }, (draft) => {
+    const fresh = previewCompletedOpportunityAttack(draft, input);
+    if (!fresh.ok || fresh.stage !== "complete") {
+      throw new Error(fresh.reason ?? "Полный результат провоцированной атаки не готов.");
+    }
+    const assistant = ensureCombatAssistant(draft);
+    const battle = draft.battleConsole?.current;
+    if (assistant.activeSequences.some((entry) => entry.id === input.sequenceId ||
+        entry.status === "open" && !mayRunAlongside("reaction-unarmed", entry.kind)) ||
+        assistant.activeSequences.some((entry) =>
+          entry.resolvedAttacks?.some((attack) => attack.id === input.attackId)) ||
+        draft.ui?.turn?.reactionUsed === true ||
+        input.battleId !== (battle?.id ?? null) ||
+        input.phaseAtOpen !== (battle?.phase ?? "waiting") ||
+        input.ownTurnId !== (battle?.phase === "own-turn" ? battle.ownTurnId : null) ||
+        Number(draft.ui?.turn?.turnNumber ?? 1) !== input.turnMarker) {
+      throw new Error("Контекст или идентификатор провоцированной атаки устарел.");
+    }
+    const sequence = {
+      id: input.sequenceId,
+      kind: "reaction-unarmed",
+      parentId: null,
+      parentFeature: "opportunity-attack",
+      turnMarker: input.turnMarker,
+      battleId: input.battleId,
+      ownTurnId: input.ownTurnId,
+      status: "complete",
+      maximumAttacks: 1,
+      resolvedAttacks: [],
+      resourcePaymentApplied: false,
+      actionFlagApplied: true,
+      creationStatsSnapshot: {
+        level: getDerivedStats(draft).level,
+        martialDieSides: getDerivedStats(draft).monk.martialDieSides,
+        unarmed: getDerivedStats(draft).saraAttackProfiles.unarmed,
+      },
+    };
+    const attack = {
+      id: input.attackId,
+      profileId: "unarmed",
+      profileSnapshot: structuredClone(fresh.attack.profile),
+      optionalTargetLabel: input.attack.targetLabel,
+      rawD20Rolls: fresh.attack.rawD20Rolls,
+      rollMode: fresh.attack.rollMode,
+      chosenD20: fresh.attack.chosenD20,
+      attackBonusSnapshot: fresh.attack.attackBonusSnapshot,
+      targetArmorClass: input.attack.targetArmorClass.trim() === ""
+        ? null : Number(input.attack.targetArmorClass),
+      attackTotal: fresh.attack.attackTotal,
+      hitResolutionSource: fresh.attack.hitResolutionSource,
+      hitResult: fresh.attack.hitResult ? "hit" : "miss",
+      critical: fresh.attack.critical,
+      damageRolls: fresh.damage?.damageRolls ?? null,
+      damageModifierSnapshot: fresh.damage?.damageModifierSnapshot ?? null,
+      damageTotalBeforeTargetModifiers: fresh.damage?.damageTotalBeforeTargetModifiers ?? null,
+      damageStatus: fresh.attack.hitResult ? "recorded" : "not-applicable",
+      techniqueApplicationId: null,
+      completedOperation: {
+        operationId,
+        request: structuredClone(input),
+        outcome: fresh.attack.hitResult ? "hit" : "miss",
+      },
+      slotNumber: 1,
+    };
+    sequence.resolvedAttacks.push(attack);
+    assistant.activeSequences.push(sequence);
+    draft.ui.turn.reactionUsed = true;
+    closeRestWindow(draft, "recorded-attack");
+    pruneCombatHistory(assistant, draft);
+    return draft;
+  });
+}
+
 function completedBonusReceiptFromState(state, operationId) {
   for (const sequence of state?.monk?.combatAssistant?.activeSequences ?? []) {
     const attack = sequence.resolvedAttacks?.find((entry) =>

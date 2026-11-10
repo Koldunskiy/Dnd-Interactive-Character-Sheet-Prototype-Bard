@@ -22,6 +22,9 @@ import {
   previewWorkspaceCompletedBonusAttack,
   submitWorkspaceCompletedBonusAttack,
   readWorkspaceCompletedBonusAttackReceipt,
+  previewWorkspaceCompletedOpportunityAttack,
+  submitWorkspaceCompletedOpportunityAttack,
+  readWorkspaceCompletedOpportunityAttackReceipt,
   buildWorkspaceSeekingParentBasis,
   previewWorkspaceCompletedSeekingStrike,
   submitWorkspaceCompletedSeekingStrike,
@@ -2087,6 +2090,17 @@ export function openSaraBattleCommand(commandId, invoker = null, options = {}) {
     return { ok: false, reason: "Рабочая панель относится к другому сеансу персонажа." };
   }
   if (sameOwner) {
+    if (commandId === "opportunity-unarmed" &&
+        session.workspaceType === "attack" &&
+        session.scenarioId === "opportunity-unarmed" &&
+        session.opportunityIntent) {
+      return resumeWorkspace(session.workspaceSessionId);
+    }
+    if (commandId === "opportunity-unarmed" &&
+        (session.submitting || session.appliedUnsaved ||
+         hasExplicitWorkspaceVerification(session))) {
+      return { ok: false, reason: "Сначала завершите сохранение или проверку текущей операции." };
+    }
     if (session.workspaceType === "command" && session.scenarioId === commandId) {
       if (commandId === "character-roll" && options.rollPreset != null) {
         const preset = options.rollPreset;
@@ -2167,6 +2181,44 @@ export function openSaraBattleCommand(commandId, invoker = null, options = {}) {
   }
   if (commandId.startsWith("potion-use:")) {
     session.rawInputsByStep[session.currentStepKey] = { target: "self" };
+  }
+  if (commandId === "opportunity-unarmed") {
+    const battle = state.battleConsole?.current ?? null;
+    session.workspaceType = "attack";
+    session.sequenceKind = "reaction-unarmed";
+    session.firstAttempt = true;
+    session.isExistingSequence = false;
+    session.currentStep = "attack-input";
+    session.currentStepKey = stepKey("attack-input", session.attackId);
+    session.command = { ...session.command, titleRu: "Провоцированная атака" };
+    session.opportunityIntent = {
+      owner: { ...session.owner },
+      workspaceSessionId: session.workspaceSessionId,
+      sequenceId: session.sequenceId,
+      attackId: session.attackId,
+      operationId: createId("opportunity-operation"),
+      battleId: battle?.id ?? null,
+      phaseAtOpen: battle?.phase ?? "waiting",
+      ownTurnId: battle?.phase === "own-turn" ? battle.ownTurnId : null,
+      turnMarker: Number(state.ui?.turn?.turnNumber ?? 1),
+      previewFingerprint: getRelevantFingerprint(state, session.sequenceId, true),
+      parentFeature: "opportunity-attack",
+      opportunityEntry: true,
+    };
+    session.capabilities = {
+      canRecordAttack: true,
+      canRecordDamage: false,
+      canContinueSequence: false,
+    };
+    session.relevantPreviewFingerprint = getRelevantFingerprint(
+      state, session.sequenceId, true,
+    );
+    session.rawInputsByStep[session.currentStepKey] = {
+      profileId: "unarmed",
+      rollMode: "normal",
+      firstD20: "",
+      secondD20: "",
+    };
   }
   if (invoker) {
     invoker.dataset.workspaceInvoker = `battle-command-${commandId}`;
@@ -2257,6 +2309,43 @@ function findInvoker(key) {
 function rehydrateFromState(state) {
   if (!session) return;
   if (session.gentlingRecovery && session.appliedUnsaved) return;
+  if (session.opportunityIntent) {
+    const intent = session.opportunityIntent;
+    const battle = state.battleConsole?.current ?? null;
+    const sequences = state.monk?.combatAssistant?.activeSequences ?? [];
+    const contextValid = intent.workspaceSessionId === session.workspaceSessionId &&
+      intent.sequenceId === session.sequenceId && intent.attackId === session.attackId &&
+      intent.owner.characterId === session.owner.characterId &&
+      intent.owner.sessionGeneration === session.owner.sessionGeneration &&
+      intent.owner.appInstanceId === session.owner.appInstanceId &&
+      intent.owner.appInstanceId === appInstanceId &&
+      intent.battleId === (battle?.id ?? null) &&
+      intent.phaseAtOpen === (battle?.phase ?? "waiting") &&
+      intent.ownTurnId === (battle?.phase === "own-turn" ? battle.ownTurnId : null) &&
+      intent.turnMarker === Number(state.ui?.turn?.turnNumber ?? 1);
+    if (!contextValid || state.ui?.turn?.reactionUsed === true ||
+        sequences.some((entry) => entry.id === intent.sequenceId)) {
+      session.readOnly = true;
+      session.capabilities.canRecordAttack = false;
+      session.error = "Окно реакции или идентификаторы изменились. Ввод сохранён; отправка заблокирована.";
+      return;
+    }
+    if (battle && !["waiting", "own-turn"].includes(battle.phase)) {
+      session.readOnly = true;
+      session.capabilities.canRecordAttack = false;
+      session.error = "Реакция недоступна в приостановленной сцене. Ввод сохранён.";
+      return;
+    }
+    session.currentStepKey = stepKey(session.currentStep, intent.attackId);
+    session.rawInputsByStep[session.currentStepKey] ??= {};
+    const fingerprint = getRelevantFingerprint(state, intent.sequenceId, true);
+    if (fingerprint !== intent.previewFingerprint) {
+      intent.previewFingerprint = fingerprint;
+      session.relevantPreviewFingerprint = fingerprint;
+      session.confirmationRequired = true;
+    }
+    return;
+  }
   if (session.gentlingIntent) {
     const intent = session.gentlingIntent;
     if (intent.workspaceSessionId !== session.workspaceSessionId ||
@@ -2554,6 +2643,44 @@ function runCompletedNormalMutation(capturedSession, request, operationIdValue) 
   return { status: "verification-required", error: thrown };
 }
 
+function runCompletedOpportunityMutation(capturedSession, request, operationIdValue) {
+  const owner = { ...capturedSession.owner };
+  const sessionId = capturedSession.workspaceSessionId;
+  const intent = capturedSession.opportunityIntent;
+  let result = null;
+  let thrown = null;
+  capturedSession.submitting = true;
+  try {
+    result = submitWorkspaceCompletedOpportunityAttack(owner, request, operationIdValue);
+  } catch (error) {
+    thrown = error;
+  } finally {
+    if (session === capturedSession && session.workspaceSessionId === sessionId &&
+        capturedSession.opportunityIntent === intent && isWorkspaceOwnerCurrent(owner)) {
+      session.submitting = false;
+    }
+  }
+  if (session !== capturedSession || session.workspaceSessionId !== sessionId ||
+      capturedSession.opportunityIntent !== intent || !isWorkspaceOwnerCurrent(owner)) {
+    return { status: "replaced" };
+  }
+  if (!thrown) return result;
+  try {
+    if (!isWorkspaceOwnerCurrent(owner) || session !== capturedSession) {
+      return { status: "replaced" };
+    }
+    const receipt = readWorkspaceCompletedOpportunityAttackReceipt(getState(), operationIdValue);
+    if (!receipt?.malformed && receipt?.sequence?.id === request.sequenceId &&
+        receipt?.attack?.id === request.attackId &&
+        stableRequestString(receipt.request) === stableRequestString(request)) {
+      return { status: "applied", recovered: true, persistence: { ok: false } };
+    }
+  } catch {
+    return { status: "verification-required", error: thrown };
+  }
+  return { status: "verification-required", error: thrown };
+}
+
 function runCompletedBonusMutation(capturedSession, request, operationIdValue) {
   const owner = { ...capturedSession.owner };
   const sessionId = capturedSession.workspaceSessionId;
@@ -2677,6 +2804,7 @@ function submitAttack(outcome, button = null) {
     return;
   }
   const ordinaryOutcome = preview.naturalMiss ? "miss" : preview.critical ? "hit" : null;
+  const currentAttackId = session.attackId;
   if (ordinaryOutcome && ordinaryOutcome !== outcome) {
     if (session.naturalExceptionOutcome !== outcome) {
       session.naturalExceptionOutcome = outcome;
@@ -2694,6 +2822,98 @@ function submitAttack(outcome, button = null) {
     }
   } else {
     session.naturalExceptionOutcome = null;
+  }
+  if (session.opportunityIntent) {
+    const intent = session.opportunityIntent;
+    if (intent.workspaceSessionId !== session.workspaceSessionId ||
+        intent.sequenceId !== session.sequenceId || intent.attackId !== currentAttackId ||
+        !isWorkspaceOwnerCurrent(intent.owner) || intent.owner.appInstanceId !== appInstanceId) {
+      session.readOnly = true;
+      setError("Сеанс провоцированной атаки изменился; ввод сохранён, применение недоступно.");
+      render();
+      return;
+    }
+    const fingerprint = getRelevantFingerprint(state, intent.sequenceId, true);
+    if (fingerprint !== intent.previewFingerprint || session.confirmationRequired) {
+      if (fingerprint !== intent.previewFingerprint) {
+        intent.previewFingerprint = fingerprint;
+        session.relevantPreviewFingerprint = fingerprint;
+        session.confirmationRequired = true;
+        setError("Профиль или боевой контекст изменился. Проверьте обновлённый расчёт.");
+        render();
+        return;
+      }
+      session.confirmationRequired = false;
+    }
+    const request = {
+      sequenceId: intent.sequenceId,
+      attackId: intent.attackId,
+      battleId: intent.battleId,
+      phaseAtOpen: intent.phaseAtOpen,
+      ownTurnId: intent.ownTurnId,
+      turnMarker: intent.turnMarker,
+      expectedUsedSlots: 0,
+      parentFeature: "opportunity-attack",
+      attack: { ...values, dmHitResult: outcome, dmExceptionConfirmed: raw.dmExceptionConfirmed },
+      damageRolls: [],
+    };
+    const completedPreview = previewWorkspaceCompletedOpportunityAttack(state, request);
+    if (!completedPreview.ok) {
+      setError(completedPreview.reason);
+      render();
+      return;
+    }
+    const operationIdValue = intent.operationId;
+    if (outcome === "hit") {
+      session.pendingAttackIntent = {
+        operationId: operationIdValue,
+        request,
+        previewFingerprint: fingerprint,
+        workspaceSessionId: intent.workspaceSessionId,
+        owner: { ...intent.owner },
+        opportunity: true,
+      };
+      session.dirty = true;
+      session.selectedDamage = {
+        sequence: null,
+        attack: {
+          id: intent.attackId,
+          hitResult: "hit",
+          critical: completedPreview.attack.critical,
+          profileSnapshot: structuredClone(completedPreview.attack.profile),
+        },
+      };
+      setStep("damage-input", intent.attackId);
+      return;
+    }
+    const result = runCompletedOpportunityMutation(session, request, operationIdValue);
+    if (result.status === "replaced") return;
+    if (result.status === "verification-required") {
+      session.readOnly = true;
+      session.operationVerificationRequired = true;
+      setError("Не удалось подтвердить применение атаки. Повтор заблокирован; ввод сохранён.");
+      render();
+      return;
+    }
+    if (result.status !== "applied" && result.status !== "replayed") {
+      setError(result.reason);
+      render();
+      return;
+    }
+    refreshWorkspaceOwnerRevision();
+    session.pendingAttackIntent = null;
+    session.opportunityIntent = null;
+    session.selectedDamage = null;
+    session.dirty = false;
+    session.appliedUnsaved = result.recovered === true
+      ? true
+      : result.status === "replayed" ? session.appliedUnsaved : result.persistence?.ok === false;
+    session.status = "Промах записан. Реакция использована.";
+    session.strikeParent = null;
+    session.currentStep = "checkpoint";
+    session.currentStepKey = stepKey("checkpoint", intent.attackId);
+    render();
+    return;
   }
   const sequence = getSequence(state);
   if (!sequence && !canOpenNewSequence(state)) {
@@ -2719,7 +2939,6 @@ function submitAttack(outcome, button = null) {
     }
     session.confirmationRequired = false;
   }
-  const currentAttackId = session.attackId;
   const submittingSessionId = session.workspaceSessionId;
   const submittingOwner = session.owner;
   const intent = `attack:${currentAttackId}`;
@@ -2886,6 +3105,80 @@ function submitDamage() {
       return;
     }
     submitCompletedSeeking(intent, preview.request);
+    return;
+  }
+  if (session.pendingAttackIntent?.opportunity && session.opportunityIntent) {
+    const intent = session.pendingAttackIntent;
+    const opportunity = session.opportunityIntent;
+    const rolls = attack.critical
+      ? [values.damage1 ?? "", values.damage2 ?? ""]
+      : [values.damage1 ?? ""];
+    if (intent.workspaceSessionId !== session.workspaceSessionId ||
+        intent.operationId !== opportunity.operationId ||
+        opportunity.workspaceSessionId !== session.workspaceSessionId ||
+        opportunity.attackId !== session.attackId ||
+        !isWorkspaceOwnerCurrent(intent.owner) ||
+        !isWorkspaceOwnerCurrent(opportunity.owner)) {
+      session.readOnly = true;
+      setError("Сеанс провоцированной атаки изменился; урон не применён.");
+      render();
+      return;
+    }
+    const currentFingerprint = getRelevantFingerprint(
+      getState(), opportunity.sequenceId, true,
+    );
+    if (currentFingerprint !== intent.previewFingerprint) {
+      opportunity.previewFingerprint = currentFingerprint;
+      intent.previewFingerprint = currentFingerprint;
+      session.relevantPreviewFingerprint = currentFingerprint;
+      session.confirmationRequired = true;
+      session.pendingAttackIntent = null;
+      session.selectedDamage = null;
+      session.currentStep = "attack-input";
+      session.currentStepKey = stepKey("attack-input", opportunity.attackId);
+      setError("Профиль или боевой контекст изменился. Проверьте атаку и подтвердите исход заново.");
+      render();
+      return;
+    }
+    const request = { ...intent.request, damageRolls: rolls };
+    const preview = previewWorkspaceCompletedOpportunityAttack(getState(), request);
+    if (!preview.ok || preview.stage !== "complete") {
+      setError(preview.reason ?? "Полный результат провоцированной атаки не готов.");
+      render();
+      return;
+    }
+    const result = runCompletedOpportunityMutation(session, request, intent.operationId);
+    if (result.status === "replaced" ||
+        session?.workspaceSessionId !== intent.workspaceSessionId ||
+        !isWorkspaceOwnerCurrent(intent.owner)) return;
+    if (result.status === "verification-required") {
+      session.readOnly = true;
+      session.operationVerificationRequired = true;
+      setError("Не удалось подтвердить применение атаки. Повтор заблокирован; ввод сохранён.");
+      render();
+      return;
+    }
+    if (result.status !== "applied" && result.status !== "replayed") {
+      setError(result.reason);
+      render();
+      return;
+    }
+    refreshWorkspaceOwnerRevision();
+    const after = getState();
+    const committedSequence = getWorkspaceAttackSequence(after, request.sequenceId);
+    const committedAttack = committedSequence?.resolvedAttacks?.find((entry) =>
+      entry.id === request.attackId);
+    session.pendingAttackIntent = null;
+    session.opportunityIntent = null;
+    session.selectedDamage = null;
+    session.dirty = false;
+    session.appliedUnsaved = result.recovered === true
+      ? true
+      : result.status === "replayed" ? session.appliedUnsaved : result.persistence?.ok === false;
+    session.strikeParent = committedAttack
+      ? { sequenceId: committedSequence.id, attackId: committedAttack.id } : null;
+    session.status = "Атака и физический урон записаны атомарно.";
+    setStep("checkpoint", request.attackId);
     return;
   }
   if (session.pendingAttackIntent &&
@@ -4782,10 +5075,19 @@ function handleAction(action, button = null) {
     submitDamage();
   } else if (action === "cancel-attack-draft" &&
       session.workspaceType === "attack" &&
-      ["attack-action", "flurry", "bonus-unarmed"].includes(session.sequenceKind) &&
+      (["attack-action", "flurry", "bonus-unarmed"].includes(session.sequenceKind) ||
+       session.opportunityIntent) &&
       !session.historicalOnly && !session.readOnly &&
       (session.pendingAttackIntent || session.currentStep === "attack-input") &&
       !session.submitting && !session.appliedUnsaved) {
+    if (session.opportunityIntent) {
+      session.pendingAttackIntent = null;
+      session.opportunityIntent = null;
+      session.selectedDamage = null;
+      session.dirty = false;
+      finishCurrentSession({ validateBattleContext: true });
+      return;
+    }
     const sequence = getSequence();
     const savedSlots = getUsedAttackSlots(sequence);
     session.pendingAttackIntent = null;

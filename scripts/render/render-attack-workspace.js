@@ -504,7 +504,11 @@ export function renderAttackWorkspace(session, state) {
   const activeProfileId = session.rawInputsByStep?.[session.currentStepKey]?.profileId ?? "unarmed";
   const activeProfileName = derived.saraAttackProfiles?.[activeProfileId]?.name ??
     (activeProfileId === "unarmed" ? "безоружный" : activeProfileId);
-  const heading = session.workspaceType === "attack" && session.currentStep === "attack-input"
+  const heading = session.opportunityIntent && session.currentStep === "attack-input"
+    ? "Провоцированная атака · один удар"
+    : session.opportunityIntent && session.currentStep === "damage-input"
+      ? "Урон · провоцированная атака"
+    : session.workspaceType === "attack" && session.currentStep === "attack-input"
     ? `Удар ${currentAttackNumber}/${attackCount} · ${activeProfileName}`
     : session.workspaceType === "attack" && session.currentStep === "damage-input"
       ? `Урон · удар ${currentAttackNumber}/${attackCount}`
@@ -542,7 +546,8 @@ export function renderAttackWorkspace(session, state) {
       <button type="button" class="primary" data-workspace-action="attack-hit" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: попадание" : "Попадание"}</button>
       <button type="button" data-workspace-action="attack-miss" data-workspace-attack-id="${escapeHtml(session.attackId)}" ${disabled ? "disabled" : ""}>${session.confirmationRequired ? "Проверить и подтвердить: промах" : "Промах"}</button>
     </div>`;
-    if (["attack-action", "flurry", "bonus-unarmed"].includes(session.sequenceKind) &&
+    if ((["attack-action", "flurry", "bonus-unarmed"].includes(session.sequenceKind) ||
+        session.opportunityIntent) &&
         !session.readOnly && !session.submitting && !session.appliedUnsaved &&
         !session.historicalOnly && !session.selectedDamage) {
       footer += `<button type="button" class="btn btn--utility" data-workspace-action="cancel-attack-draft">Отмена текущего удара</button>`;
@@ -574,9 +579,9 @@ export function renderAttackWorkspace(session, state) {
       ${session.pendingAttackIntent || session.pendingSeekingIntent ? "" : `<button type="button" data-workspace-action="outside-damage"
         ${session.submitting || session.appliedUnsaved ? "disabled" : ""}>Урон учтён вне приложения</button>`}
     </div>`;
-    if (session.pendingAttackIntent && !session.readOnly &&
+    if ((session.pendingAttackIntent || session.opportunityIntent) && !session.readOnly &&
         !session.submitting && !session.appliedUnsaved) {
-      footer += `<button type="button" class="btn btn--utility" data-workspace-action="cancel-attack-draft">Отмена текущего удара</button>`;
+      footer += `<button type="button" class="btn btn--utility" data-workspace-action="cancel-attack-draft">${session.opportunityIntent ? "Отмена провоцированной атаки" : "Отмена текущего удара"}</button>`;
     }
     if (session.pendingSeekingIntent && !session.readOnly &&
         !session.submitting && !session.appliedUnsaved) {

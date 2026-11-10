@@ -17,6 +17,9 @@ import {
   readCompletedBonusAttackReceipt,
   readCompletedSeekingStrikeReceipt,
   readCompletedGentlingTouchReceipt,
+  commitCompletedOpportunityAttack,
+  previewCompletedOpportunityAttack,
+  readCompletedOpportunityAttackReceipt,
   recordAttackDamage,
   recordAttackOutcome,
 } from "../actions/sara-combat.js";
@@ -182,6 +185,19 @@ export function submitWorkspaceCompletedBonusAttack(owner, request, operationId)
 
 export function readWorkspaceCompletedBonusAttackReceipt(state, operationId) {
   return readCompletedBonusAttackReceipt(state, operationId);
+}
+
+export function previewWorkspaceCompletedOpportunityAttack(state, request) {
+  return previewCompletedOpportunityAttack(state, request);
+}
+
+export function submitWorkspaceCompletedOpportunityAttack(owner, request, operationId) {
+  if (!isWorkspaceOwnerCurrent(owner)) return { status: "rejected", reason: "stale-session" };
+  return commitCompletedOpportunityAttack(getWorkspaceAttackContext(), request, operationId);
+}
+
+export function readWorkspaceCompletedOpportunityAttackReceipt(state, operationId) {
+  return readCompletedOpportunityAttackReceipt(state, operationId);
 }
 
 export function buildWorkspaceSeekingParentBasis(sequence, attack, history) {
