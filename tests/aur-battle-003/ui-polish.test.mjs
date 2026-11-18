@@ -38,6 +38,15 @@ test("end-battle controls are visible on exactly the active initiative surface",
   assert.match(css, /\.battle-console-init-form\[data-initiative-presentation="true"\] > header \[data-sara-end-battle\]\s*\{\s*display:\s*inline-flex;/);
   assert.match(css, /\.sara-combat-shell\[data-initiative-presenting="true"\] \.sara-app-head__title \[data-sara-end-battle\]\s*\{\s*display:\s*none;\s*pointer-events:\s*none;/);
 });
+
+test("Sara primary quick-roll keeps its selected style without overriding disabled state", async () => {
+  const css = await readFile(
+    new URL("../../styles/sara-ui.css", import.meta.url), "utf8",
+  );
+  assert.match(css, /\.page\[data-character-id="sara-velaris"\] \.battle-quick-rolls > \.battle-home-action\.battle-home-action--primary\s*\{[^}]*min-height:\s*92px;[^}]*border-color:\s*var\(--sara-accent\);[^}]*background:\s*linear-gradient\(110deg,\s*var\(--sara-selected\),\s*var\(--sara-card\)\);/);
+  assert.match(css, /\.battle-home-action\.battle-home-action--primary:hover:not\(:disabled\)\s*\{[^}]*background:\s*linear-gradient\(110deg,\s*var\(--sara-selected\),\s*var\(--sara-card\)\);/);
+  assert.match(css, /\.battle-home-action\.battle-home-action--primary:disabled,\s*\.page\[data-character-id="sara-velaris"\] \.battle-quick-rolls > \.battle-home-action\.battle-home-action--primary:disabled:hover\s*\{[^}]*border-style:\s*dashed;[^}]*color:\s*var\(--sara-muted\);[^}]*background:\s*var\(--sara-background\);[^}]*cursor:\s*not-allowed;/);
+});
 import { dispatchSceneUi } from "../../scripts/battle/scene-ui-state.js";
 import { startBattle } from "../../scripts/battle/transitions.js";
 

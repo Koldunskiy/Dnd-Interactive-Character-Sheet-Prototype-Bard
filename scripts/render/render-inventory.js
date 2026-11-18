@@ -508,6 +508,32 @@ export function updateInventorySearchVisibility(panel) {
   if (empty) empty.hidden = !query || cards.some((card) => !card.hidden);
 }
 
+function getMovingControlDescriptor(control) {
+  const field = control.getAttribute("data-bind-item-field");
+  const action = control.getAttribute("data-action");
+  if (!field && !action) return null;
+  return {
+    tagName: control.tagName,
+    type: control.type ?? "",
+    field,
+    action,
+    itemId: control.getAttribute("data-item-id"),
+    quantityDelta: control.getAttribute("data-quantity-delta"),
+    commandId: control.getAttribute("data-command-id"),
+  };
+}
+
+function isSameMovingControl(control, descriptor) {
+  const candidate = getMovingControlDescriptor(control);
+  return candidate != null && candidate.tagName === descriptor.tagName &&
+    candidate.type === descriptor.type &&
+    candidate.field === descriptor.field &&
+    candidate.action === descriptor.action &&
+    candidate.itemId === descriptor.itemId &&
+    candidate.quantityDelta === descriptor.quantityDelta &&
+    candidate.commandId === descriptor.commandId;
+}
+
 export function captureMovingItemStates(panel, items) {
   const targetGroups = new Map(items
     .filter((item) => item?.id != null && String(item.id))
@@ -540,14 +566,16 @@ export function captureMovingItemStates(panel, items) {
           selectionDirection: preserve && textSelectionSupported ? field.selectionDirection : null,
           markers: ["data-sara-dirty", "data-sara-edit-start", "data-sara-conflict", "aria-invalid"]
             .map((name) => [name, field.getAttribute(name)]),
+          descriptor: getMovingControlDescriptor(field),
         };
       });
-    const focusedIndex = controls.indexOf(activeElement);
+    const focusedDescriptor = controls.includes(activeElement)
+      ? getMovingControlDescriptor(activeElement) : null;
     return [{
       itemId,
       details: [...card.querySelectorAll("details")].map((details) => details.open),
       fields,
-      focusedIndex,
+      focusedDescriptor,
     }];
   });
 }
@@ -567,13 +595,8 @@ export function restoreMovingItemStates(panel, snapshots) {
 
     const controls = [...card.querySelectorAll("input, textarea, select, button")];
     for (const fieldState of snapshot.fields) {
-      if (!fieldState.preserve) continue;
-      const field = controls.find((candidate) =>
-        candidate.matches("input, textarea, select") &&
-        candidate.getAttribute("data-bind-item-field") ===
-          fieldState.field.getAttribute("data-bind-item-field") &&
-        candidate.type === fieldState.field.type &&
-        candidate.tagName === fieldState.field.tagName);
+      if (!fieldState.preserve || !fieldState.descriptor) continue;
+      const field = controls.find((candidate) => isSameMovingControl(candidate, fieldState.descriptor));
       if (!field) continue;
       field.value = fieldState.value;
       if (fieldState.checked !== undefined) field.checked = fieldState.checked;
@@ -597,18 +620,30 @@ export function restoreMovingItemStates(panel, snapshots) {
           label.append(message);
         }
       }
-      if (fieldState.selectionStart != null && fieldState.selectionEnd != null) {
-        field.setSelectionRange(
-          fieldState.selectionStart,
-          fieldState.selectionEnd,
-          fieldState.selectionDirection ?? "none",
-        );
-      }
     }
 
-    const focused = controls[snapshot.focusedIndex];
+    const focused = snapshot.focusedDescriptor
+      ? controls.find((candidate) =>
+        isSameMovingControl(candidate, snapshot.focusedDescriptor) &&
+        !candidate.disabled &&
+        candidate.getAttribute("aria-disabled") !== "true")
+      : null;
     if (focused && focused !== panel.ownerDocument.activeElement) {
       focused.focus({ preventScroll: true });
+    }
+    if (focused && focused === panel.ownerDocument.activeElement) {
+      for (const fieldState of snapshot.fields) {
+        if (fieldState.descriptor && fieldState.selectionStart != null &&
+          fieldState.selectionEnd != null &&
+          isSameMovingControl(focused, fieldState.descriptor)) {
+          focused.setSelectionRange(
+            fieldState.selectionStart,
+            fieldState.selectionEnd,
+            fieldState.selectionDirection ?? "none",
+          );
+          break;
+        }
+      }
     }
   }
 }

@@ -185,7 +185,6 @@ test("moving an edited inventory card between groups preserves input, disclosure
       return [];
     },
   });
-  const oldToggle = new Field("INPUT", "checkbox", "");
   const oldNotes = new Field("TEXTAREA", "textarea", "unsaved note", {
     "data-bind-item-field": "notes",
     "data-sara-dirty": "true",
@@ -194,6 +193,9 @@ test("moving an edited inventory card between groups preserves input, disclosure
     "aria-invalid": "true",
   });
   const oldDetails = { open: true };
+  const oldToggle = new Field("INPUT", "checkbox", "", {
+    "data-action": "inventory-toggle-equipped",
+  });
   const oldCard = makeCard({ getAttribute: () => "inventory-equipped" }, [oldToggle, oldNotes], [oldDetails]);
   const panel = {
     ownerDocument: document,
@@ -201,17 +203,17 @@ test("moving an edited inventory card between groups preserves input, disclosure
     querySelectorAll: () => panel.cards,
   };
   document.activeElement = oldNotes;
-  const snapshots = captureMovingItemStates(panel, [{ id: "item-a", equipped: false }]);
+  oldToggle.checked = true;
+  const snapshots = captureMovingItemStates(panel, [{ id: "item-a", type: "misc", equipped: false }]);
   assert.equal(snapshots.length, 1);
 
-  const newToggle = new Field("INPUT", "checkbox", "");
   const newNotes = new Field("TEXTAREA", "textarea", "saved note", {
     "data-bind-item-field": "notes",
   });
   const newDetails = { open: false };
   panel.cards = [makeCard(
     { getAttribute: () => "inventory-other" },
-    [newToggle, newNotes],
+    [newNotes],
     [newDetails],
   )];
   document.activeElement = {};
@@ -227,4 +229,55 @@ test("moving an edited inventory card between groups preserves input, disclosure
   assert.equal(document.activeElement, newNotes);
   assert.equal(newNotes.label.conflict.textContent,
     "Значение изменилось в другом обновлении; ваш ввод сохранён.");
+
+  const oldOtherNotes = new Field("TEXTAREA", "textarea", "other note", {
+    "data-bind-item-field": "notes",
+  });
+  const otherCard = makeCard(
+    { getAttribute: () => "inventory-other" },
+    [oldOtherNotes],
+    [{ open: false }],
+  );
+  panel.cards = [otherCard];
+  document.activeElement = oldOtherNotes;
+  const appearingToggleSnapshots = captureMovingItemStates(panel, [{ id: "item-a", type: "misc", equipped: true }]);
+  const newToggle = new Field("INPUT", "checkbox", "", {
+    "data-action": "inventory-toggle-equipped",
+  });
+  const equippedNotes = new Field("TEXTAREA", "textarea", "other note", {
+    "data-bind-item-field": "notes",
+  });
+  panel.cards = [makeCard(
+    { getAttribute: () => "inventory-equipped" },
+    [newToggle, equippedNotes],
+    [{ open: false }],
+  )];
+  document.activeElement = {};
+  restoreMovingItemStates(panel, appearingToggleSnapshots);
+  assert.equal(document.activeElement, equippedNotes);
+  assert.notEqual(document.activeElement, newToggle);
+
+  const oldAction = new Field("BUTTON", "button", "", {
+    "data-action": "inventory-toggle-expand",
+  });
+  const actionCard = makeCard(
+    { getAttribute: () => "inventory-equipped" },
+    [oldAction],
+    [{ open: true }],
+  );
+  panel.cards = [actionCard];
+  document.activeElement = oldAction;
+  const disappearingActionSnapshots = captureMovingItemStates(panel, [{ id: "item-a", equipped: false }]);
+  const removeAction = new Field("BUTTON", "button", "", {
+    "data-action": "inventory-remove-item",
+  });
+  panel.cards = [makeCard(
+    { getAttribute: () => "inventory-other" },
+    [removeAction],
+    [{ open: true }],
+  )];
+  document.activeElement = {};
+  restoreMovingItemStates(panel, disappearingActionSnapshots);
+  assert.notEqual(document.activeElement, removeAction);
+  assert.equal(removeAction.focused, undefined);
 });

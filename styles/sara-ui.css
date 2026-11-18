@@ -1126,11 +1126,25 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   cursor: not-allowed;
 }
 
-.page[data-character-id="sara-velaris"] .battle-home-action--primary {
+.page[data-character-id="sara-velaris"] .battle-quick-rolls > .battle-home-action.battle-home-action--primary {
   grid-column: 1 / -1;
   min-height: 92px;
   border-color: var(--sara-accent);
   background: linear-gradient(110deg, var(--sara-selected), var(--sara-card));
+}
+
+.page[data-character-id="sara-velaris"] .battle-quick-rolls > .battle-home-action.battle-home-action--primary:hover:not(:disabled) {
+  border-color: var(--sara-accent);
+  background: linear-gradient(110deg, var(--sara-selected), var(--sara-card));
+}
+
+.page[data-character-id="sara-velaris"] .battle-quick-rolls > .battle-home-action.battle-home-action--primary:disabled,
+.page[data-character-id="sara-velaris"] .battle-quick-rolls > .battle-home-action.battle-home-action--primary:disabled:hover {
+  border-color: var(--sara-border);
+  border-style: dashed;
+  color: var(--sara-muted);
+  background: var(--sara-background);
+  cursor: not-allowed;
 }
 
 .page[data-character-id="sara-velaris"] .battle-home-action__icon {
