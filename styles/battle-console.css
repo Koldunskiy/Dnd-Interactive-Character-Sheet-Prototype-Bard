@@ -1,17 +1,17 @@
 .sara-combat-shell {
-  --sara-bg: #111b24;
-  --sara-surround: #0c141c;
-  --sara-panel: #1b2935;
-  --sara-field: #13212c;
-  --sara-line: #344754;
-  --sara-ink: #e5edf2;
-  --sara-muted: #a5b6c2;
-  --sara-accent: #87c9b3;
-  --sara-active: #294c48;
+  --sara-bg: #121d29;
+  --sara-surround: #0b1119;
+  --sara-panel: #192737;
+  --sara-field: #121d29;
+  --sara-line: #304152;
+  --sara-ink: #edf2f6;
+  --sara-muted: #a6b6c6;
+  --sara-accent: #b8d9be;
+  --sara-active: #263a38;
   --sara-error: #efada5;
   box-sizing: border-box;
   display: grid;
-  width: min(100%, 440px);
+  width: min(100%, 1280px);
   min-width: 0;
   gap: 0;
   margin: 0 auto 24px;
@@ -859,20 +859,15 @@ html[data-combat-entry-active="true"] .combat-workspace-host .workspace-entry-he
   min-width: 0;
 }
 .sara-hud__effects li { display: grid; gap: .2rem; }
-.sara-hud--compact .sara-hud__secondary,
+.sara-hud--compact:not(.sara-hud--header) .sara-hud__secondary,
 .sara-hud--compact .sara-hud__effects { display: none; }
 [data-sara-task-dock] [data-sara-task-scene-controls] { flex: 0 0 auto; }
 [data-sara-task-dock] [data-sara-task-hud] { flex: 0 0 auto; }
 [data-sara-task-dock][data-entry-active="true"] .sara-hud__secondary,
-[data-sara-task-dock][data-entry-active="true"] .sara-hud__effects,
-[data-sara-task-dock][data-entry-active="true"] .sara-hud__temp { display: none; }
+[data-sara-task-dock][data-entry-active="true"] .sara-hud__effects { display: none; }
 [data-sara-task-dock][data-entry-active="true"] .sara-hud__primary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: .25rem;
-  white-space: nowrap;
+  display: flex;
 }
-.sara-hud__primary span { min-width: 0; }
 .battle-console-init-form[data-initiative-presentation="true"] {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

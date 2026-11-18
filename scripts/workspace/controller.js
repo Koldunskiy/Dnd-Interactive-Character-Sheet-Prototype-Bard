@@ -672,6 +672,7 @@ function render() {
   updateSaraHudRegion(
     document.querySelector("[data-sara-task-dock] [data-sara-task-hud]"),
     getSaraHudModel(state, derived),
+    { presentation: "task", compact: document.querySelector("[data-sara-task-dock]")?.dataset.entryActive === "true" },
   );
   const host = getWorkspaceHost();
   const hp = host?.querySelector("[data-workspace-hp]");

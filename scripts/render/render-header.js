@@ -1,3 +1,5 @@
+import { getSaraHudModel, updateSaraHudRegion } from "./sara-hud.js";
+
 export function renderHeader(state, derived = null) {
   const name = document.getElementById("heroName");
   const subtitle = document.getElementById("heroSubtitle");
@@ -18,24 +20,9 @@ export function renderHeader(state, derived = null) {
     const isSara = state.profile?.id === "sara-velaris";
     saraResources.hidden = !isSara;
     if (isSara) {
-      const currentHp = state.combat?.hp?.current ?? "—";
-      const maxHp = derived?.maxHitPoints ?? "—";
-      const currentKi = state.combat?.ki?.current ?? "—";
-      const maxKi = derived?.monk?.kiMaximum ?? "—";
-      const currentPracticed = state.combat?.practiced?.current ?? 0;
-      const maxPracticed = derived?.monk?.practicedMaximum ?? "—";
-      saraResources.replaceChildren();
-      for (const [label, value] of [
-        ["HP", `${currentHp}/${maxHp}`],
-        ["Ци", `${currentKi}/${maxKi}`],
-        ["Отработано", `${currentPracticed}/${maxPracticed}`],
-      ]) {
-        const item = document.createElement("span");
-        const strong = document.createElement("strong");
-        item.append(`${label} `, strong);
-        strong.textContent = value;
-        saraResources.append(item);
-      }
+      updateSaraHudRegion(saraResources, getSaraHudModel(state, derived ?? undefined), {
+        presentation: "header",
+      });
     } else {
       saraResources.replaceChildren();
     }

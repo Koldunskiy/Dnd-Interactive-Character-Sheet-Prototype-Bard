@@ -1,7 +1,7 @@
 body:has(.page[data-character-id="sara-velaris"]) {
   color-scheme: dark;
-  background: #0c141c;
-  color: #e5edf2;
+  background: #0b1119;
+  color: #edf2f6;
   font: 16px/1.45 system-ui, sans-serif;
 }
 
@@ -11,14 +11,16 @@ body:has(.page[data-sara-theme="wine-gold"]) {
 }
 
 .page[data-character-id="sara-velaris"] .sara-task-dock {
-  --sara-background: #111b24;
-  --sara-card: #1b2935;
-  --sara-control: #13212c;
-  --sara-border: #344754;
-  --sara-text: #e5edf2;
-  --sara-muted: #a5b6c2;
-  --sara-accent: #87c9b3;
-  --sara-selected: #294c48;
+  --sara-background: #121d29;
+  --sara-card: #192737;
+  --sara-control: #121d29;
+  --sara-border: #304152;
+  --sara-text: #edf2f6;
+  --sara-muted: #a6b6c6;
+  --sara-accent: #b8d9be;
+  --sara-selected: #263a38;
+  --sara-hp: #d77989;
+  --sara-ki: #73c9cb;
   --sara-error: #efada5;
   --sara-error-surface: #382b30;
   font: 16px/1.45 system-ui, sans-serif;
@@ -39,22 +41,26 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 }
 
 .page[data-character-id="sara-velaris"] {
-  --sara-surrounding: #0c141c;
-  --sara-background: #111b24;
-  --sara-card: #1b2935;
-  --sara-control: #13212c;
-  --sara-border: #344754;
-  --sara-text: #e5edf2;
-  --sara-muted: #a5b6c2;
-  --sara-accent: #87c9b3;
-  --sara-selected: #294c48;
+  --sara-surrounding: #0b1119;
+  --sara-background: #121d29;
+  --sara-card: #192737;
+  --sara-control: #121d29;
+  --sara-border: #304152;
+  --sara-text: #edf2f6;
+  --sara-muted: #a6b6c6;
+  --sara-accent: #b8d9be;
+  --sara-selected: #263a38;
+  --sara-warm: #dbbd83;
+  --sara-hp: #d77989;
+  --sara-ki: #73c9cb;
   --sara-error: #efada5;
   --sara-error-surface: #382b30;
   box-sizing: border-box;
-  width: min(100%, 464px);
+  width: 100%;
   min-height: 100dvh;
   margin: 0 auto;
-  padding: 10px 12px calc(88px + env(safe-area-inset-bottom));
+  padding: 10px max(12px, env(safe-area-inset-left)) calc(88px + env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-right));
   color: var(--sara-text);
   background: var(--sara-background);
   font: 16px/1.45 system-ui, sans-serif;
@@ -95,7 +101,7 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 
 .page[data-character-id="sara-velaris"] .topbar {
   width: 100%;
-  max-width: 440px;
+  max-width: none;
   min-height: 0;
   margin: 0 auto 8px;
   padding: 8px 2px;
@@ -215,7 +221,7 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 
 .page[data-character-id="sara-velaris"] .content {
   display: block;
-  width: min(100%, 440px);
+  width: 100%;
   margin: 0 auto;
 }
 
@@ -342,11 +348,33 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 }
 
 .page[data-character-id="sara-velaris"] .sara-combat-shell {
+  --sara-bg: #121d29;
+  --sara-surround: #0b1119;
+  --sara-panel: #192737;
+  --sara-field: #121d29;
+  --sara-line: #304152;
+  --sara-ink: #edf2f6;
+  --sara-muted: #a6b6c6;
+  --sara-accent: #b8d9be;
+  --sara-active: #263a38;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+}
+
+.page[data-character-id="sara-velaris"][data-sara-theme="teal-slate"] .sara-combat-shell,
+.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"] .sara-combat-shell {
+  --sara-bg: var(--bg);
+  --sara-surround: var(--bg-deep);
+  --sara-panel: var(--surface);
+  --sara-field: var(--bg-deep);
+  --sara-line: var(--line);
+  --sara-ink: var(--text);
+  --sara-muted: var(--muted);
+  --sara-accent: var(--accent);
+  --sara-active: var(--selected-surface);
 }
 
 .page[data-character-id="sara-velaris"] .battle-command-card,
@@ -709,7 +737,8 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   left: 50%;
   display: flex;
   flex-direction: column;
-  width: min(100vw, 440px);
+  width: 100%;
+  max-width: 100vw;
   height: var(--workspace-available-height, var(--workspace-visible-height, 100dvh));
   margin: 0;
   overflow: hidden;
@@ -718,6 +747,7 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   border-radius: 0;
   color: var(--sara-text);
   background: var(--sara-background);
+  border-radius: 16px 16px 0 0;
   box-shadow: 0 12px 40px #0007;
 }
 
@@ -772,7 +802,7 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   z-index: 120;
   top: max(4px, env(safe-area-inset-top));
   left: 50%;
-  width: min(440px, 100vw);
+  width: min(960px, calc(100vw - 24px));
   transform: translateX(-50%);
 }
 
@@ -800,8 +830,8 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 
 @media (max-width: 360px) {
   .page[data-character-id="sara-velaris"] {
-    padding-right: 10px;
-    padding-left: 10px;
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-left: max(12px, env(safe-area-inset-left));
   }
 
   .page[data-character-id="sara-velaris"] .tab-btn__label {
@@ -815,7 +845,24 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 
 @media (min-width: 700px) {
   .page[data-character-id="sara-velaris"] {
+    max-width: 1280px;
+    margin-right: auto;
+    margin-left: auto;
+    padding-right: 24px;
+    padding-left: 24px;
     padding-top: 18px;
+  }
+
+  .page[data-character-id="sara-velaris"] .sara-task-dock {
+    width: min(100%, 960px);
+    max-width: 960px;
+    border-radius: 16px;
+  }
+
+  .page[data-character-id="sara-velaris"] .sara-task-dock .action-workspace__body > [data-workspace-form] {
+    max-width: 720px;
+    margin-right: auto;
+    margin-left: auto;
   }
 
   .page[data-character-id="sara-velaris"] .tabs {
@@ -826,4 +873,147 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 }
 .page[data-character-id="sara-velaris"][data-active-tab="melee"] #saraHeaderResources {
   display: none;
+}
+
+.page[data-character-id="sara-velaris"] #saraHeaderResources .sara-hud {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud {
+  --sara-resource-color: var(--sara-hp);
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--sara-border);
+  border-radius: 17px;
+  color: var(--sara-text);
+  background: var(--sara-card);
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud__primary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud__resource {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--sara-border);
+  border-radius: 12px;
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud__resource--ki {
+  --sara-resource-color: var(--sara-ki);
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud__resource-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud__resource-heading strong {
+  color: var(--sara-text);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud__track {
+  height: 7px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--sara-border);
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud__fill {
+  display: block;
+  width: var(--sara-resource-fill);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--sara-resource-color);
+  transition: width 180ms ease, background-color 180ms ease;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud__secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: var(--sara-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud--compact:not(.sara-hud--header) .sara-hud__secondary {
+  display: none;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud__temp,
+.page[data-character-id="sara-velaris"] .sara-hud__invalid {
+  color: var(--sara-warm);
+  font-size: 12px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud__effects {
+  min-width: 0;
+  color: var(--sara-muted);
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud__effects ul {
+  display: grid;
+  gap: 6px;
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud--header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud--header .sara-hud__primary {
+  display: flex;
+  gap: 8px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud--header .sara-hud__resource {
+  flex: 1 1 0;
+  padding: 6px 8px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud--header .sara-hud__resource-heading {
+  display: grid;
+}
+
+.page[data-character-id="sara-velaris"] .sara-hud--header .sara-hud__resource-heading strong {
+  font-size: 14px;
+}
+
+@media (max-width: 699px) {
+  .page[data-character-id="sara-velaris"] .sara-task-dock {
+    left: max(0px, env(safe-area-inset-left));
+    width: calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right));
+    transform: none;
+  }
+}
+
+@media (max-width: 380px) {
+  .page[data-character-id="sara-velaris"] .sara-hud__primary {
+    grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page[data-character-id="sara-velaris"] .sara-hud__fill {
+    transition: none;
+  }
 }

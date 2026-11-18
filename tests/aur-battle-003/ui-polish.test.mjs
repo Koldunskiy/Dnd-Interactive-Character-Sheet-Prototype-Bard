@@ -132,11 +132,12 @@ test("initiative correction preview uses the sources recorded in the active batt
 });
 
 test("battle cards and global surfaces have wrapping and theme-token safeguards", async () => {
-  const [battleCss, themeCss, tokens, workspaceCss] = await Promise.all([
+  const [battleCss, themeCss, tokens, workspaceCss, saraCss] = await Promise.all([
     readFile(new URL("../../styles/battle-console.css", import.meta.url), "utf8"),
     readFile(new URL("../../styles/theme-surfaces.css", import.meta.url), "utf8"),
     readFile(new URL("../../styles/tokens.css", import.meta.url), "utf8"),
     readFile(new URL("../../styles/action-workspace.css", import.meta.url), "utf8"),
+    readFile(new URL("../../styles/sara-ui.css", import.meta.url), "utf8"),
   ]);
   assert.match(battleCss, /\.battle-command-card__open\s*\{[\s\S]*?width:\s*100%/);
   assert.match(battleCss, /\.battle-command-card,\s*\.workspace-record,\s*\.workspace-post-hit\s*\{[\s\S]*?display:\s*grid/);
@@ -147,13 +148,13 @@ test("battle cards and global surfaces have wrapping and theme-token safeguards"
   assert.match(tokens, /:root\[data-theme="teal-slate"\]/);
   assert.match(tokens, /--color-accent:\s*var\(--accent\)/);
   assert.match(workspaceCss, /font-size:\s*clamp\(4rem,\s*18vw,\s*4\.75rem\)/);
-  assert.match(battleCss, /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(saraCss, /\.sara-hud__primary\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)/);
   assert.match(battleCss, /\.battle-console-init-form\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   assert.match(battleCss, /\.battle-console-init-form\[data-initiative-presentation="true"\]\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/);
   assert.match(battleCss, /\.battle-console-init-fields\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/);
   assert.match(battleCss, /\[data-sara-task-dock\]\[data-entry-active="true"\] \.sara-hud__secondary/);
-  assert.match(battleCss, /--sara-bg:\s*#111b24/);
-  assert.match(battleCss, /--sara-active:\s*#294c48/);
+  assert.match(battleCss, /--sara-bg:\s*#121d29/);
+  assert.match(battleCss, /--sara-active:\s*#263a38/);
   assert.match(workspaceCss, /\.action-workspace\[open\]\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   assert.match(workspaceCss, /\.action-workspace__body\s*\{[\s\S]*?overflow-y:\s*auto/);
   assert.match(workspaceCss, /\.workspace-nav\s*\{[\s\S]*?flex-wrap:\s*wrap/);

@@ -79,8 +79,8 @@ test("Sara combat tasks use the embedded host without dialog or body-lock behavi
 
   const opened = openNormalAttack();
   assert.equal(opened.ok, true);
-  assert.match(taskHud.innerHTML, /class="sara-hud"/);
-  assert.match(taskHud.innerHTML, /ХП <strong>/);
+  assert.match(taskHud.innerHTML, /class="sara-hud sara-hud--task"/);
+  assert.match(taskHud.innerHTML, /<span>ХП<\/span><strong>\d+ \/ \d+/);
   assert.equal(JSON.stringify(getState()), stateBefore);
   assert.equal(workspaceHostIsEmbedded(), true);
   assert.equal(getWorkspaceHost(), dialog);

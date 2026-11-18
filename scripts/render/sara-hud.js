@@ -36,32 +36,56 @@ export function renderSaraEndBattleButton(state, owner) {
     data-battle-owner="${escapeHtml(JSON.stringify([owner.characterId, owner.sessionGeneration]))}">Завершить бой</button>`;
 }
 
-export function renderSaraHud(model, { compact = false } = {}) {
+export function renderSaraHud(model, { compact = false, presentation = "scene" } = {}) {
+  const layout = ["scene", "header", "task"].includes(presentation) ? presentation : "scene";
   const format = (value) => escapeHtml(value ?? "—");
-  const effects = model.effects.map((effect) => `<li>
+  const resource = (label, current, maximum, kind) => {
+    const valid = typeof current === "number" && Number.isFinite(current) && current >= 0 &&
+      typeof maximum === "number" && Number.isFinite(maximum) && maximum > 0;
+    const currentText = typeof current === "number" && Number.isFinite(current)
+      ? format(current) : "—";
+    const maximumText = typeof maximum === "number" && Number.isFinite(maximum)
+      ? format(maximum) : "—";
+    const valueText = `${currentText} / ${maximumText}`;
+    const percent = valid ? (current >= maximum ? 100 : current / maximum * 100) : 0;
+    const meterAttributes = valid
+      ? `aria-valuemin="0" aria-valuemax="${maximum}" aria-valuenow="${Math.min(current, maximum)}"${current > maximum ? ` aria-valuetext="${escapeHtml(valueText)}"` : ""}`
+      : "";
+    return `<div class="sara-hud__resource sara-hud__resource--${kind}">
+      <div class="sara-hud__resource-heading"><span>${label}</span><strong>${valueText}</strong></div>
+      <div class="sara-hud__track"${valid ? ` role="meter" aria-label="${label}" ${meterAttributes}` : ` aria-label="${label}: нет корректных данных"`} style="--sara-resource-fill:${percent}%">
+        <span class="sara-hud__fill"></span>
+      </div>
+      ${valid ? "" : `<span class="sara-hud__invalid">Нет корректных данных</span>`}
+    </div>`;
+  };
+  const effects = (model.effects ?? []).map((effect) => `<li>
     <strong>${format(effect.name)}</strong>
     ${[effect.source, effect.duration, effect.notes].filter((value) =>
       typeof value === "string" && value.trim()).map((value) =>
       `<span>${format(value)}</span>`).join("")}
   </li>`).join("");
-  return `<section class="sara-hud${compact ? " sara-hud--compact" : ""}" aria-label="Показатели Сары">
-    <div class="sara-hud__primary"><span>ХП <strong>${format(model.hp)}/${format(model.maxHp)}</strong></span>
+  const isHeader = layout === "header";
+  return `<section class="sara-hud sara-hud--${layout}${compact ? " sara-hud--compact" : ""}" aria-label="Показатели Сары">
+    <div class="sara-hud__primary">${resource("ХП", model.hp, model.maxHp, "hp")}
+      ${resource("Ци", model.ki?.current, model.ki?.maximum, "ki")}</div>
+    ${typeof model.tempHp === "number" && Number.isFinite(model.tempHp) && model.tempHp > 0 ? `<span class="sara-hud__temp">Временные ХП <strong>${format(model.tempHp)}</strong></span>` : ""}
+    ${isHeader ? `<div class="sara-hud__secondary">
+      <span>Отработано <strong>${format(model.practiced?.current)}/${format(model.practiced?.maximum)}</strong></span>
+    </div>` : compact ? "" : `<div class="sara-hud__secondary">
       <span>КД <strong>${format(model.armorClass)}</strong></span>
-      <span>Ци <strong>${format(model.ki?.current)}/${format(model.ki?.maximum)}</strong></span></div>
-    ${Number(model.tempHp) > 0 ? `<span class="sara-hud__temp">Временные ХП ${format(model.tempHp)}</span>` : ""}
-    ${compact ? "" : `<div class="sara-hud__secondary">
       <span>Приёмы <strong>${format(model.practiced?.current)}/${format(model.practiced?.maximum)}</strong></span>
       <span>Скорость <strong>${format(model.speed)} фт</strong></span>
       <span>Реакция <strong>${model.reactionAvailable ? "готова" : "потрачена"}</strong></span>
       ${model.concentration ? `<p>Концентрация: <strong>${format(model.concentration)}</strong></p>` : ""}
     </div>
-    ${effects ? `<details class="sara-hud__effects"><summary>Эффекты · ${model.effects.length}</summary><ul>${effects}</ul></details>` : ""}`}
+    ${!isHeader && !compact && effects ? `<details class="sara-hud__effects"><summary>Эффекты · ${model.effects.length}</summary><ul>${effects}</ul></details>` : ""}`}
   </section>`;
 }
 
-export function updateSaraHudRegion(region, model, { compact = false } = {}) {
+export function updateSaraHudRegion(region, model, { compact = false, presentation = "scene" } = {}) {
   if (!region) return;
-  const markup = renderSaraHud(model, { compact });
+  const markup = renderSaraHud(model, { compact, presentation });
   if (region.innerHTML === markup) return;
   const openDetails = [...region.querySelectorAll("details")].map((details) => details.open);
   region.innerHTML = markup;
