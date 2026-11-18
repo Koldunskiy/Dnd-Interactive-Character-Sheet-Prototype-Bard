@@ -87,6 +87,56 @@ function renderBattleCommandCard(entry) {
   </article>`;
 }
 
+function renderHomeActionCard({
+  icon,
+  title,
+  description,
+  actionType,
+  cost = "",
+  hook,
+  disabled = false,
+  reason = "",
+  prominent = false,
+}) {
+  const paths = {
+    attack: '<path d="m6 18 12-12M14 5l5 5M4 20l5-1-4-4-1 5Z"/>',
+    menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+    incoming: '<path d="M5 12h14M13 6l6 6-6 6"/><path d="M4 5v14"/>',
+    opportunity: '<path d="M13 2 5 13h6l-1 9 9-12h-6l-1-8Z"/>',
+    roll: '<circle cx="12" cy="12" r="9"/><path d="m8 8 8 8m0-8-8 8"/>',
+    ability: '<path d="M12 3 14.5 9.5 21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/>',
+    inventory: '<path d="M4 7h16l-1 13H5L4 7Zm4 0a4 4 0 0 1 8 0"/>',
+    rest: '<path d="M20 15.5A8 8 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/>',
+  };
+  return `<button type="button" class="battle-home-action${prominent ? " battle-home-action--primary" : ""}"
+    ${hook} ${disabled ? "disabled" : ""}>
+    <span class="battle-home-action__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[icon] ?? paths.menu}</svg></span>
+    <span class="battle-home-action__content">
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml(description)}</span>
+      ${reason ? `<small class="battle-home-action__reason">${escapeHtml(reason)}</small>` : ""}
+    </span>
+    <span class="battle-home-action__meta">${escapeHtml(actionType)}${cost ? `<small>${escapeHtml(cost)}</small>` : ""}</span>
+  </button>`;
+}
+
+function getCommandActionType(entry) {
+  return ({
+    action: "Действие",
+    "bonus-action": "Бонусное действие",
+    reaction: "Реакция",
+    movement: "Перемещение",
+  })[entry?.activationBudget] ?? "Команда";
+}
+
+function getCommandCost(entry) {
+  const actionType = getCommandActionType(entry);
+  return entry?.displayCostTokens
+    ?.filter((token) => token !== actionType)
+    .join(" · ") ?? "";
+}
+
 function renderSavedRecords(records, owner, continuationIds) {
   const ownerAttrs = owner
     ? `data-record-character="${escapeHtml(owner.characterId)}"
@@ -257,11 +307,11 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     const outsideAbilities = commands.filter((entry) =>
       entry.id.startsWith("racial-spell:") || entry.id === "mystic-regeneration");
     const home = `<div class="battle-quick-rolls">
-      <button type="button" data-roll-preset="ability-check">Проверка</button>
-      <button type="button" data-roll-preset="saving-throw">Спасбросок</button>
-      <button type="button" data-battle-menu="abilities">Способности</button>
-      <button type="button" data-battle-navigate="inventory">Инвентарь</button>
-      <button type="button" data-battle-command-open="completed-rest">Отдых</button>
+      ${renderHomeActionCard({ icon: "roll", title: "Проверка", description: "Открыть ввод физического броска характеристики.", actionType: "Бросок", hook: 'data-roll-preset="ability-check"' })}
+      ${renderHomeActionCard({ icon: "roll", title: "Спасбросок", description: "Открыть ввод физического спасброска.", actionType: "Бросок", hook: 'data-roll-preset="saving-throw"' })}
+      ${renderHomeActionCard({ icon: "ability", title: "Способности", description: "Перейти к доступным способностям.", actionType: "Открыть меню", hook: 'data-battle-menu="abilities"' })}
+      ${renderHomeActionCard({ icon: "inventory", title: "Инвентарь", description: "Просмотр и использование предметов.", actionType: "Перейти", hook: 'data-battle-navigate="inventory"' })}
+      ${renderHomeActionCard({ icon: "rest", title: "Отдых", description: "Записать завершённый отдых.", actionType: "Открыть форму", hook: 'data-battle-command-open="completed-rest"' })}
     </div>`;
     const abilities = `<section><div class="battle-command-grid">${outsideAbilities.map(renderBattleCommandCard).join("")}</div>
       <button type="button" data-battle-navigate="techniques">Все техники</button>
@@ -272,11 +322,21 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     primaryFooter = uiState.panel === "home" ? `<button type="button" class="btn btn--primary"
       data-battle-scene-action="initiative">Начать бой</button>` : "";
   } else if (view.phase === "waiting") {
+    const opportunityAttack = commands.find((entry) => entry.id === "opportunity-unarmed");
     phaseBody = `${uiState.panel === "initiative-correct" ? initiativeForm("correct") : `<div class="battle-quick-rolls">
-      <button type="button" data-battle-menu="incoming">По мне атакуют</button>
-      <button type="button" data-roll-preset="saving-throw">Спасбросок</button>
-      <button type="button" data-roll-preset="ability-check">Проверка</button>
-      <button type="button" data-battle-command-open="opportunity-unarmed">Провоцированная атака</button></div>
+      ${renderHomeActionCard({ icon: "incoming", title: "По мне атакуют", description: "Открыть входящее воздействие и ответ.", actionType: "Открыть меню", hook: 'data-battle-menu="incoming"' })}
+      ${renderHomeActionCard({ icon: "roll", title: "Спасбросок", description: "Открыть ввод физического спасброска.", actionType: "Бросок", hook: 'data-roll-preset="saving-throw"' })}
+      ${renderHomeActionCard({ icon: "roll", title: "Проверка", description: "Открыть ввод физического броска характеристики.", actionType: "Бросок", hook: 'data-roll-preset="ability-check"' })}
+      ${renderHomeActionCard({
+        icon: "opportunity",
+        title: "Провоцированная атака",
+        description: opportunityAttack?.displaySummaryRu ?? opportunityAttack?.trigger ?? "Открыть форму реакции.",
+        actionType: getCommandActionType(opportunityAttack),
+        cost: getCommandCost(opportunityAttack),
+        hook: 'data-battle-command-open="opportunity-unarmed"',
+        disabled: !opportunityAttack?.availability.enabled,
+        reason: opportunityAttack?.availability.reasonRu ?? "",
+      })}</div>
       ${toolsPanel}${savedRecordsPanel}`}`;
     primaryFooter = uiState.panel === "initiative-correct" ? "" : `<button type="button" class="btn btn--primary"
       data-battle-command="begin-own-turn">Мой ход</button>`;
@@ -285,12 +345,33 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
       <div class="battle-command-grid">${menuEntries.map(renderBattleCommandCard).join("") ||
         "<p>Нет доступных команд в этой категории.</p>"}</div>
       <button type="button" data-battle-menu="home">Назад к ходу</button></section>` : "";
+    const normalAttack = commands.find((entry) => entry.id === "normal-attack");
+    const opportunityAttack = commands.find((entry) => entry.id === "opportunity-unarmed");
     const home = `<div class="battle-quick-rolls">
-      <button type="button" data-battle-command-open="normal-attack">Атаковать</button>
-      <button type="button" data-battle-menu="action">Другое действие</button>
-      <button type="button" data-battle-menu="bonus">Бонусное действие</button>
-      <button type="button" data-battle-menu="incoming">По мне атакуют</button>
-      <button type="button" data-battle-command-open="opportunity-unarmed">Провоцированная атака</button></div>`;
+      ${renderHomeActionCard({
+        icon: "attack",
+        title: "Атаковать",
+        description: normalAttack?.displaySummaryRu ?? normalAttack?.trigger ?? "Открыть обычную атаку.",
+        actionType: getCommandActionType(normalAttack),
+        cost: getCommandCost(normalAttack),
+        hook: 'data-battle-command-open="normal-attack"',
+        disabled: !normalAttack?.availability.enabled,
+        reason: normalAttack?.availability.reasonRu ?? "",
+        prominent: true,
+      })}
+      ${renderHomeActionCard({ icon: "menu", title: "Другое действие", description: "Выбрать действие из доступных команд.", actionType: "Открывает меню", hook: 'data-battle-menu="action"' })}
+      ${renderHomeActionCard({ icon: "menu", title: "Бонусное действие", description: "Выбрать бонусное действие из доступных команд.", actionType: "Открывает меню", hook: 'data-battle-menu="bonus"' })}
+      ${renderHomeActionCard({ icon: "incoming", title: "По мне атакуют", description: "Открыть входящее воздействие и ответ.", actionType: "Открывает меню", hook: 'data-battle-menu="incoming"' })}
+      ${renderHomeActionCard({
+        icon: "opportunity",
+        title: "Провоцированная атака",
+        description: opportunityAttack?.displaySummaryRu ?? opportunityAttack?.trigger ?? "Открыть форму реакции.",
+        actionType: getCommandActionType(opportunityAttack),
+        cost: getCommandCost(opportunityAttack),
+        hook: 'data-battle-command-open="opportunity-unarmed"',
+        disabled: Boolean(opportunityAttack && !opportunityAttack.availability.enabled),
+        reason: opportunityAttack?.availability.reasonRu ?? "",
+      })}</div>`;
     phaseBody = `${uiState.panel === "initiative-correct" ? initiativeForm("correct")
       : uiState.panel === "home" ? home : panel}
       ${toolsPanel}${savedRecordsPanel}`;

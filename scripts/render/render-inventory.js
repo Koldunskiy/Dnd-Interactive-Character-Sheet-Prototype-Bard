@@ -151,6 +151,44 @@ function renderItemSummary(item) {
   return summaryParts.map(escapeHtml).join(" · ");
 }
 
+function itemTypeLabel(type) {
+  return ({
+    armor: "Доспех",
+    consumable: "Расходник",
+    focus: "Фокус",
+    misc: "Разное",
+    tool: "Инструмент",
+    weapon: "Оружие",
+  })[type] ?? "";
+}
+
+function itemRarityLabel(rarity) {
+  return ({
+    common: "Обычный",
+    uncommon: "Необычный",
+    rare: "Редкий",
+    "very-rare": "Очень редкий",
+    legendary: "Легендарный",
+    artifact: "Артефакт",
+  })[rarity] ?? "";
+}
+
+function renderItemMainEffect(item) {
+  if (item.id === "amulet-of-health") {
+    return `<p class="inventory-item-effect">Эффективное Телосложение равно 19, если базовое значение ниже 19.</p>`;
+  }
+  if (item.id === "insignia-of-claws" && typeof item.description === "string") {
+    const additionalLimits = item.description.indexOf(" Не повышает");
+    const effect = additionalLimits > 0
+      ? item.description.slice(0, additionalLimits)
+      : item.description;
+    return effect
+      ? `<p class="inventory-item-effect">${escapeHtml(effect)}</p>`
+      : "";
+  }
+  return "";
+}
+
 function renderItemIcon(item) {
   const type = item?.type ?? (item?.weapon ? "weapon" : item?.armor ? "armor" :
     item?.focus ? "focus" : item?.consumable ? "consumable" : "misc");
@@ -230,14 +268,15 @@ function renderInventoryItemCard(item, expandedItemIds = [], isSara = false) {
     <article class="inventory-item-card ${isExpanded ? "inventory-item-card--expanded" : "inventory-item-card--collapsed"}" data-item-id="${escapeHtml(itemId)}">
       <div class="inventory-item-main">
         <div class="inventory-item-main__title-wrap">
-          <div class="inventory-item-heading">${renderItemIcon(item)}
+          <div class="inventory-item-heading"><span class="inventory-item-icon-well">${renderItemIcon(item)}</span>
             <div class="inventory-item-title">${escapeHtml(item.name)}</div>
           </div>
           <div class="inventory-item-badges">
-            ${typeof item.type === "string" && item.type ? `<span>${escapeHtml(item.type)}</span>` : ""}
-            ${typeof item.rarity === "string" && item.rarity ? `<span>${escapeHtml(item.rarity)}</span>` : ""}
+            ${itemTypeLabel(item.type) ? `<span>Тип: ${escapeHtml(itemTypeLabel(item.type))}</span>` : ""}
+            ${itemRarityLabel(item.rarity) ? `<span>Редкость: ${escapeHtml(itemRarityLabel(item.rarity))}</span>` : ""}
           </div>
           <div class="inventory-item-summary">${renderItemSummary(item)}</div>
+          ${renderItemMainEffect(item)}
         </div>
 
         <div class="inventory-item-main__controls">
@@ -413,7 +452,7 @@ export function renderInventoryMarkup(state) {
   const markup = `
     ${isSara ? `<header class="sara-tab-heading"><h2>Вещи</h2>
       <button type="button" class="btn" data-action="inventory-add-item">Добавить</button></header>` : "<h2>Инвентарь</h2>"}
-    ${isSara ? `<p class="panel-text sara-inventory-summary">Настроено: ${attunedCount} · ${escapeHtml(currencySummary)}</p>` : `<p class="panel-text">`}
+    ${isSara ? "" : `<p class="panel-text">`}
     ${isSara ? "" : `
       Инвентарь хранит снаряжение, валюту и служит источником правды для оружия, брони, фокусов и расходников.
     </p>`}
@@ -421,14 +460,19 @@ export function renderInventoryMarkup(state) {
     ${isSara ? `<label class="sara-inventory-search">Поиск предмета<input type="search" data-sara-inventory-search placeholder="Название или свойство"></label>` : ""}
 
     ${isSara ? `<div class="sara-inventory-layout">` : ""}
-    ${isSara ? `<details class="sara-details sara-inventory-editors">
-      <summary>Деньги и заметки о снаряжении</summary>
-      <section class="info-card"><h3>Деньги</h3>${currencyMarkup}</section>
-      <section class="info-card"><h3>Заметки</h3>
-        <textarea class="inventory-textarea inventory-textarea--large" rows="4"
-          data-bind="inventory.notes" placeholder="Записи о снаряжении, добыче, долгах, квестовых предметах...">${escapeHtml(inventory.notes || "")}</textarea>
-      </section>
-    </details>` : `<div class="inventory-section-gap" aria-hidden="true"></div>
+    ${isSara ? `<div class="inventory-list">${inventoryItemsMarkup}</div>
+      <aside class="sara-inventory-sidebar">
+        <p class="sara-inventory-summary">Настроено: ${attunedCount}</p>
+        <p class="sara-inventory-wallet">Кошелёк: <strong>${escapeHtml(currencySummary)}</strong></p>
+        <details class="sara-details sara-inventory-editors">
+          <summary>Деньги и заметки о снаряжении</summary>
+          <section class="info-card"><h3>Деньги</h3>${currencyMarkup}</section>
+          <section class="info-card"><h3>Заметки</h3>
+            <textarea class="inventory-textarea inventory-textarea--large" rows="4"
+              data-bind="inventory.notes" placeholder="Записи о снаряжении, добыче, долгах, квестовых предметах...">${escapeHtml(inventory.notes || "")}</textarea>
+          </section>
+        </details>
+      </aside>` : `<div class="inventory-section-gap" aria-hidden="true"></div>
       <div class="cards-grid">
         <div class="info-card"><div class="info-card-title">Деньги</div>${currencyMarkup}</div>
         <div class="info-card"><div class="info-card-title">Заметки</div>
@@ -440,18 +484,145 @@ export function renderInventoryMarkup(state) {
     ${isSara ? "" : `<div class="inventory-header-row"><h3>Снаряжение · ${escapeHtml(inventory.otherItemsStatus === "Не заполнено" ? "остальные предметы не заполнены" : "")}</h3>
       <button type="button" class="btn" data-action="inventory-add-item">Добавить предмет</button></div>`}
 
-    <div class="inventory-list">
-      ${inventoryItemsMarkup}
-    </div>
+    ${isSara ? "" : `<div class="inventory-list">${inventoryItemsMarkup}</div>`}
     ${isSara ? `</div>` : ""}
     ${isSara ? `<p class="sara-empty-state" data-inventory-search-empty hidden>По этому запросу предметы не найдены.</p>` : ""}
   `;
   return markup;
 }
 
+export function updateInventorySearchVisibility(panel) {
+  const query = panel.querySelector("[data-sara-inventory-search]")?.value
+    .trim().toLocaleLowerCase("ru") ?? "";
+  const cards = [...panel.querySelectorAll(".inventory-item-card")];
+  for (const card of cards) {
+    card.hidden = Boolean(query) &&
+      !card.textContent.toLocaleLowerCase("ru").includes(query);
+  }
+  for (const group of panel.querySelectorAll(".inventory-item-group")) {
+    const hasVisibleCard = [...group.querySelectorAll(".inventory-item-card")]
+      .some((card) => !card.hidden);
+    group.hidden = Boolean(query) && !hasVisibleCard;
+  }
+  const empty = panel.querySelector("[data-inventory-search-empty]");
+  if (empty) empty.hidden = !query || cards.some((card) => !card.hidden);
+}
+
+export function captureMovingItemStates(panel, items) {
+  const targetGroups = new Map(items
+    .filter((item) => item?.id != null && String(item.id))
+    .map((item) => [String(item.id), item.equipped === true
+      ? "inventory-equipped" : "inventory-other"]));
+  const activeElement = panel.ownerDocument?.activeElement ?? document.activeElement;
+  return [...panel.querySelectorAll(".inventory-item-card")].flatMap((card) => {
+    const itemId = card.getAttribute("data-item-id");
+    const targetGroup = targetGroups.get(itemId);
+    const currentGroup = card.closest(".inventory-item-group")?.getAttribute("data-sara-key");
+    if (!targetGroup || !currentGroup || targetGroup === currentGroup) return [];
+
+    const controls = [...card.querySelectorAll("input, textarea, select, button")];
+    const fields = controls
+      .filter((field) => field.matches("input, textarea, select"))
+      .map((field) => {
+        const preserve = field === activeElement || field.dataset.saraDirty === "true";
+        const textSelectionSupported = field.tagName === "TEXTAREA" ||
+          ["text", "search", "tel", "url", "password"].includes(field.type);
+        return {
+          field,
+          preserve,
+          value: preserve ? field.value : undefined,
+          checked: preserve && field.matches('input[type="checkbox"], input[type="radio"]')
+            ? field.checked : undefined,
+          selectedValues: preserve && field.tagName === "SELECT" && field.multiple
+            ? [...field.selectedOptions].map((option) => option.value) : undefined,
+          selectionStart: preserve && textSelectionSupported ? field.selectionStart : null,
+          selectionEnd: preserve && textSelectionSupported ? field.selectionEnd : null,
+          selectionDirection: preserve && textSelectionSupported ? field.selectionDirection : null,
+          markers: ["data-sara-dirty", "data-sara-edit-start", "data-sara-conflict", "aria-invalid"]
+            .map((name) => [name, field.getAttribute(name)]),
+        };
+      });
+    const focusedIndex = controls.indexOf(activeElement);
+    return [{
+      itemId,
+      details: [...card.querySelectorAll("details")].map((details) => details.open),
+      fields,
+      focusedIndex,
+    }];
+  });
+}
+
+export function restoreMovingItemStates(panel, snapshots) {
+  if (!snapshots.length) return;
+  const cards = [...panel.querySelectorAll(".inventory-item-card")];
+  for (const snapshot of snapshots) {
+    const card = cards.find((candidate) =>
+      candidate.getAttribute("data-item-id") === snapshot.itemId);
+    if (!card) continue;
+
+    const details = [...card.querySelectorAll("details")];
+    snapshot.details.forEach((open, index) => {
+      if (details[index]) details[index].open = open;
+    });
+
+    const controls = [...card.querySelectorAll("input, textarea, select, button")];
+    for (const fieldState of snapshot.fields) {
+      if (!fieldState.preserve) continue;
+      const field = controls.find((candidate) =>
+        candidate.matches("input, textarea, select") &&
+        candidate.getAttribute("data-bind-item-field") ===
+          fieldState.field.getAttribute("data-bind-item-field") &&
+        candidate.type === fieldState.field.type &&
+        candidate.tagName === fieldState.field.tagName);
+      if (!field) continue;
+      field.value = fieldState.value;
+      if (fieldState.checked !== undefined) field.checked = fieldState.checked;
+      if (fieldState.selectedValues) {
+        for (const option of field.options) {
+          option.selected = fieldState.selectedValues.includes(option.value);
+        }
+      }
+      for (const [name, value] of fieldState.markers) {
+        if (value == null) field.removeAttribute(name);
+        else field.setAttribute(name, value);
+      }
+      if (field.dataset.saraConflict === "true") {
+        field.setAttribute("aria-invalid", "true");
+        const label = field.closest("label");
+        if (label && !label.querySelector(".sara-field-conflict")) {
+          const message = panel.ownerDocument.createElement("span");
+          message.className = "sara-field-conflict";
+          message.setAttribute("role", "status");
+          message.textContent = "Значение изменилось в другом обновлении; ваш ввод сохранён.";
+          label.append(message);
+        }
+      }
+      if (fieldState.selectionStart != null && fieldState.selectionEnd != null) {
+        field.setSelectionRange(
+          fieldState.selectionStart,
+          fieldState.selectionEnd,
+          fieldState.selectionDirection ?? "none",
+        );
+      }
+    }
+
+    const focused = controls[snapshot.focusedIndex];
+    if (focused && focused !== panel.ownerDocument.activeElement) {
+      focused.focus({ preventScroll: true });
+    }
+  }
+}
+
 export function renderInventoryPanel(state) {
   const inventoryPanel = document.getElementById("inventoryPanel");
   if (!inventoryPanel) return;
   const markup = renderInventoryMarkup(state);
+  const movingStates = state.profile?.id === "sara-velaris"
+    ? captureMovingItemStates(inventoryPanel, state.inventory?.items ?? [])
+    : [];
   setPanelMarkup(inventoryPanel, markup, state.profile?.id);
+  restoreMovingItemStates(inventoryPanel, movingStates);
+  if (state.profile?.id === "sara-velaris") {
+    updateInventorySearchVisibility(inventoryPanel);
+  }
 }

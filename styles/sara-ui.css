@@ -1092,8 +1092,97 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 
 .page[data-character-id="sara-velaris"] .battle-quick-rolls,
 .page[data-character-id="sara-velaris"] .battle-command-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 168px), 1fr));
   gap: 10px;
+}
+
+.page[data-character-id="sara-velaris"] .battle-quick-rolls > .battle-home-action {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 76px;
+  padding: 12px;
+  border: 1px solid var(--sara-border);
+  border-radius: 14px;
+  color: var(--sara-text);
+  text-align: left;
+  white-space: normal;
+  background: var(--sara-card);
+  box-shadow: 0 5px 14px #0002;
+}
+
+.page[data-character-id="sara-velaris"] .battle-quick-rolls > .battle-home-action:hover:not(:disabled) {
+  border-color: var(--sara-accent);
+  background: var(--sara-selected);
+}
+
+.page[data-character-id="sara-velaris"] .battle-quick-rolls > .battle-home-action:disabled {
+  opacity: 1;
+  border-style: dashed;
+  color: var(--sara-muted);
+  background: var(--sara-background);
+  cursor: not-allowed;
+}
+
+.page[data-character-id="sara-velaris"] .battle-home-action--primary {
+  grid-column: 1 / -1;
+  min-height: 92px;
+  border-color: var(--sara-accent);
+  background: linear-gradient(110deg, var(--sara-selected), var(--sara-card));
+}
+
+.page[data-character-id="sara-velaris"] .battle-home-action__icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid var(--sara-border);
+  border-radius: 11px;
+  color: var(--sara-accent);
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] .battle-home-action__icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.page[data-character-id="sara-velaris"] .battle-home-action__content {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.page[data-character-id="sara-velaris"] .battle-home-action__content strong {
+  font-size: 15px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .battle-home-action__content > span,
+.page[data-character-id="sara-velaris"] .battle-home-action__reason {
+  color: var(--sara-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .battle-home-action__meta {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  color: var(--sara-accent);
+  font-size: 11px;
+  text-align: right;
+  white-space: normal;
+}
+
+.page[data-character-id="sara-velaris"] .battle-home-action__meta small {
+  color: var(--sara-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 .page[data-character-id="sara-velaris"] .battle-command-card,
@@ -1344,11 +1433,13 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 
 .page[data-character-id="sara-velaris"] .inventory-item-group {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   min-width: 0;
   gap: 10px;
 }
 
 .page[data-character-id="sara-velaris"] .inventory-item-group > h3 {
+  grid-column: 1 / -1;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--sara-border);
   color: var(--sara-muted);
@@ -1373,10 +1464,20 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   gap: 10px;
 }
 
+.page[data-character-id="sara-velaris"] .inventory-item-icon-well {
+  display: grid;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid var(--sara-border);
+  border-radius: 12px;
+  background: var(--sara-background);
+}
+
 .page[data-character-id="sara-velaris"] .inventory-item-icon {
-  flex: 0 0 30px;
-  width: 30px;
-  height: 30px;
+  width: 23px;
+  height: 23px;
   color: var(--sara-warm);
 }
 
@@ -1409,6 +1510,49 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   color: var(--sara-muted);
   opacity: 1;
   overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-effect {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--sara-warm);
+  border-radius: 0 9px 9px 0;
+  color: var(--sara-text);
+  background: var(--sara-background);
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .sara-inventory-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--sara-border);
+  border-radius: 16px;
+  background: var(--sara-card);
+}
+
+.page[data-character-id="sara-velaris"] .sara-inventory-sidebar .sara-inventory-summary,
+.page[data-character-id="sara-velaris"] .sara-inventory-wallet {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--sara-border);
+  border-radius: 11px;
+  color: var(--sara-muted);
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] .sara-inventory-wallet strong {
+  color: var(--sara-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id="sara-velaris"] .sara-inventory-editors {
+  padding: 10px;
+  border: 1px solid var(--sara-border);
+  border-radius: 12px;
+  background: var(--sara-background);
 }
 
 .page[data-character-id="sara-velaris"] .inventory-item-main__controls {
@@ -1518,6 +1662,22 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   overflow-wrap: anywhere;
 }
 
+.page[data-character-id="sara-velaris"] .technique-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.page[data-character-id="sara-velaris"] .technique-card__badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--sara-border);
+  border-radius: 999px;
+  background: var(--sara-background);
+}
+
 .page[data-character-id="sara-velaris"] .technique-card__description {
   overflow-wrap: anywhere;
 }
@@ -1610,18 +1770,39 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 }
 
 .page[data-character-id="sara-velaris"] [data-sara-task-dock] {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  gap: 12px;
-  width: min(100% - 24px, 960px);
-  max-height: min(90vh, var(--workspace-available-height, 90vh));
-  margin-inline: auto;
-  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: min(100%, 960px);
+  height: var(--workspace-available-height, var(--workspace-visible-height, 100dvh));
+  max-height: var(--workspace-available-height, var(--workspace-visible-height, 100dvh));
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--sara-border);
-  border-radius: 18px;
+  border-radius: 16px;
   color: var(--sara-text);
   background: var(--sara-background);
   box-shadow: 0 16px 48px #0005;
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock][data-entry-active="true"] {
+  height: var(--workspace-entry-height, var(--workspace-available-height, 100dvh));
+  max-height: var(--workspace-entry-height, var(--workspace-available-height, 100dvh));
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] > [data-sara-task-scene-controls],
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] > [data-sara-task-hud],
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] > .action-workspace__header,
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] > [data-workspace-error],
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] > .action-workspace__footer {
+  flex: 0 0 auto;
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] > [data-workspace-body] {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .page[data-character-id="sara-velaris"] [data-sara-task-dock] [data-workspace-header] {
@@ -1635,11 +1816,8 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   width: 100%;
   max-width: 720px;
   margin-inline: auto;
-  overflow: auto;
-  overscroll-behavior: contain;
 }
 
-.page[data-character-id="sara-velaris"] [data-sara-task-dock] [data-workspace-body] > *,
 .page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-entry-result,
 .page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-current-result,
 .page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-post-hit,
@@ -1650,6 +1828,17 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   border-radius: 14px;
   background: var(--sara-card);
   overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] [data-workspace-body] > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] [data-workspace-form] {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
 }
 
 .page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-entry-result {
@@ -1703,11 +1892,11 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 
 @media (min-width: 700px) {
   .page[data-character-id="sara-velaris"] .sara-inventory-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 290px);
     align-items: start;
   }
 
-  .page[data-character-id="sara-velaris"] .sara-inventory-editors {
+  .page[data-character-id="sara-velaris"] .sara-inventory-sidebar {
     grid-column: 2;
     grid-row: 1;
   }
@@ -1784,8 +1973,6 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 @media (max-width: 699px) {
   .page[data-character-id="sara-velaris"] [data-sara-task-dock] {
     width: calc(100% - 12px);
-    max-height: min(94vh, var(--workspace-available-height, 94vh));
-    padding: 12px;
     border-radius: 16px;
   }
 
@@ -1793,7 +1980,4 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host:not([hidden]) {
-    max-height: min(94vh, var(--workspace-available-height, 94vh));
-  }
 }

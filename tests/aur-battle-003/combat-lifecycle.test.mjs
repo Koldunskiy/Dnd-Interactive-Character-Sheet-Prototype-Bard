@@ -193,7 +193,7 @@ test("battle scene no longer renders the legacy incoming-event catalog", () => {
   assert.equal(executeBattleCommand("start-battle", { rawD20: "10" }).status, "applied");
   const markup = renderBattleConsole(getState());
   assert.doesNotMatch(markup, /class="battle-incoming-events"/);
-  assert.match(markup, /data-battle-menu="incoming">По мне атакуют/);
+  assert.match(markup, /data-battle-menu="incoming"[^>]*>[\s\S]*?<strong>По мне атакуют<\/strong>/);
 });
 
 test("initiative keyboard presentation cleanup removes viewport listeners and inline styles", () => {

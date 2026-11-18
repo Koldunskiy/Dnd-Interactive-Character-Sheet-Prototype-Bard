@@ -240,7 +240,12 @@ test("the phase hub keeps turn actions hidden while waiting and exposes turn res
   beginOwnTurn(character, { id: "render-turn" });
   markup = renderBattleConsole(character);
   assert.match(markup, /data-player-scene-phase="own-turn"/);
-  assert.match(markup, /data-battle-command-open="normal-attack">Атаковать/);
+  assert.equal((markup.match(/data-battle-command-open="normal-attack"/g) ?? []).length, 1);
+  const attackCard = markup.match(/<button\b[^>]*data-battle-command-open="normal-attack"[^>]*>[\s\S]*?<\/button>/)?.[0];
+  assert.ok(attackCard);
+  assert.match(attackCard, /<svg\b[^>]*aria-hidden="true"/);
+  assert.match(attackCard, /<strong>Атаковать<\/strong>/);
+  assert.doesNotMatch(attackCard.slice(attackCard.indexOf(">") + 1), /<button\b/);
   assert.match(markup, /Другое действие/);
   assert.match(markup, /Бонусное действие/);
   assert.match(markup, /По мне атакуют/);
@@ -265,6 +270,44 @@ test("the phase hub keeps turn actions hidden while waiting and exposes turn res
   });
   markup = renderBattleConsole(character, incoming);
   assert.doesNotMatch(markup, /data-battle-command-open="incoming-damage"/);
+});
+
+test("home action cards keep distinct phase routes and valid button-only interaction", () => {
+  const outsideMarkup = renderBattleConsole(cloneSara());
+  assert.match(outsideMarkup, /data-roll-preset="ability-check"/);
+  assert.match(outsideMarkup, /data-roll-preset="saving-throw"/);
+  assert.match(outsideMarkup, /data-battle-navigate="inventory"/);
+  assert.match(outsideMarkup, /data-battle-command-open="completed-rest"/);
+
+  const waiting = cloneSara();
+  assert.equal(startBattle(waiting, { rawD20: "12" }).ok, true);
+  const waitingMarkup = renderBattleConsole(waiting);
+  assert.match(waitingMarkup, /data-battle-menu="incoming"/);
+  assert.doesNotMatch(waitingMarkup, /data-battle-menu="(?:action|bonus)"/);
+  assert.doesNotMatch(waitingMarkup, /data-battle-command-open="normal-attack"/);
+
+  beginOwnTurn(waiting);
+  const ownTurnMarkup = renderBattleConsole(waiting);
+  for (const hook of [
+    'data-battle-command-open="normal-attack"',
+    'data-battle-menu="action"',
+    'data-battle-menu="bonus"',
+    'data-battle-menu="incoming"',
+    'data-battle-command-open="opportunity-unarmed"',
+  ]) {
+    assert.equal((ownTurnMarkup.match(new RegExp(hook, "g")) ?? []).length, 1, hook);
+  }
+  assert.match(ownTurnMarkup, /<strong>Другое действие<\/strong>[\s\S]*?Открывает меню/);
+  assert.match(ownTurnMarkup, /<strong>Бонусное действие<\/strong>[\s\S]*?Открывает меню/);
+  for (const card of ownTurnMarkup.matchAll(/<button\b[^>]*class="battle-home-action[^"]*"[^>]*>[\s\S]*?<\/button>/g)) {
+    assert.doesNotMatch(card[0].slice(card[0].indexOf(">") + 1), /<(?:button|a|input|select)\b/);
+  }
+
+  waiting.battleConsole.current.phaseBeforePause = "own-turn";
+  waiting.battleConsole.current.phase = "paused";
+  const pausedMarkup = renderBattleConsole(waiting);
+  assert.doesNotMatch(pausedMarkup, /class="battle-home-action/);
+  assert.match(pausedMarkup, /data-battle-command="resume-battle"/);
 });
 
 test("Dexterity-save Evasion consequence is explicit and corrections do not recalculate HP", () => {

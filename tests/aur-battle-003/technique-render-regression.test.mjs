@@ -21,6 +21,8 @@ test("technique catalogue no longer renders replaced battle forms or missile ret
     renderTechniquesPanel(structuredClone(sara));
     assert.match(panel.innerHTML, /<h2>Техники<\/h2>/);
     assert.match(panel.innerHTML, /data-technique-tab="mine"/);
+    assert.match(panel.innerHTML, /technique-card__badge">Активация:/);
+    assert.match(panel.innerHTML, /technique-card__badge">Стоимость:/);
     assert.doesNotMatch(panel.innerHTML, /data-technique-form="ll-monk:(?:step-of-the-wind|patient-defense|mystic-regeneration|deflect-strike|deflect-missile|empowered-strike|stunning-strike|crippling-strike|slowing-strike)"/);
     assert.doesNotMatch(panel.innerHTML, /data-(?:missile-return|sara-attack-submit|sara-damage-submit|racial-spell-form|battle-technique-form)=/);
   } finally {

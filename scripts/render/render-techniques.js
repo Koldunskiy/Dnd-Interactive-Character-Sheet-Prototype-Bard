@@ -133,7 +133,12 @@ function renderTechniqueCard(entry, character, draft) {
           stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPath}</svg>
         <h3>${escapeHtml(techniqueTitle(entry))}</h3>
       </header>
-      <p class="technique-card__meta">${source} · уровень ${entry.minimumMonkLevel} · ${escapeHtml(activationLabel(entry.activation))} · ${escapeHtml(paymentLabel(entry.payment))}</p>
+      <div class="technique-card__meta">
+        <span class="technique-card__badge">Источник: ${escapeHtml(source)}</span>
+        <span class="technique-card__badge">Уровень ${entry.minimumMonkLevel}</span>
+        <span class="technique-card__badge">Активация: ${escapeHtml(activationLabel(entry.activation))}</span>
+        <span class="technique-card__badge">Стоимость: ${escapeHtml(paymentLabel(entry.payment))}</span>
+      </div>
       <p class="technique-card__description">${escapeHtml(entry.trigger)}</p>
       <details><summary>Подробнее</summary>
         <p class="technique-card__description">${escapeHtml(entry.description)}</p>

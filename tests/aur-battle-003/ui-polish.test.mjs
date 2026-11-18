@@ -168,6 +168,34 @@ test("battle cards and global surfaces have wrapping and theme-token safeguards"
   assert.match(themeCss, /:root\[data-theme\] \.workspace-roll-mode__option\[aria-pressed="true"\]/);
 });
 
+test("permanent Sara dock follows its real child order and keeps only the body flexible", async () => {
+  const [html, css] = await Promise.all([
+    readFile(new URL("../../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../../styles/sara-ui.css", import.meta.url), "utf8"),
+  ]);
+  const dockStart = html.indexOf('class="sara-task-dock');
+  assert.notEqual(dockStart, -1);
+  const dockHtml = html.slice(dockStart);
+  const childHooks = [
+    "data-sara-task-scene-controls",
+    "data-sara-task-hud",
+    "action-workspace__header",
+    "data-workspace-error",
+    "data-workspace-body",
+    "action-workspace__footer",
+  ];
+  let priorIndex = -1;
+  for (const hook of childHooks) {
+    const index = dockHtml.indexOf(hook);
+    assert.ok(index > priorIndex, `${hook} remains in the dock's declared order`);
+    priorIndex = index;
+  }
+  assert.match(css, /\[data-sara-task-dock\]\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column/);
+  assert.match(css, /\[data-sara-task-dock\]\s*>\s*\[data-workspace-body\]\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;[^}]*overflow:\s*auto/);
+  assert.match(css, /\[data-workspace-error\][\s\S]{0,120}flex:\s*0 0 auto/);
+  assert.doesNotMatch(css, /max-height:\s*min\(9[04]vh/);
+});
+
 test("damage-basis renderer only exposes the profile when full-effect is selected", () => {
   const record = {
     kind: "saving-throw",
