@@ -9,6 +9,43 @@ import {
 } from "../../scripts/render/sara-hud.js";
 import { renderHeader } from "../../scripts/render/render-header.js";
 
+function resourceBlock(markup, kind) {
+  const start = markup.indexOf(`class="sara-hud__resource sara-hud__resource--${kind}"`);
+  assert.notEqual(start, -1, `missing ${kind} resource block`);
+  const opening = markup.lastIndexOf("<div", start);
+  const tags = /<\/?div\b[^>]*>/g;
+  tags.lastIndex = opening;
+  let depth = 0;
+  let match;
+  while ((match = tags.exec(markup))) {
+    depth += match[0].startsWith("</") ? -1 : 1;
+    if (depth === 0) return markup.slice(opening, tags.lastIndex);
+  }
+  assert.fail(`unclosed ${kind} resource block`);
+}
+
+function assertValidResource(markup, kind, current, maximum, percent) {
+  const block = resourceBlock(markup, kind);
+  const label = kind === "hp" ? "ХП" : "Ци";
+  assert.ok(block.includes(`<span>${label}</span><strong>${current} / ${maximum}</strong>`));
+  assert.ok(block.includes(`style="--sara-resource-fill:${percent}%"`));
+  assert.ok(block.includes(`role="meter" aria-label="${label}" aria-valuemin="0"`));
+  assert.ok(block.includes(`aria-valuemax="${maximum}"`));
+  assert.ok(block.includes(`aria-valuenow="${Math.min(current, maximum)}"`));
+  return block;
+}
+
+function assertInvalidResource(markup, kind, currentText, maximumText) {
+  const block = resourceBlock(markup, kind);
+  const label = kind === "hp" ? "ХП" : "Ци";
+  assert.ok(block.includes(`<span>${label}</span><strong>${currentText} / ${maximumText}</strong>`));
+  assert.ok(block.includes(`aria-label="${label}: нет корректных данных"`));
+  assert.ok(block.includes("Нет корректных данных"));
+  assert.ok(block.includes("style=\"--sara-resource-fill:0%\""));
+  assert.doesNotMatch(block, /role="meter"|aria-valuemin=|aria-valuemax=|aria-valuenow=/);
+  return block;
+}
+
 test("Sara HUD projects current derived resources and escapes optional text without mutation", () => {
   const state = structuredClone(sara);
   state.combat.hp.current = 0;
@@ -22,13 +59,14 @@ test("Sara HUD projects current derived resources and escapes optional text with
   ];
   const before = structuredClone(state);
   const model = getSaraHudModel(state, getDerivedStats(state));
+  const modelBefore = structuredClone(model);
   const markup = renderSaraHud(model);
   assert.doesNotMatch(markup, /sara-hud--compact/);
   assert.equal(model.hp, 0);
   assert.equal(model.maxHp, getDerivedStats(state).maxHitPoints);
   assert.equal(model.ki.current, getDerivedStats(state).ki.current);
-  assert.match(markup, /<span>ХП<\/span><strong>0 \/ \d+/);
-  assert.match(markup, /role="meter" aria-label="ХП" aria-valuemin="0"/);
+  assertValidResource(markup, "hp", 0, model.maxHp, 0);
+  assertValidResource(markup, "ki", model.ki.current, model.ki.maximum, 100);
   assert.match(markup, /Временные ХП <strong>4<\/strong>/);
   assert.match(markup, /Концентрация: <strong>&lt;focus&gt;/);
   assert.match(markup, /&lt;effect&gt;/);
@@ -37,46 +75,84 @@ test("Sara HUD projects current derived resources and escapes optional text with
   assert.match(markup, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
   assert.doesNotMatch(markup, /<img src=x/);
   assert.deepEqual(state, before);
+  assert.deepEqual(model, modelBefore);
 });
 
-test("resource meters clamp only presentation and keep temporary HP separate", () => {
+test("HP and Ki meters independently render zero, partial, full, and over-maximum values", () => {
   const model = {
-    hp: 0, maxHp: 10, tempHp: 7, ki: { current: 5, maximum: 10 },
+    hp: 25, maxHp: 100, tempHp: 0, ki: { current: 75, maximum: 100 },
     practiced: { current: 2, maximum: 3 }, effects: [],
   };
-  const zeroMarkup = renderSaraHud(model);
-  assert.match(zeroMarkup, /--sara-resource-fill:0%/);
-  assert.match(zeroMarkup, /Временные ХП <strong>7<\/strong>/);
-  model.hp = 5;
-  assert.match(renderSaraHud(model), /--sara-resource-fill:50%/);
-  model.hp = 10;
-  assert.match(renderSaraHud(model), /--sara-resource-fill:100%/);
-  model.hp = 14;
-  const overMaximum = renderSaraHud(model);
-  assert.match(overMaximum, /14 \/ 10/);
-  assert.match(overMaximum, /aria-valuenow="10" aria-valuetext="14 \/ 10"/);
-  assert.match(overMaximum, /--sara-resource-fill:100%/);
-  assert.equal((overMaximum.match(/--sara-resource-fill:100%/g) ?? []).length, 1);
+  for (const [current, percent] of [[0, 0], [25, 25], [100, 100], [125, 100]]) {
+    model.hp = current;
+    const markup = renderSaraHud(model);
+    const hpBlock = assertValidResource(markup, "hp", current, 100, percent);
+    if (current > 100) assert.ok(hpBlock.includes('aria-valuenow="100" aria-valuetext="125 / 100"'));
+    assertValidResource(markup, "ki", 75, 100, 75);
+  }
+  model.hp = 25;
+  for (const [current, percent] of [[0, 0], [50, 50], [100, 100], [125, 100]]) {
+    model.ki.current = current;
+    const markup = renderSaraHud(model);
+    assertValidResource(markup, "hp", 25, 100, 25);
+    const kiBlock = assertValidResource(markup, "ki", current, 100, percent);
+    if (current > 100) assert.ok(kiBlock.includes('aria-valuenow="100" aria-valuetext="125 / 100"'));
+  }
 });
 
-test("invalid resource pairs are neutral, explicit, and never inject numeric markup", () => {
-  const base = { hp: 5, maxHp: 10, tempHp: 0, ki: { current: 5, maximum: 10 }, effects: [] };
-  for (const [current, maximum] of [
-    [undefined, 10], [5, undefined], [5, 0], [5, -1], [-1, 10],
-    [null, 10], [NaN, 10], [Infinity, 10], ["<img>", 10], [true, 10],
-  ]) {
-    const markup = renderSaraHud({ ...base, hp: current, maxHp: maximum });
-    assert.match(markup, /ХП: нет корректных данных/);
-    assert.match(markup, /Нет корректных данных/);
-    assert.equal((markup.match(/aria-valuemax=/g) ?? []).length, 1);
-    assert.match(markup, /--sara-resource-fill:0%/);
-    assert.doesNotMatch(markup, /NaN|Infinity|<img>/);
+test("invalid HP and Ki pairs are independently neutral and exclude invalid meter attributes", () => {
+  const model = {
+    hp: 25, maxHp: 100, tempHp: 0, ki: { current: 75, maximum: 100 }, effects: [],
+  };
+  const invalidCases = [
+    [undefined, 100, "—", "100"],
+    [5, undefined, "5", "—"],
+    [5, 0, "5", "0"],
+    [5, -1, "5", "-1"],
+    [-1, 100, "-1", "100"],
+    [null, 100, "—", "100"],
+    [NaN, 100, "—", "100"],
+    [Infinity, 100, "—", "100"],
+    ["<img>", 100, "—", "100"],
+    [true, 100, "—", "100"],
+  ];
+  for (const [current, maximum, currentText, maximumText] of invalidCases) {
+    model.hp = current;
+    model.maxHp = maximum;
+    const markup = renderSaraHud(model);
+    assertInvalidResource(markup, "hp", currentText, maximumText);
+    assertValidResource(markup, "ki", 75, 100, 75);
+    assert.doesNotMatch(resourceBlock(markup, "hp"), /NaN|Infinity|<img>/);
   }
-  const zeroMaximum = renderSaraHud({ ...base, hp: 0, maxHp: 0 });
-  assert.match(zeroMaximum, /0 \/ 0/);
-  assert.match(zeroMaximum, /Ци<\/span><strong>5 \/ 10/);
-  const huge = renderSaraHud({ ...base, hp: Number.MAX_VALUE, maxHp: Number.MIN_VALUE });
-  assert.match(huge, /--sara-resource-fill:100%/);
+  for (const [current, maximum, currentText, maximumText] of invalidCases) {
+    model.hp = 25;
+    model.maxHp = 100;
+    model.ki = { current, maximum };
+    const markup = renderSaraHud(model);
+    assertValidResource(markup, "hp", 25, 100, 25);
+    assertInvalidResource(markup, "ki", currentText, maximumText);
+  }
+  const zeroMaximum = renderSaraHud({
+    ...model, hp: 0, maxHp: 0, ki: { current: 75, maximum: 100 },
+  });
+  assertInvalidResource(zeroMaximum, "hp", "0", "0");
+  const huge = renderSaraHud({
+    ...model, hp: Number.MAX_VALUE, maxHp: Number.MIN_VALUE,
+    ki: { current: 75, maximum: 100 },
+  });
+  assertValidResource(huge, "hp", Number.MAX_VALUE, Number.MIN_VALUE, 100);
+});
+
+test("temporary HP changes do not alter the HP meter fill", () => {
+  const model = {
+    hp: 25, maxHp: 100, tempHp: 0, ki: { current: 75, maximum: 100 }, effects: [],
+  };
+  const before = resourceBlock(renderSaraHud(model), "hp");
+  model.tempHp = 9;
+  const afterMarkup = renderSaraHud(model);
+  const after = resourceBlock(afterMarkup, "hp");
+  assert.equal(after, before);
+  assert.match(afterMarkup, /Временные ХП <strong>9<\/strong>/);
 });
 
 test("scene, header, task, and compact presentations retain required resource labels", () => {
@@ -120,16 +196,23 @@ test("header delegates Sara resources to the shared model and clears them for an
   try {
     const state = structuredClone(sara);
     state.combat.hp.current = 37;
+    const stateBefore = structuredClone(state);
     const derived = getDerivedStats(state);
+    const derivedBefore = structuredClone(derived);
     renderHeader(state, derived);
     const markup = nodes.saraHeaderResources.innerHTML;
     assert.equal(nodes.saraHeaderResources.hidden, false);
     assert.match(markup, /37 \/ \d+/);
     assert.match(markup, /sara-hud--header/);
     assert.match(markup, /Отработано/);
-    renderHeader({ profile: { id: "another", name: "Other" } });
+    assert.deepEqual(state, stateBefore);
+    assert.deepEqual(derived, derivedBefore);
+    const anotherState = { profile: { id: "another", name: "Other" } };
+    const anotherStateBefore = structuredClone(anotherState);
+    renderHeader(anotherState);
     assert.equal(nodes.saraHeaderResources.hidden, true);
     assert.equal(nodes.saraHeaderResources.innerHTML, "");
+    assert.deepEqual(anotherState, anotherStateBefore);
   } finally {
     globalThis.document = originalDocument;
   }
@@ -166,6 +249,7 @@ test("targeted HUD update preserves details state without replacing its own regi
   const withEffect = structuredClone(sara);
   withEffect.ui.activeEffects = [{ id: "effect", name: "Открытый эффект", source: "Тест" }];
   const firstModel = getSaraHudModel(withEffect);
+  const firstModelBefore = structuredClone(firstModel);
   updateSaraHudRegion(region, firstModel);
   const firstMarkup = region.innerHTML;
   const sameDetails = region.details[0];
@@ -173,10 +257,12 @@ test("targeted HUD update preserves details state without replacing its own regi
   updateSaraHudRegion(region, firstModel);
   assert.equal(region.innerHTML, firstMarkup);
   assert.equal(region.details[0], sameDetails);
+  assert.deepEqual(firstModel, firstModelBefore);
 
   const changed = structuredClone(withEffect);
   changed.combat.hp.current -= 1;
   updateSaraHudRegion(region, getSaraHudModel(changed));
   assert.notEqual(region.innerHTML, firstMarkup);
   assert.equal(region.details[0].open, true);
+  assert.deepEqual(firstModel, firstModelBefore);
 });

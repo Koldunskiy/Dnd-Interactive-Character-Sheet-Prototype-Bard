@@ -833,7 +833,7 @@ function renderApp() {
     updateSaraHudRegion(
       document.querySelector("[data-sara-task-dock] [data-sara-task-hud]"),
       getSaraHudModel(state, derived),
-      { presentation: "task", compact: document.querySelector("[data-sara-task-dock]")?.dataset.entryActive === "true" },
+      { presentation: "task" },
     );
     if (!page?.hasAttribute("data-task-open")) {
       renderSaraTab(page?.dataset.activeTab ?? "profile", state, derived);

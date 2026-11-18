@@ -171,6 +171,14 @@ test("W1 rendering an error does not release active compact-entry presentation",
 
 test("W1 real Sara renderer updates preserve the connected focused workspace input", () => {
   const { dialog, taskHud, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
+  updateState((state) => {
+    state.combat.hp.temp = 3;
+    state.combat.concentration = "Fixture concentration";
+    state.ui.activeEffects = [
+      { id: "hud-effect", name: "Проверка обновления", source: "Тест" },
+    ];
+    return state;
+  });
   const panel = new FixtureNode();
   panel.documentRoot = true;
   const shell = new FixtureNode();
@@ -206,6 +214,9 @@ test("W1 real Sara renderer updates preserve the connected focused workspace inp
   globalThis.document.getElementById = (id) =>
     id === "meleePanel" ? panel : getElementById(id);
   assert.equal(openNormalAttack().ok, true);
+  assert.match(taskHud.innerHTML, /sara-hud__secondary/);
+  assert.match(taskHud.innerHTML, /sara-hud__effects/);
+  assert.match(taskHud.innerHTML, /Временные ХП/);
 
   const input = new FixtureInput("firstD20", "16");
   dialog.body.appendChild(input);
@@ -225,17 +236,26 @@ test("W1 real Sara renderer updates preserve the connected focused workspace inp
   assert.equal(dialog.dataset.entryActive, "true");
   assert.equal(form.contains(globalThis.document.activeElement), true);
   assert.match(dialog.body.innerHTML, /data-workspace-form="attack"/);
+  assert.match(taskHud.innerHTML, /sara-hud__secondary/);
+  assert.match(taskHud.innerHTML, /sara-hud__effects/);
+  assert.match(taskHud.innerHTML, /Временные ХП/);
 
   const workspaceBefore = dialog;
+  const workspaceIdBefore = getWorkspaceSessionForTests().workspaceSessionId;
+  const rawInputsBefore = structuredClone(
+    getWorkspaceSessionForTests().rawInputsByStep,
+  );
   const stateBefore = getState();
   const hudBefore = taskHud.innerHTML;
   updateState((state) => {
     state.ui.melee ??= {};
     state.ui.melee.w1RenderPulse = !state.ui.melee.w1RenderPulse;
-    state.ui.activeEffects = [{ id: "hud-effect", name: "Проверка обновления", source: "Тест" }];
+    state.combat.hp.current -= 1;
     return state;
   });
-  updateSaraHudRegion(taskHud, getSaraHudModel(getState()));
+  const revisionBeforeHudUpdate = getSessionContext().stateRevision;
+  const storageBeforeHudUpdate = new Map(window.localStorage.values);
+  updateSaraHudRegion(taskHud, getSaraHudModel(getState()), { presentation: "task" });
   renderMeleePanel(getState(), {});
 
   assert.equal(panel.querySelector(".sara-combat-shell"), shell);
@@ -244,9 +264,14 @@ test("W1 real Sara renderer updates preserve the connected focused workspace inp
   assert.equal(input.isConnected, true);
   assert.equal(globalThis.document.activeElement, input);
   assert.equal(input.value, "16");
+  assert.equal(getWorkspaceSessionForTests().workspaceSessionId, workspaceIdBefore);
+  assert.deepEqual(getWorkspaceSessionForTests().rawInputsByStep, rawInputsBefore);
   assert.notEqual(taskHud.innerHTML, hudBefore);
   assert.match(taskHud.innerHTML, /sara-hud__secondary/);
-  assert.doesNotMatch(taskHud.innerHTML, /sara-hud--compact/);
+  assert.match(taskHud.innerHTML, /sara-hud__effects/);
+  assert.match(taskHud.innerHTML, /Временные ХП/);
+  assert.equal(getSessionContext().stateRevision, revisionBeforeHudUpdate);
+  assert.deepEqual(window.localStorage.values, storageBeforeHudUpdate);
   assert.notEqual(getState(), stateBefore);
   const markup = renderBattleConsole(getState());
   assert.match(markup, /class="[^"]*sara-combat-shell[^"]*combat-turn-card/);
@@ -268,6 +293,8 @@ test("W1 real Sara renderer updates preserve the connected focused workspace inp
   unsubscribe();
   closeWorkspaceHost({ restoreFocus: false });
   assert.equal(dialog.dataset.entryActive, undefined);
+  assert.match(taskHud.innerHTML, /sara-hud__secondary/);
+  assert.match(taskHud.innerHTML, /sara-hud__effects/);
   assert.match(taskHud.innerHTML, /sara-hud__secondary/);
   assert.doesNotMatch(taskHud.innerHTML, /sara-hud--compact/);
   delete globalThis.requestAnimationFrame;
