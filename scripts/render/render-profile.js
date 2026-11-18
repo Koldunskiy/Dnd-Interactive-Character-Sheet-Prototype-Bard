@@ -436,7 +436,13 @@ function renderBackgroundDetails(backgroundDetails) {
     "calligraphers-supplies": "Принадлежности каллиграфа",
   };
   const formatIds = (values, labels) => (Array.isArray(values) ? values : [])
-    .map((value) => typeof value === "string" ? labels[value] : value?.name)
+    .map((value) => {
+      if (typeof value === "string") {
+        // Check if it's a known ID in the labels dict; otherwise treat it as a ready Russian string
+        return labels[value] ?? value;
+      }
+      return value?.name;
+    })
     .filter((value) => typeof value === "string" && value.trim())
     .join(", ");
   const skills = formatIds(backgroundDetails.proficiencies?.skills, SKILL_LABELS);

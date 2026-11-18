@@ -87,7 +87,7 @@ function renderBattleCommandCard(entry) {
   </article>`;
 }
 
-function renderHomeActionCard({
+export function renderHomeActionCard({
   icon,
   title,
   description,
@@ -116,8 +116,8 @@ function renderHomeActionCard({
       <strong>${escapeHtml(title)}</strong>
       <span>${escapeHtml(description)}</span>
       ${reason ? `<small class="battle-home-action__reason">${escapeHtml(reason)}</small>` : ""}
-      <span class="battle-home-action__meta">${escapeHtml(actionType)}${cost ? `<small>${escapeHtml(cost)}</small>` : ""}</span>
     </span>
+    <span class="battle-home-action__meta">${escapeHtml(actionType)}${cost ? `<small>${escapeHtml(cost)}</small>` : ""}</span>
   </button>`;
 }
 
