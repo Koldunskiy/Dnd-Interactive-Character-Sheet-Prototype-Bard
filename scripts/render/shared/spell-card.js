@@ -3,6 +3,7 @@ import {
   formatSpellDamage,
   formatHealing
 } from '../../calculations.js';
+import { spellTitle } from '../../presentation/ru.js';
 
 export function escapeHtml(value) {
   return String(value ?? "")
@@ -81,10 +82,10 @@ export function renderSpellCardHeader({ name, originalName, badges }) {
   return `
     <div class="spell-card-header">
       <div class="spell-card-heading">
-        <h3 class="spell-card-title">${escapeHtml(name)}</h3>
+        <h3 class="spell-card-title">${escapeHtml(spellTitle(name))}</h3>
         ${
           originalName
-            ? `<div class="spell-card-subtitle">${escapeHtml(originalName)}</div>`
+            ? `<details class="spell-card-original"><summary>Оригинал и источник</summary><span>${escapeHtml(originalName)}</span></details>`
             : ""
         }
       </div>

@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="./styles/action-workspace.css">
   <link rel="stylesheet" href="./styles/theme-surfaces.css">
   <link rel="stylesheet" href="./styles/sara-ui.css">
+  <link rel="stylesheet" href="./styles/preview-03.css">
 </head>
 <body>
   <div class="page">
@@ -78,11 +79,6 @@
 
     <main class="app-layout">
       <aside class="sidebar">
-        <section class="card section sidebar-section--quick-stats">
-          <h2>Быстрые параметры</h2>
-          <div class="quick-stats" id="quickStats"></div>
-        </section>
-
         <details
           class="card section sidebar-section--portrait profile-responsive-disclosure"
           data-profile-disclosure="sidebar-portrait"
@@ -127,6 +123,11 @@
       </aside>
 
       <section class="content">
+        <section class="card section sidebar-section--quick-stats" aria-label="Быстрые параметры">
+          <h2>Быстрые параметры</h2>
+          <div class="quick-stats" id="quickStats"></div>
+        </section>
+
         <nav class="tabs card" aria-label="Разделы листа персонажа">
           <button
             class="tab-btn is-active"

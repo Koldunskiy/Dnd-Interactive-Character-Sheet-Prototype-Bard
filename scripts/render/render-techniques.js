@@ -19,6 +19,7 @@ import {
 import { getDerivedStats } from "../calculations.js";
 import {
   activationLabel,
+  fightingStylePresentation,
   paymentLabel,
   sourceLabel,
   subchoiceLabel,
@@ -294,7 +295,10 @@ export function renderTechniquesPanel(character) {
     <p class="technique-card__status" data-technique-editor-status role="status"></p>
     <details class="sara-details"><summary>Дополнительные стили и заговоры</summary>
       <section class="panel-section"><h3>Воинский адепт — стили</h3>
-        <div class="technique-list">${WARRIOR_ADEPT_STYLES.map((style) => `<article class="technique-card"><h4>${escapeHtml(subchoiceLabel(style.id))}</h4><p>${escapeHtml(style.prerequisites.join("; ") || "без предварительных требований")}</p><p>${escapeHtml(style.text)}</p><details><summary>Оригинал и источник</summary><p>${escapeHtml(style.name)} · Alternate Monk</p></details></article>`).join("")}</div>
+        <div class="technique-list">${WARRIOR_ADEPT_STYLES.map((style) => {
+          const presentation = fightingStylePresentation(style);
+          return `<article class="technique-card"><h4>${escapeHtml(presentation.title)}</h4><p>${escapeHtml(presentation.prerequisites.join("; ") || "без предварительных требований")}</p><p>${escapeHtml(presentation.text)}</p><details><summary>Оригинал и источник</summary><p>${escapeHtml(style.name)} · Alternate Monk</p></details></article>`;
+        }).join("")}</div>
       </section>
       <p class="technique-card__status">Сияние божества: доступные заговоры — ${CLERIC_CANTRIPS.map((spell) => escapeHtml(spell.name)).join(", ")}.</p>
     </details>

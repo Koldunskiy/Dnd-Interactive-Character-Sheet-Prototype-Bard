@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { sara } from "../../data/sara.js";
+import { character as aurelia } from "../../data/character.js";
+import { getDerivedStats } from "../../scripts/calculations.js";
+import { renderProfile } from "../../scripts/render/render-profile.js";
 import {
   captureMovingItemStates,
   renderInventoryMarkup,
@@ -280,4 +283,82 @@ test("moving an edited inventory card between groups preserves input, disclosure
   restoreMovingItemStates(panel, disappearingActionSnapshots);
   assert.notEqual(document.activeElement, removeAction);
   assert.equal(removeAction.focused, undefined);
+});
+
+test("profile shows effective Sara ability values without changing base stats and hides absent heritage", () => {
+  const previousDocument = globalThis.document;
+  const previousWindow = globalThis.window;
+  const page = { dataset: { characterId: "sara-velaris" } };
+  globalThis.document = {
+    querySelectorAll: () => [],
+    querySelector: () => ({ dataset: page.dataset }),
+  };
+  globalThis.window = {
+    matchMedia: () => ({ matches: true, addEventListener() {} }),
+  };
+  try {
+    const state = structuredClone(sara);
+    state.ui.abilitiesEditable = true;
+    const amulet = state.inventory.items.find((item) => item.id === "amulet-of-health");
+    amulet.equipped = true;
+    amulet.attuned = true;
+    const root = { innerHTML: "" };
+
+    renderProfile(root, state, getDerivedStats(state));
+    assert.match(root.innerHTML, /<details class="ability-card-base-editor">[\s\S]*Изменить исходное значение/);
+    assert.match(root.innerHTML, /class="ability-card-score"[^>]*>[\s\S]*?19/);
+    assert.match(root.innerHTML, /Амулет здоровья/);
+    assert.match(root.innerHTML, /Исходное значение: 14/);
+    assert.match(root.innerHTML, /aria-label="Уменьшить исходное значение: Телосложение"/);
+    assert.equal(state.abilities.constitution, 14);
+    assert.match(root.innerHTML, new RegExp(`class="hero-stat-value">${getDerivedStats(state).monk.speedFeet} фт`));
+    assert.doesNotMatch(root.innerHTML, />\s*(STR|DEX|CON|INT|WIS|CHA)\s*</);
+
+    amulet.attuned = false;
+    renderProfile(root, state, getDerivedStats(state));
+    assert.match(root.innerHTML, /class="ability-card-score"[^>]*>[\s\S]*?14/);
+    assert.doesNotMatch(root.innerHTML, /Амулет здоровья/);
+
+    state.raceDetails = {
+      name: "Проверка",
+      languages: [{ name: "Общий", status: "подтверждено" }, { name: "Драконий", status: "согласовать" }],
+      darkvision: { rangeFeet: 60, notes: "в обычной и магической темноте" },
+      resistances: [],
+    };
+    renderProfile(root, state, getDerivedStats(state));
+    assert.match(root.innerHTML, /Общий · подтверждено, Драконий · согласовать/);
+    assert.match(root.innerHTML, /60 футов · в обычной и магической темноте/);
+    assert.doesNotMatch(root.innerHTML, /Подраса|Сопротивления|undefined|null|\[object Object\]/);
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});
+
+test("Aurelia profile uses its derived ability values and effective movement without Sara-only mechanics", () => {
+  const previousDocument = globalThis.document;
+  const previousWindow = globalThis.window;
+  globalThis.document = {
+    querySelectorAll: () => [],
+    querySelector: () => ({ dataset: { characterId: "aurelia" } }),
+  };
+  globalThis.window = {
+    matchMedia: () => ({ matches: true, addEventListener() {} }),
+  };
+  try {
+    const state = structuredClone(aurelia);
+    const derived = getDerivedStats(state);
+    const root = { innerHTML: "" };
+    renderProfile(root, state, derived);
+    assert.match(root.innerHTML, /class="ability-card-score"[^>]*>\s*19\s*</);
+    assert.match(root.innerHTML, /class="ability-card-mod"[^>]*>\s*\+4\s*</);
+    assert.doesNotMatch(root.innerHTML, /Характеристики[\s\S]*?STR|С учётом предмета: undefined/);
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
 });

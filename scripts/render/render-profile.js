@@ -152,6 +152,11 @@ function getAbilityCardsData(character, derived) {
       saveProficient: Boolean(character.savingThrows?.[abilityId]?.proficient),
       editable: Boolean(character.ui?.abilitiesEditable),
       characterId: character.profile?.id,
+      activeItemEffects: abilityId === "constitution"
+        ? (character.inventory?.items ?? []).filter((item) =>
+          item?.id === "amulet-of-health" && item.equipped === true &&
+          item.attuned === true).map((item) => item.id)
+        : [],
     };
   });
 }
@@ -159,13 +164,18 @@ function getAbilityCardsData(character, derived) {
 function renderAbilityCard(card) {
   const canEdit = card.editable &&
     (card.characterId !== "sara-velaris" || card.id === "constitution");
+  const origin = card.effectiveScore !== card.score
+    ? card.characterId === "sara-velaris" && card.id === "constitution" &&
+      (card.activeItemEffects ?? []).includes("amulet-of-health")
+      ? "Амулет здоровья"
+      : "Действующий эффект"
+    : "";
   return `
     <article class="ability-card profile-ability-card">
       <div class="ability-card-top">
         <div class="ability-card-head">
           <div class="ability-card-title-block">
             <span class="ability-card-label">${escapeHtml(card.label)}</span>
-            <span class="ability-card-abbr">${escapeHtml(card.short)}</span>
           </div>
 
           <div class="ability-card-mod-block">
@@ -178,18 +188,21 @@ function renderAbilityCard(card) {
 
         <div class="ability-card-summary-row">
           <div class="ability-card-score-inline">
-            ${canEdit ? `<button type="button" class="ability-adjust-btn" data-action="ability-adjust" data-ability-id="${escapeHtml(card.id)}" data-delta="-1" aria-label="Уменьшить ${escapeHtml(card.label)}">−</button>` : ""}
-
             <div class="ability-card-score" aria-label="Значение ${escapeHtml(card.label)}">
-              ${escapeHtml(card.score)}
+              ${escapeHtml(card.effectiveScore)}
             </div>
+            ${origin ? `<span class="ability-card-stat-label">${escapeHtml(origin)}</span>` : ""}
             ${card.effectiveScore !== card.score
-              ? `<span class="ability-card-stat-label">С учётом предмета: ${escapeHtml(card.effectiveScore)}</span>`
-              : ""}
-
-            ${canEdit ? `<button type="button" class="ability-adjust-btn" data-action="ability-adjust" data-ability-id="${escapeHtml(card.id)}" data-delta="1" aria-label="Увеличить ${escapeHtml(card.label)}">+</button>` : ""}
+              ? `<span class="ability-card-stat-label">Исходное значение: ${escapeHtml(card.score)}</span>` : ""}
           </div>
         </div>
+        ${canEdit ? `<details class="ability-card-base-editor">
+          <summary>Изменить исходное значение · ${escapeHtml(card.score)}</summary>
+          <div class="ability-card-base-editor__actions">
+            <button type="button" class="ability-adjust-btn" data-action="ability-adjust" data-ability-id="${escapeHtml(card.id)}" data-delta="-1" aria-label="Уменьшить исходное значение: ${escapeHtml(card.label)}">−</button>
+            <button type="button" class="ability-adjust-btn" data-action="ability-adjust" data-ability-id="${escapeHtml(card.id)}" data-delta="1" aria-label="Увеличить исходное значение: ${escapeHtml(card.label)}">+</button>
+          </div>
+        </details>` : ""}
 
         <div class="ability-card-stat-inline">
           <span class="ability-card-stat-label">Проверка</span>
@@ -330,6 +343,45 @@ function renderRaceDetails(raceDetails) {
   if (!raceDetails) return "";
 
   const traits = Array.isArray(raceDetails.traits) ? raceDetails.traits : [];
+  const displayValue = (value) => {
+    if (typeof value === "string") return value.trim();
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    if (Array.isArray(value)) return value.map(displayValue).filter(Boolean).join(", ");
+    if (value && typeof value === "object") {
+      if (typeof value.name === "string") {
+        const status = ({
+          confirmed: "подтверждено",
+          "to-review": "согласовать",
+          pending: "не заполнено",
+        })[value.status] ?? value.status;
+        return [value.name, typeof status === "string" ? status : ""]
+          .filter(Boolean).join(" · ");
+      }
+      return Object.values(value).map(displayValue).filter(Boolean).join(" · ");
+    }
+    return "";
+  };
+  const darkvision = raceDetails.darkvision;
+  const darkvisionValue = typeof darkvision === "string"
+    ? darkvision.trim()
+    : darkvision && typeof darkvision === "object"
+      ? [
+        Number.isFinite(darkvision.rangeFeet) ? `${darkvision.rangeFeet} футов` : "",
+        Number.isFinite(darkvision.rangeMeters) ? `${darkvision.rangeMeters} м` : "",
+        displayValue(darkvision.description ?? darkvision.notes),
+      ].filter(Boolean).join(" · ")
+      : "";
+  const fields = [
+    ["Раса", raceDetails.name],
+    ["Подраса", raceDetails.subrace],
+    ["Наследие", raceDetails.lineage],
+    ["Размер", raceDetails.size],
+    ["Языки", raceDetails.languages],
+    ["Тёмное зрение", darkvisionValue],
+    ["Сопротивления", raceDetails.resistances],
+  ].map(([label, value]) => [label, displayValue(value)])
+    .filter(([, value]) => value && value !== "—");
+  if (!fields.length && !traits.length) return "";
 
   return `
     <section class="panel-section" data-sara-key="profile-race">
@@ -337,38 +389,12 @@ function renderRaceDetails(raceDetails) {
         <h2 class="section-title">Наследие</h2>
       </div>
 
-      <div class="info-grid">
-        <div class="info-card">
-          <div class="info-label">Раса</div>
-          <div class="info-value">${escapeHtml(raceDetails.name)}</div>
-        </div>
-        <div class="info-card">
-          <div class="info-label">Подраса</div>
-          <div class="info-value">${escapeHtml(raceDetails.subrace ?? "—")}</div>
-        </div>
-        <div class="info-card">
-          <div class="info-label">Наследие</div>
-          <div class="info-value">${escapeHtml(raceDetails.lineage ?? "—")}</div>
-        </div>
-        <div class="info-card">
-          <div class="info-label">Языки</div>
-          <div class="info-value">${escapeHtml((raceDetails.languages ?? []).join(", ") || "—")}</div>
-        </div>
-        <div class="info-card">
-          <div class="info-label">Тёмное зрение</div>
-          <div class="info-value">${
-            escapeHtml(
-              raceDetails.darkvision?.rangeMeters
-                ? `${raceDetails.darkvision.rangeFeet ?? 60} футов / ${raceDetails.darkvision.rangeMeters} м. ${raceDetails.darkvision.notes ?? ""}`
-                : "—",
-            )
-          }</div>
-        </div>
-        <div class="info-card">
-          <div class="info-label">Сопротивления</div>
-          <div class="info-value">${escapeHtml((raceDetails.resistances ?? []).join(", ") || "—")}</div>
-        </div>
-      </div>
+      ${fields.length ? `<div class="info-grid">
+        ${fields.map(([label, value]) => `<div class="info-card">
+          <div class="info-label">${escapeHtml(label)}</div>
+          <div class="info-value">${escapeHtml(value)}</div>
+        </div>`).join("")}
+      </div>` : ""}
 
       ${
         traits.length
@@ -404,6 +430,27 @@ function renderRaceDetails(raceDetails) {
 
 function renderBackgroundDetails(backgroundDetails) {
   if (!backgroundDetails) return "";
+  const toolLabels = {
+    "thieves-tools": "Воровские инструменты",
+    "playing-cards": "Игральные карты",
+    "calligraphers-supplies": "Принадлежности каллиграфа",
+  };
+  const formatIds = (values, labels) => (Array.isArray(values) ? values : [])
+    .map((value) => typeof value === "string" ? labels[value] : value?.name)
+    .filter((value) => typeof value === "string" && value.trim())
+    .join(", ");
+  const skills = formatIds(backgroundDetails.proficiencies?.skills, SKILL_LABELS);
+  const tools = formatIds(backgroundDetails.proficiencies?.tools, toolLabels);
+  const persona = backgroundDetails.persona ?? {};
+  const personaFields = [
+    ["Амплуа", Array.isArray(persona.routine) ? persona.routine.join(", ") : persona.routine],
+    ["Черта", persona.trait],
+    ["Идеал", persona.ideal],
+    ["Привязанность", persona.bond],
+    ["Слабость", persona.flaw],
+  ].filter(([, value]) => typeof value === "string" && value.trim());
+  if (!backgroundDetails.name && !backgroundDetails.feature && !skills && !tools &&
+    !personaFields.length) return "";
 
   return `
     <section class="panel-section" data-sara-key="profile-background">
@@ -412,17 +459,9 @@ function renderBackgroundDetails(backgroundDetails) {
       </div>
 
       <div class="feature-card">
-        <h3 class="feature-title">${escapeHtml(backgroundDetails.name)}</h3>
-        <p class="feature-text">
-          Владение навыками: ${escapeHtml(
-            (backgroundDetails.proficiencies?.skills ?? []).join(", ") || "—",
-          )}.
-        </p>
-        <p class="feature-text">
-          Владение инструментами: ${escapeHtml(
-            (backgroundDetails.proficiencies?.tools ?? []).join(", ") || "—",
-          )}.
-        </p>
+        ${backgroundDetails.name ? `<h3 class="feature-title">${escapeHtml(backgroundDetails.name)}</h3>` : ""}
+        ${skills ? `<p class="feature-text">Владение навыками: ${escapeHtml(skills)}.</p>` : ""}
+        ${tools ? `<p class="feature-text">Владение инструментами: ${escapeHtml(tools)}.</p>` : ""}
         ${
           backgroundDetails.feature
             ? `
@@ -445,66 +484,15 @@ function renderBackgroundDetails(backgroundDetails) {
         }
       </div>
 
-      ${
-        backgroundDetails.persona
-          ? `
-            <div class="feature-list">
-              <details
-                class="feature-card profile-responsive-disclosure"
-                data-profile-disclosure="background-persona-routine"
-                open
-              >
-                <summary class="profile-disclosure-summary profile-feature-summary">
-                  <span class="feature-title" role="heading" aria-level="3">Амплуа</span>
-                </summary>
-                <p class="feature-text">${escapeHtml(
-                  (backgroundDetails.persona.routine ?? []).join(", ") || "—",
-                )}</p>
-              </details>
-              <details
-                class="feature-card profile-responsive-disclosure"
-                data-profile-disclosure="background-persona-trait"
-                open
-              >
-                <summary class="profile-disclosure-summary profile-feature-summary">
-                  <span class="feature-title" role="heading" aria-level="3">Черта</span>
-                </summary>
-                <p class="feature-text">${escapeHtml(backgroundDetails.persona.trait ?? "—")}</p>
-              </details>
-              <details
-                class="feature-card profile-responsive-disclosure"
-                data-profile-disclosure="background-persona-ideal"
-                open
-              >
-                <summary class="profile-disclosure-summary profile-feature-summary">
-                  <span class="feature-title" role="heading" aria-level="3">Идеал</span>
-                </summary>
-                <p class="feature-text">${escapeHtml(backgroundDetails.persona.ideal ?? "—")}</p>
-              </details>
-              <details
-                class="feature-card profile-responsive-disclosure"
-                data-profile-disclosure="background-persona-bond"
-                open
-              >
-                <summary class="profile-disclosure-summary profile-feature-summary">
-                  <span class="feature-title" role="heading" aria-level="3">Привязанность</span>
-                </summary>
-                <p class="feature-text">${escapeHtml(backgroundDetails.persona.bond ?? "—")}</p>
-              </details>
-              <details
-                class="feature-card profile-responsive-disclosure"
-                data-profile-disclosure="background-persona-flaw"
-                open
-              >
-                <summary class="profile-disclosure-summary profile-feature-summary">
-                  <span class="feature-title" role="heading" aria-level="3">Слабость</span>
-                </summary>
-                <p class="feature-text">${escapeHtml(backgroundDetails.persona.flaw ?? "—")}</p>
-              </details>
-            </div>
-          `
-          : ""
-      }
+      ${personaFields.length ? `<div class="feature-list">
+        ${personaFields.map(([label, value]) => `<details class="feature-card profile-responsive-disclosure"
+          data-profile-disclosure="background-persona-${label}" open>
+          <summary class="profile-disclosure-summary profile-feature-summary">
+            <span class="feature-title" role="heading" aria-level="3">${escapeHtml(label)}</span>
+          </summary>
+          <p class="feature-text">${escapeHtml(value)}</p>
+        </details>`).join("")}
+      </div>` : ""}
     </section>
   `;
 }
@@ -631,10 +619,11 @@ function renderLevelControl(level, editable = true) {
 }
 
 function renderHeroStat(label, value) {
+  if (value == null || value === "" || value === "—") return "";
   return `
     <div class="hero-stat-card">
       <div class="hero-stat-label">${escapeHtml(label)}</div>
-      <div class="hero-stat-value">${escapeHtml(value ?? "—")}</div>
+      <div class="hero-stat-value">${escapeHtml(value)}</div>
     </div>
   `;
 }
@@ -651,17 +640,19 @@ export function renderProfile(root, character, derived) {
 
   const isSara = characterId === "sara-velaris";
   const editable = Boolean(character.ui?.abilitiesEditable);
-  const heroStats = isSara ? [
+  const speedFeet = derived?.monk?.speedFeet ?? character.combat?.speedFeet ??
+    character.raceDetails?.speedFeet;
+  const heroStats = (isSara ? [
     renderLevelControl(profile.level, editable),
     renderHeroStat("Класс брони", derived?.armorClass ?? "—"),
-    renderHeroStat("Скорость", `${character.combat?.speedFeet ?? character.raceDetails?.speedFeet ?? "—"} фт`),
+    renderHeroStat("Скорость", Number.isFinite(speedFeet) ? `${speedFeet} фт` : null),
     renderHeroStat("Бонус мастерства", formatSigned(derived?.proficiencyBonus)),
     renderHeroStat("Инициатива", derived?.formattedInitiative ?? "—"),
     renderHeroStat("Пассивное восприятие", derived?.passivePerception ?? "—"),
   ] : [
     renderLevelControl(profile.level),
     renderHeroStat("КД", derived?.armorClass ?? "—"),
-    renderHeroStat("Хиты", derived?.maxHitPoints ?? "—"),
+    renderHeroStat("Скорость", Number.isFinite(speedFeet) ? `${speedFeet} фт` : null),
     renderHeroStat("Бонус мастерства", formatSigned(derived?.proficiencyBonus)),
     renderHeroStat("Инициатива", derived?.formattedInitiative ?? "—"),
     renderHeroStat("Пассивная внимательность", derived?.passivePerception ?? "—"),
@@ -670,7 +661,7 @@ export function renderProfile(root, character, derived) {
       "Атака заклинанием",
       derived?.formattedSpellAttackBonus ?? derived?.spellStats?.spellAttackBonus ?? "—",
     ),
-  ];
+  ]).filter(Boolean);
 
   const markup = `
     ${isSara ? `<header class="sara-tab-heading" data-sara-key="profile-heading">

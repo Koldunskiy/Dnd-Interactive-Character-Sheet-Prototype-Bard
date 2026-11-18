@@ -29,7 +29,9 @@ export const RU_LABELS = Object.freeze({
   prone: "Ничком",
   frightened: "Испуг",
   charmed: "Очарование",
-  poisoned: "Отравлен"
+  poisoned: "Отравлен",
+  afterRoll: "После броска",
+  onMiss: "При промахе"
 });
 
 export const RU_FEATURE_TITLES = Object.freeze({
@@ -52,6 +54,7 @@ export const RU_FEATURE_TITLES = Object.freeze({
 });
 
 export const RU_SPELL_TITLES = Object.freeze({
+  "Hypnotic Pattern": "Гипнотический узор",
   "Poison Spray": "Ядовитые брызги",
   "Animal Friendship": "Дружба с животными",
   Suggestion: "Внушение",
@@ -66,7 +69,9 @@ const ACTIVATIONS = Object.freeze({
   reaction: RU_LABELS.reaction,
   hit: RU_LABELS.hit,
   "replace-attack": RU_LABELS.replaceAttack,
-  passive: RU_LABELS.passive
+  passive: RU_LABELS.passive,
+  "after-roll": RU_LABELS.afterRoll,
+  "on-miss": RU_LABELS.onMiss
 });
 
 const PAYMENTS = Object.freeze({
@@ -79,10 +84,43 @@ const PAYMENTS = Object.freeze({
 
 const SUBCHOICE_LABELS = Object.freeze({
   "ll-style:archery": "Стрельба",
+  "ll-style:blind-warrior": "Слепой воин",
   "ll-style:balanced-fighting": "Сбалансированный бой",
   "ll-style:featherweight-fighting": "Лёгкий бой",
+  "ll-style:hurler": "Метатель",
   "ll-style:versatile-fighting": "Универсальный бой",
   "ll-style:polearm-fighting": "Бой древковым оружием"
+});
+
+const FIGHTING_STYLE_PRESENTATION = Object.freeze({
+  "ll-style:archery": {
+    prerequisites: ["Ловкость 13"],
+    text: "+1 к дальнобойным атакам оружием; игнорируйте укрытие наполовину, а укрытие на три четверти считайте укрытием наполовину."
+  },
+  "ll-style:blind-warrior": {
+    prerequisites: ["Владение Восприятием"],
+    text: "Владение Восприятием; слепое зрение на расстоянии 5 × бонус мастерства футов с учётом полного укрытия и скрытности."
+  },
+  "ll-style:balanced-fighting": {
+    prerequisites: [],
+    text: "+2 к урону оружием ближнего боя в одной руке и без другого оружия; щит разрешён, безоружные удары бонуса не получают."
+  },
+  "ll-style:featherweight-fighting": {
+    prerequisites: ["Ловкость 13", "Акробатика"],
+    text: "Без доспехов или в лёгком доспехе: при безоружных атаках или с одним лёгким оружием скорость увеличивается на 10 футов; лёгкое оружие ближнего боя и безоружные атаки наносят на 1 урон больше."
+  },
+  "ll-style:hurler": {
+    prerequisites: ["Сила 11 или Ловкость 11"],
+    text: "Извлекайте метательное оружие как часть атаки и удваивайте дальность его броска. Если вы держите только метательное оружие, можете совершить бонусную дальнобойную атаку метательным оружием."
+  },
+  "ll-style:polearm-fighting": {
+    prerequisites: ["Сила 11", "Ловкость 11"],
+    text: "Только с глефой, алебардой, пикой, боевым посохом или копьём и без щита: +1 к урону; провоцируйте атаку, когда существо входит в вашу досягаемость или перемещается внутри неё."
+  },
+  "ll-style:versatile-fighting": {
+    prerequisites: ["Сила 11 или Ловкость 11"],
+    text: "С одним универсальным оружием и без щита получайте +1 к атаке; бонусным действием можете схватить, толкнуть или взаимодействовать с предметом."
+  }
 });
 
 export function techniqueTitle(entry) {
@@ -107,4 +145,13 @@ export function sourceLabel(sourceId) {
 
 export function subchoiceLabel(id) {
   return SUBCHOICE_LABELS[id] ?? id;
+}
+
+export function fightingStylePresentation(style) {
+  const presentation = FIGHTING_STYLE_PRESENTATION[style.id];
+  return {
+    title: subchoiceLabel(style.id),
+    prerequisites: presentation?.prerequisites ?? style.prerequisites,
+    text: presentation?.text ?? style.text
+  };
 }

@@ -274,8 +274,10 @@ test("the phase hub keeps turn actions hidden while waiting and exposes turn res
 
 test("home action cards keep distinct phase routes and valid button-only interaction", () => {
   const outsideMarkup = renderBattleConsole(cloneSara());
-  assert.match(outsideMarkup, /data-roll-preset="ability-check"/);
-  assert.match(outsideMarkup, /data-roll-preset="saving-throw"/);
+  assert.equal((outsideMarkup.match(/data-battle-roll-shortcut="all"/g) ?? []).length, 1);
+  assert.match(outsideMarkup, /<strong>Бросок<\/strong>[\s\S]*?Проверка характеристики или навыка либо спасбросок/);
+  assert.doesNotMatch(outsideMarkup, /data-roll-preset=/);
+  assert.doesNotMatch(outsideMarkup, /<strong>Спасбросок<\/strong>|<strong>Проверка<\/strong>/);
   assert.match(outsideMarkup, /data-battle-navigate="inventory"/);
   assert.match(outsideMarkup, /data-battle-command-open="completed-rest"/);
 
@@ -283,6 +285,7 @@ test("home action cards keep distinct phase routes and valid button-only interac
   assert.equal(startBattle(waiting, { rawD20: "12" }).ok, true);
   const waitingMarkup = renderBattleConsole(waiting);
   assert.match(waitingMarkup, /data-battle-menu="incoming"/);
+  assert.equal((waitingMarkup.match(/data-battle-roll-shortcut="all"/g) ?? []).length, 1);
   assert.doesNotMatch(waitingMarkup, /data-battle-menu="(?:action|bonus)"/);
   assert.doesNotMatch(waitingMarkup, /data-battle-command-open="normal-attack"/);
 

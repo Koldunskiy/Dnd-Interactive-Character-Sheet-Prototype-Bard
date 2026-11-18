@@ -47,6 +47,18 @@ test("Sara primary quick-roll keeps its selected style without overriding disabl
   assert.match(css, /\.battle-home-action\.battle-home-action--primary:hover:not\(:disabled\)\s*\{[^}]*background:\s*linear-gradient\(110deg,\s*var\(--sara-selected\),\s*var\(--sara-card\)\);/);
   assert.match(css, /\.battle-home-action\.battle-home-action--primary:disabled,\s*\.page\[data-character-id="sara-velaris"\] \.battle-quick-rolls > \.battle-home-action\.battle-home-action--primary:disabled:hover\s*\{[^}]*border-style:\s*dashed;[^}]*color:\s*var\(--sara-muted\);[^}]*background:\s*var\(--sara-background\);[^}]*cursor:\s*not-allowed;/);
 });
+
+test("preview 03 presentation styles retain a wide shell and full-width phone action cards", async () => {
+  const css = await readFile(
+    new URL("../../styles/preview-03.css", import.meta.url), "utf8",
+  );
+  assert.match(css, /\.page\[data-character-id\]\s*\{[^}]*max-width:\s*1280px;[^}]*safe-area-inset/);
+  assert.match(css, /\.page\[data-character-id\] \.app-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+  assert.match(css, /\.page\[data-character-id\] \.battle-home-action__meta\s*\{[^}]*grid-area:\s*meta;[^}]*border-top:/);
+  assert.match(css, /@media \(max-width: 699px\)\s*\{[\s\S]*?\.page\[data-character-id\] \.battle-quick-rolls\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+  assert.match(css, /--preview-hp:\s*#d77989;[\s\S]*?--preview-energy:\s*#73c9cb;/);
+  assert.doesNotMatch(css, /html\s*,\s*body\s*\{[^}]*overflow-x:\s*hidden/);
+});
 import { dispatchSceneUi } from "../../scripts/battle/scene-ui-state.js";
 import { startBattle } from "../../scripts/battle/transitions.js";
 

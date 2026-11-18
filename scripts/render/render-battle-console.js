@@ -116,8 +116,8 @@ function renderHomeActionCard({
       <strong>${escapeHtml(title)}</strong>
       <span>${escapeHtml(description)}</span>
       ${reason ? `<small class="battle-home-action__reason">${escapeHtml(reason)}</small>` : ""}
+      <span class="battle-home-action__meta">${escapeHtml(actionType)}${cost ? `<small>${escapeHtml(cost)}</small>` : ""}</span>
     </span>
-    <span class="battle-home-action__meta">${escapeHtml(actionType)}${cost ? `<small>${escapeHtml(cost)}</small>` : ""}</span>
   </button>`;
 }
 
@@ -307,8 +307,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     const outsideAbilities = commands.filter((entry) =>
       entry.id.startsWith("racial-spell:") || entry.id === "mystic-regeneration");
     const home = `<div class="battle-quick-rolls">
-      ${renderHomeActionCard({ icon: "roll", title: "Проверка", description: "Открыть ввод физического броска характеристики.", actionType: "Бросок", hook: 'data-roll-preset="ability-check"' })}
-      ${renderHomeActionCard({ icon: "roll", title: "Спасбросок", description: "Открыть ввод физического спасброска.", actionType: "Бросок", hook: 'data-roll-preset="saving-throw"' })}
+      ${renderHomeActionCard({ icon: "roll", title: "Бросок", description: "Проверка характеристики или навыка либо спасбросок.", actionType: "Открыть форму", hook: 'data-battle-roll-shortcut="all"' })}
       ${renderHomeActionCard({ icon: "ability", title: "Способности", description: "Перейти к доступным способностям.", actionType: "Открыть меню", hook: 'data-battle-menu="abilities"' })}
       ${renderHomeActionCard({ icon: "inventory", title: "Инвентарь", description: "Просмотр и использование предметов.", actionType: "Перейти", hook: 'data-battle-navigate="inventory"' })}
       ${renderHomeActionCard({ icon: "rest", title: "Отдых", description: "Записать завершённый отдых.", actionType: "Открыть форму", hook: 'data-battle-command-open="completed-rest"' })}
@@ -325,8 +324,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
     const opportunityAttack = commands.find((entry) => entry.id === "opportunity-unarmed");
     phaseBody = `${uiState.panel === "initiative-correct" ? initiativeForm("correct") : `<div class="battle-quick-rolls">
       ${renderHomeActionCard({ icon: "incoming", title: "По мне атакуют", description: "Открыть входящее воздействие и ответ.", actionType: "Открыть меню", hook: 'data-battle-menu="incoming"' })}
-      ${renderHomeActionCard({ icon: "roll", title: "Спасбросок", description: "Открыть ввод физического спасброска.", actionType: "Бросок", hook: 'data-roll-preset="saving-throw"' })}
-      ${renderHomeActionCard({ icon: "roll", title: "Проверка", description: "Открыть ввод физического броска характеристики.", actionType: "Бросок", hook: 'data-roll-preset="ability-check"' })}
+      ${renderHomeActionCard({ icon: "roll", title: "Бросок", description: "Проверка характеристики или навыка либо спасбросок.", actionType: "Открыть форму", hook: 'data-battle-roll-shortcut="all"' })}
       ${renderHomeActionCard({
         icon: "opportunity",
         title: "Провоцированная атака",

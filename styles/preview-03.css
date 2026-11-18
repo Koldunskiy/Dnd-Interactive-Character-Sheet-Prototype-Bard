@@ -1,0 +1,361 @@
+.page[data-character-id] {
+  --preview-hp: #d77989;
+  --preview-energy: #73c9cb;
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 16px max(16px, env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  color: var(--text);
+  font: 15px/1.5 system-ui, sans-serif;
+}
+
+.page[data-character-id] :is(button, input, textarea, select) {
+  font: inherit;
+}
+
+.page[data-character-id] :is(h1, h2, h3) {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+
+.page[data-character-id] :is(.hero-stat-value, .ability-card-score, .ability-card-mod,
+  .profile-skill-value, .sara-hud__resource-heading strong, .sara-hud__secondary strong,
+  .combat-budget b, .action-workspace__result, output, .spell-slot-value) {
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id] .topbar {
+  max-width: 1220px;
+  margin: 0 auto 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.page[data-character-id] .app-layout {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.page[data-character-id] .content,
+.page[data-character-id] .sidebar {
+  min-width: 0;
+  width: 100%;
+}
+
+.page[data-character-id] .quick-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 8px;
+}
+
+.page[data-character-id] .quick-stat {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+}
+
+.page[data-character-id] .quick-stat strong {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id] .content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.page[data-character-id="sara-velaris"] .content > .sidebar-section--quick-stats {
+  display: none;
+}
+
+.page[data-character-id] .content > .sidebar-section--quick-stats {
+  order: -1;
+}
+
+.page[data-character-id] .content > .tabs {
+  order: 0;
+  grid-column: auto;
+  grid-row: auto;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.page[data-character-id] .content > .tab-panels {
+  order: 1;
+  grid-column: auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.page[data-character-id] .sidebar {
+  position: static;
+  order: 2;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 12px;
+}
+
+.page[data-character-id] .profile-name,
+.page[data-character-id] #heroName,
+.page[data-character-id] .section-title,
+.page[data-character-id] .sara-tab-heading h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.page[data-character-id] :is(.panel-section, .card, .section, .info-card, .feature-card,
+  .spell-card, .spell-card--library, .technique-card, .inventory-item-card,
+  .battle-command-card, .saved-record, .lore-note-card) {
+  min-width: 0;
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.page[data-character-id] :is(.panel-section, .section) {
+  padding: 16px;
+  border-radius: 14px;
+}
+
+.page[data-character-id] :is(.profile-hero-stats, .profile-ability-grid,
+  .profile-skill-grid, .profile-passive-grid, .info-grid, .feature-list,
+  .spell-grid, .spell-grid--library, .technique-list, .inventory-item-group,
+  .battle-command-grid) {
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 10px;
+}
+
+.page[data-character-id] .profile-ability-card {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+}
+
+.page[data-character-id] .ability-card-score {
+  font-size: 34px;
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id] .ability-card-stat-label {
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id] .ability-card-base-editor {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.page[data-character-id] .ability-card-base-editor summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.page[data-character-id] .ability-card-base-editor__actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.page[data-character-id] .spell-card-original {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.page[data-character-id] .spell-card-original summary {
+  cursor: pointer;
+}
+
+.page[data-character-id] .spell-card-original span {
+  display: block;
+  padding-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id] .info-card,
+.page[data-character-id] .feature-card,
+.page[data-character-id] .technique-card,
+.page[data-character-id] .spell-card,
+.page[data-character-id] .spell-card--library {
+  border-radius: 12px;
+}
+
+.page[data-character-id] :is(.info-value, .feature-text, .spell-description,
+  .spell-notes, .spell-vibe, .technique-card__description, .inventory-item-summary,
+  .battle-command-card p, .action-workspace__body) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: none;
+}
+
+.page[data-character-id] .battle-quick-rolls {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 11px;
+}
+
+.page[data-character-id] .battle-quick-rolls > .battle-home-action {
+  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-areas: "icon content" "meta meta";
+  align-items: start;
+  gap: 10px 12px;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: normal;
+}
+
+.page[data-character-id] .battle-home-action__icon {
+  grid-area: icon;
+}
+
+.page[data-character-id] .battle-home-action__content {
+  grid-area: content;
+  min-width: 0;
+}
+
+.page[data-character-id] .battle-home-action__content strong {
+  font-size: 16px;
+  line-height: 1.35;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+
+.page[data-character-id] .battle-home-action__meta {
+  grid-area: meta;
+  display: flex;
+  flex-wrap: wrap;
+  justify-items: start;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  text-align: left;
+  white-space: normal;
+}
+
+.page[data-character-id] .battle-quick-rolls > .battle-home-action--primary {
+  grid-column: 1 / -1;
+  border-color: var(--accent);
+  background: linear-gradient(110deg, var(--selected-surface), var(--surface));
+}
+
+.page[data-character-id] .battle-quick-rolls > .battle-home-action--primary:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: linear-gradient(110deg, var(--selected-surface), var(--surface));
+}
+
+.page[data-character-id] .battle-quick-rolls > .battle-home-action:disabled,
+.page[data-character-id] .battle-quick-rolls > .battle-home-action:disabled:hover {
+  border-style: dashed;
+  color: var(--muted);
+  background: var(--bg-elevated);
+  cursor: not-allowed;
+}
+
+.page[data-character-id] :is(.inventory-item-main, .inventory-item-main__controls) {
+  min-width: 0;
+}
+
+.page[data-character-id] .inventory-item-main__title-wrap {
+  min-width: 0;
+}
+
+.page[data-character-id] .inventory-item-title,
+.page[data-character-id] .inventory-item-heading {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id] .inventory-item-group {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 275px), 1fr));
+}
+
+.page[data-character-id] .inventory-item-group > h3 {
+  grid-column: 1 / -1;
+}
+
+.page[data-character-id] :is(.sara-hud__resource--hp .sara-hud__fill) {
+  background: var(--preview-hp);
+}
+
+.page[data-character-id] :is(.sara-hud__resource--ki .sara-hud__fill) {
+  background: var(--preview-energy);
+}
+
+.page[data-character-id] :is(.workspace-live-error:not([hidden]), .workspace-error,
+  .combat-save-recovery__item[role="alert"], [role="alert"]) {
+  border-color: var(--status-error-border);
+}
+
+.page[data-character-id] [hidden] {
+  display: none !important;
+}
+
+@media (max-width: 699px) {
+  .page[data-character-id] {
+    padding: 12px max(12px, env(safe-area-inset-right))
+      calc(92px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+
+  .page[data-character-id] .topbar {
+    padding: 12px;
+  }
+
+  .page[data-character-id] .battle-quick-rolls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page[data-character-id] .profile-ability-grid,
+  .page[data-character-id] .profile-skill-grid,
+  .page[data-character-id] .profile-passive-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .page[data-character-id] .profile-hero-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .page[data-character-id] .ability-card-score {
+    font-size: 30px;
+  }
+
+  .page[data-character-id] :is(.inventory-item-group, .spell-grid,
+    .spell-grid--library, .technique-list, .battle-command-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 700px) {
+  .page[data-character-id] .profile-ability-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page[data-character-id] *,
+  .page[data-character-id] *::before,
+  .page[data-character-id] *::after {
+    scroll-behavior: auto;
+    animation-duration: 0.01ms;
+    transition-duration: 0.01ms;
+  }
+}

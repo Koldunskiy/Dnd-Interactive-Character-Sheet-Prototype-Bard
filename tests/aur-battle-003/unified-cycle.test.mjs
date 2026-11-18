@@ -29,8 +29,9 @@ test("exploration home presents the agreed entry actions and closed initiative",
   const markup = renderBattleConsole(structuredClone(sara));
   assert.match(markup, /data-player-scene-phase="outside"/);
   assert.match(markup, /Исследование/);
-  assert.match(markup, /Проверка/);
-  assert.match(markup, /Спасбросок/);
+  assert.equal((markup.match(/data-battle-roll-shortcut="all"/g) ?? []).length, 1);
+  assert.match(markup, /<strong>Бросок<\/strong>/);
+  assert.match(markup, /проверка характеристики или навыка либо спасбросок/i);
   assert.match(markup, /Инвентарь/);
   assert.doesNotMatch(markup, /data-battle-form="start"/);
 });
