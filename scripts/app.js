@@ -740,20 +740,12 @@ function bindSaraFilters() {
     inventory.addEventListener("input", (event) => {
       const input = event.target.closest("[data-sara-inventory-search]");
       if (!input || input.closest("[hidden]")) return;
-      const query = input.value.trim().toLocaleLowerCase("ru");
-      inventory.querySelectorAll(".inventory-item-card").forEach((card) => {
-        card.hidden = query && !card.textContent.toLocaleLowerCase("ru").includes(query);
-      });
+      updateInventorySearchVisibility(inventory);
     });
     inventory.dataset.saraInventorySearchBound = "true";
   }
   if (inventory) {
-    const query = inventory.querySelector("[data-sara-inventory-search]")?.value
-      .trim().toLocaleLowerCase("ru") ?? "";
-    inventory.querySelectorAll(".inventory-item-card").forEach((card) => {
-      card.hidden = Boolean(query) &&
-        !card.textContent.toLocaleLowerCase("ru").includes(query);
-    });
+    updateInventorySearchVisibility(inventory);
   }
 }
 
@@ -855,6 +847,24 @@ function renderApp() {
   bindUi(document);
   bindBattleConsole(document.getElementById("meleePanel") ?? document);
   initPortraitControls();
+}
+
+function updateInventorySearchVisibility(panel) {
+  const query = panel.querySelector("[data-sara-inventory-search]")?.value
+    .trim().toLocaleLowerCase("ru") ?? "";
+  const cards = [...panel.querySelectorAll(".inventory-item-card")];
+  for (const card of cards) {
+    card.hidden = Boolean(query) &&
+      !card.textContent.toLocaleLowerCase("ru").includes(query);
+  }
+  const groups = [...panel.querySelectorAll(".inventory-item-group")];
+  for (const group of groups) {
+    const hasVisibleCard = [...group.querySelectorAll(".inventory-item-card")]
+      .some((card) => !card.hidden);
+    group.hidden = Boolean(query) && !hasVisibleCard;
+  }
+  const empty = panel.querySelector("[data-inventory-search-empty]");
+  if (empty) empty.hidden = !query || cards.some((card) => !card.hidden);
 }
 
 function syncThemePreferenceControl(characterId) {

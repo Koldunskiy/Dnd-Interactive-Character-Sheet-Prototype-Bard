@@ -151,6 +151,21 @@ function renderItemSummary(item) {
   return summaryParts.map(escapeHtml).join(" · ");
 }
 
+function renderItemIcon(item) {
+  const type = item?.type ?? (item?.weapon ? "weapon" : item?.armor ? "armor" :
+    item?.focus ? "focus" : item?.consumable ? "consumable" : "misc");
+  const paths = {
+    weapon: '<path d="m6 18 12-12M14 5l5 5M4 20l5-1-4-4-1 5Z"/>',
+    armor: '<path d="M12 3 19 6v5c0 5-3 8-7 10-4-2-7-5-7-10V6l7-3Z"/><path d="M9 10h6"/>',
+    focus: '<path d="M12 3v18M5 8h14M7 8l-3 6h6L7 8Zm10 0-3 6h6l-3-6Z"/>',
+    consumable: '<path d="M9 3h6M10 3v5l-4 5v6a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-6l-4-5V3M7 14h10"/>',
+    misc: '<path d="M5 5h14v14H5zM8 9h8M8 12h8M8 15h5"/>',
+  };
+  const icon = paths[type] ?? paths.misc;
+  return `<svg class="inventory-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>`;
+}
+
 function renderInventoryItemCard(item, expandedItemIds = [], isSara = false) {
   const itemId = String(item.id ?? "");
   const isExpanded = expandedItemIds.includes(itemId);
@@ -215,7 +230,13 @@ function renderInventoryItemCard(item, expandedItemIds = [], isSara = false) {
     <article class="inventory-item-card ${isExpanded ? "inventory-item-card--expanded" : "inventory-item-card--collapsed"}" data-item-id="${escapeHtml(itemId)}">
       <div class="inventory-item-main">
         <div class="inventory-item-main__title-wrap">
-          <div class="inventory-item-title">${escapeHtml(item.name)}</div>
+          <div class="inventory-item-heading">${renderItemIcon(item)}
+            <div class="inventory-item-title">${escapeHtml(item.name)}</div>
+          </div>
+          <div class="inventory-item-badges">
+            ${typeof item.type === "string" && item.type ? `<span>${escapeHtml(item.type)}</span>` : ""}
+            ${typeof item.rarity === "string" && item.rarity ? `<span>${escapeHtml(item.rarity)}</span>` : ""}
+          </div>
           <div class="inventory-item-summary">${renderItemSummary(item)}</div>
         </div>
 
@@ -229,6 +250,10 @@ function renderInventoryItemCard(item, expandedItemIds = [], isSara = false) {
             />
             <span>Надето / используется</span>
           </label>` : ""}
+          ${item.consumable?.kind === "healing-potion" && Number(item.quantity ?? 0) > 0
+              ? `<button type="button" class="btn btn--primary" data-action="open-potion-use"
+                  data-command-id="potion-use:${escapeHtml(item.consumable.potionId)}:${encodeURIComponent(itemId)}">
+                  Использовать · записать лечение</button>` : ""}
 
           <button
             type="button"
@@ -251,7 +276,8 @@ function renderInventoryItemCard(item, expandedItemIds = [], isSara = false) {
         <details class="sara-details inventory-item-details">
           <summary>Свойства и правила</summary>
           <section aria-label="Подробности предмета">
-            ${renderItemMetaRow("Тип", item.type ?? "misc")}
+            ${renderItemMetaRow("Тип", item.type)}
+            ${renderItemMetaRow("Редкость", item.rarity)}
             ${renderItemMetaRow("Стакуемый", item.stackable ? "Да" : "Нет")}
             ${renderItemMetaRow(
               "Теги",
@@ -320,10 +346,6 @@ function renderInventoryItemCard(item, expandedItemIds = [], isSara = false) {
             ${Number(item.quantity ?? 0) <= 0 ? "disabled" : ""}>−1</button>
           <button type="button" class="btn btn--utility" data-action="inventory-quantity-adjust"
             data-item-id="${escapeHtml(itemId)}" data-quantity-delta="1">+1</button>
-          ${item.consumable?.kind === "healing-potion" && Number(item.quantity ?? 0) > 0
-            ? `<button type="button" class="btn btn--primary" data-action="open-potion-use"
-                data-command-id="potion-use:${escapeHtml(item.consumable.potionId)}:${encodeURIComponent(itemId)}">
-                Использовать · записать лечение</button>` : ""}
           <button
             type="button"
             class="btn btn--utility"
@@ -339,12 +361,7 @@ function renderInventoryItemCard(item, expandedItemIds = [], isSara = false) {
   `;
 }
 
-export function renderInventoryPanel(state) {
-  const inventoryPanel = document.getElementById("inventoryPanel");
-  if (!inventoryPanel) {
-    return;
-  }
-
+export function renderInventoryMarkup(state) {
   const inventory = state.inventory ?? {};
   const itemsList = Array.isArray(inventory.items) ? inventory.items : [];
   const isSara = state.profile?.id === "sara-velaris";
@@ -364,20 +381,46 @@ export function renderInventoryPanel(state) {
     ? state.ui.inventory.expandedItemIds
     : [];
 
-  const items = itemsList
-    .map((item) => renderInventoryItemCard(item, expandedItemIds, isSara))
-    .join("");
+  const items = itemsList.map((item) =>
+    renderInventoryItemCard(item, expandedItemIds, isSara));
+  const equippedItems = itemsList
+    .map((item, index) => ({ item, markup: items[index] }))
+    .filter(({ item }) => item?.equipped === true);
+  const otherItems = itemsList
+    .map((item, index) => ({ item, markup: items[index] }))
+    .filter(({ item }) => item?.equipped !== true);
+  const itemGroups = isSara
+    ? `<section class="inventory-item-group" data-sara-key="inventory-equipped">
+        <h3>Используется</h3>${equippedItems.length
+          ? equippedItems.map(({ markup: card }) => card).join("")
+          : `<p class="sara-empty-state">Пока ничего не используется.</p>`}
+      </section>
+      <section class="inventory-item-group" data-sara-key="inventory-other">
+        <h3>Остальное</h3>${otherItems.length
+          ? otherItems.map(({ markup: card }) => card).join("")
+          : `<p class="sara-empty-state">Других предметов пока нет.</p>`}
+      </section>`
+    : items.join("");
+  const currencySummary = inventory.currencyStatus === "Не заполнено"
+    ? "Не заполнено"
+    : `${currency.gp ?? 0} зм · ${currency.sp ?? 0} см`;
+  const inventoryItemsMarkup = itemsList.length
+    ? itemGroups
+    : isSara
+      ? `<p class="sara-empty-state">Пока ничего не добавлено.</p>`
+      : `<div class="info-card"><div class="info-card-text">Пока ничего не добавлено.</div></div>`;
 
   const markup = `
     ${isSara ? `<header class="sara-tab-heading"><h2>Вещи</h2>
       <button type="button" class="btn" data-action="inventory-add-item">Добавить</button></header>` : "<h2>Инвентарь</h2>"}
-    ${isSara ? `<p class="panel-text sara-inventory-summary">Настроенные предметы: ${attunedCount}/3 ячеек · ${currency.gp ?? 0} зм · ${currency.sp ?? 0} см</p>` : `<p class="panel-text">`}
+    ${isSara ? `<p class="panel-text sara-inventory-summary">Настроено: ${attunedCount} · ${escapeHtml(currencySummary)}</p>` : `<p class="panel-text">`}
     ${isSara ? "" : `
       Инвентарь хранит снаряжение, валюту и служит источником правды для оружия, брони, фокусов и расходников.
     </p>`}
 
     ${isSara ? `<label class="sara-inventory-search">Поиск предмета<input type="search" data-sara-inventory-search placeholder="Название или свойство"></label>` : ""}
 
+    ${isSara ? `<div class="sara-inventory-layout">` : ""}
     ${isSara ? `<details class="sara-details sara-inventory-editors">
       <summary>Деньги и заметки о снаряжении</summary>
       <section class="info-card"><h3>Деньги</h3>${currencyMarkup}</section>
@@ -398,11 +441,17 @@ export function renderInventoryPanel(state) {
       <button type="button" class="btn" data-action="inventory-add-item">Добавить предмет</button></div>`}
 
     <div class="inventory-list">
-      ${
-        items ||
-        `<div class="info-card"><div class="info-card-text">Пока ничего не добавлено.</div></div>`
-      }
+      ${inventoryItemsMarkup}
     </div>
+    ${isSara ? `</div>` : ""}
+    ${isSara ? `<p class="sara-empty-state" data-inventory-search-empty hidden>По этому запросу предметы не найдены.</p>` : ""}
   `;
+  return markup;
+}
+
+export function renderInventoryPanel(state) {
+  const inventoryPanel = document.getElementById("inventoryPanel");
+  if (!inventoryPanel) return;
+  const markup = renderInventoryMarkup(state);
   setPanelMarkup(inventoryPanel, markup, state.profile?.id);
 }

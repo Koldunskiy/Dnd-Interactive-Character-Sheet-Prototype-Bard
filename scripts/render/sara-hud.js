@@ -36,7 +36,11 @@ export function renderSaraEndBattleButton(state, owner) {
     data-battle-owner="${escapeHtml(JSON.stringify([owner.characterId, owner.sessionGeneration]))}">Завершить бой</button>`;
 }
 
-export function renderSaraHud(model, { compact = false, presentation = "scene" } = {}) {
+export function renderSaraHud(model, {
+  compact = false,
+  presentation = "scene",
+  section = "all",
+} = {}) {
   const layout = ["scene", "header", "task"].includes(presentation) ? presentation : "scene";
   const format = (value) => escapeHtml(value ?? "—");
   const resource = (label, current, maximum, kind) => {
@@ -66,26 +70,39 @@ export function renderSaraHud(model, { compact = false, presentation = "scene" }
       `<span>${format(value)}</span>`).join("")}
   </li>`).join("");
   const isHeader = layout === "header";
+  const includeResources = section !== "status";
+  const includeStatus = section !== "resources";
+  const statusMarkup = !includeStatus
+    ? ""
+    : isHeader
+      ? `<div class="sara-hud__secondary">
+          <span>Отработано <strong>${format(model.practiced?.current)}/${format(model.practiced?.maximum)}</strong></span>
+        </div>`
+      : compact
+        ? ""
+        : `<div class="sara-hud__secondary">
+            <span>КД <strong>${format(model.armorClass)}</strong></span>
+            <span>Приёмы <strong>${format(model.practiced?.current)}/${format(model.practiced?.maximum)}</strong></span>
+            <span>Скорость <strong>${format(model.speed)} фт</strong></span>
+            <span>Реакция <strong>${model.reactionAvailable ? "готова" : "потрачена"}</strong></span>
+            ${model.concentration ? `<p>Концентрация: <strong>${format(model.concentration)}</strong></p>` : ""}
+          </div>
+          ${!isHeader && effects ? `<details class="sara-hud__effects"><summary>Эффекты · ${model.effects.length}</summary><ul>${effects}</ul></details>` : ""}`;
   return `<section class="sara-hud sara-hud--${layout}${compact ? " sara-hud--compact" : ""}" aria-label="Показатели Сары">
-    <div class="sara-hud__primary">${resource("ХП", model.hp, model.maxHp, "hp")}
+    ${includeResources ? `<div class="sara-hud__primary">${resource("ХП", model.hp, model.maxHp, "hp")}
       ${resource("Ци", model.ki?.current, model.ki?.maximum, "ki")}</div>
-    ${typeof model.tempHp === "number" && Number.isFinite(model.tempHp) && model.tempHp > 0 ? `<span class="sara-hud__temp">Временные ХП <strong>${format(model.tempHp)}</strong></span>` : ""}
-    ${isHeader ? `<div class="sara-hud__secondary">
-      <span>Отработано <strong>${format(model.practiced?.current)}/${format(model.practiced?.maximum)}</strong></span>
-    </div>` : compact ? "" : `<div class="sara-hud__secondary">
-      <span>КД <strong>${format(model.armorClass)}</strong></span>
-      <span>Приёмы <strong>${format(model.practiced?.current)}/${format(model.practiced?.maximum)}</strong></span>
-      <span>Скорость <strong>${format(model.speed)} фт</strong></span>
-      <span>Реакция <strong>${model.reactionAvailable ? "готова" : "потрачена"}</strong></span>
-      ${model.concentration ? `<p>Концентрация: <strong>${format(model.concentration)}</strong></p>` : ""}
-    </div>
-    ${!isHeader && !compact && effects ? `<details class="sara-hud__effects"><summary>Эффекты · ${model.effects.length}</summary><ul>${effects}</ul></details>` : ""}`}
+    ${typeof model.tempHp === "number" && Number.isFinite(model.tempHp) && model.tempHp > 0 ? `<span class="sara-hud__temp">Временные ХП <strong>${format(model.tempHp)}</strong></span>` : ""}` : ""}
+    ${statusMarkup}
   </section>`;
 }
 
-export function updateSaraHudRegion(region, model, { compact = false, presentation = "scene" } = {}) {
+export function updateSaraHudRegion(region, model, {
+  compact = false,
+  presentation = "scene",
+  section = "all",
+} = {}) {
   if (!region) return;
-  const markup = renderSaraHud(model, { compact, presentation });
+  const markup = renderSaraHud(model, { compact, presentation, section });
   if (region.innerHTML === markup) return;
   const openDetails = [...region.querySelectorAll("details")].map((details) => details.open);
   region.innerHTML = markup;

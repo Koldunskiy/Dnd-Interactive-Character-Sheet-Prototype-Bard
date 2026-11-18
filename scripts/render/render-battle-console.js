@@ -46,16 +46,29 @@ function renderInitiative(battle) {
 }
 
 function renderBattleCommandCard(entry) {
+  const iconPath = entry.navigationGroups.includes("reaction")
+    ? '<path d="M13 2 5 13h6l-1 9 9-12h-6l-1-8Z"/>'
+    : entry.navigationGroups.includes("bonus")
+      ? '<path d="M12 3 14.5 9.5 21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/>'
+      : '<path d="M4 20 17 7m-3-3 6 6M3 21l6-2-5-5-1 7Z"/>';
   if (entry.id === "movement-reference") {
     return `<article class="battle-command-card battle-command-card--reference">
-      <h3 class="battle-command-card__title">${escapeHtml(entry.titleRu)}</h3>
+      <header class="battle-command-card__heading">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPath}</svg>
+        <h3 class="battle-command-card__title">${escapeHtml(entry.titleRu)}</h3>
+      </header>
       <div class="battle-command-card__chips">${entry.displayCostTokens
         .map((token) => `<span class="battle-command-card__chip">${escapeHtml(token)}</span>`).join("")}</div>
       <p>${escapeHtml(entry.ruleReference)}</p>
     </article>`;
   }
   return `<article class="battle-command-card ${entry.availability.enabled ? "" : "is-unavailable"}">
-    <h3 class="battle-command-card__title">${escapeHtml(entry.titleRu)}</h3>
+    <header class="battle-command-card__heading">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPath}</svg>
+      <h3 class="battle-command-card__title">${escapeHtml(entry.titleRu)}</h3>
+    </header>
     <p>${escapeHtml(entry.displaySummaryRu ?? entry.trigger)}</p>
     <div class="battle-command-card__chips">${entry.displayCostTokens
       .map((token) => `<span class="battle-command-card__chip">${escapeHtml(token)}</span>`).join("")}</div>
@@ -70,7 +83,7 @@ function renderBattleCommandCard(entry) {
         .join(", "))}</small>` : ""}
     <button type="button" class="battle-command-card__open"
       data-battle-command-open="${escapeHtml(entry.id)}"
-      ${entry.availability.enabled ? "" : "disabled"}>Открыть</button>
+      ${entry.availability.enabled ? "" : "disabled"}>Открыть панель</button>
   </article>`;
 }
 
@@ -153,7 +166,9 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
   const derived = getDerivedStats(state);
   const commands = getSaraBattleCommandRegistry(state);
   const initiativeSnapshot = getSaraInitiativeSnapshot(state);
-  const saraHud = renderSaraHud(getSaraHudModel(state, derived));
+  const saraHudModel = getSaraHudModel(state, derived);
+  const saraHudResources = renderSaraHud(saraHudModel, { section: "resources" });
+  const saraHudStatus = renderSaraHud(saraHudModel, { section: "status" });
   const savedRecords = getSavedPlayerRecords(state);
   let savedRecordsOwner = null;
   try {
@@ -322,7 +337,8 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
       <div class="sara-app-head__title"><h2 id="battleConsoleTitle" tabindex="-1">
         ${escapeHtml(phaseLabels[view.phase])}</h2>${endBattleButton}</div>
     </header>${sceneMenu}`,
-    metrics: saraHud,
+    metrics: saraHudResources,
+    status: saraHudStatus,
     budget,
     navigation,
     phaseBody,
@@ -351,6 +367,7 @@ export function renderBattleConsole(state, uiState = {
     </div>
     <div data-sara-budget ${regions.activeWorkspace ? "hidden" : ""}>${regions.budget}</div>
     <div data-sara-navigation ${regions.activeWorkspace ? "hidden" : ""}>${regions.navigation}</div>
+    <aside data-sara-combat-status aria-label="Состояние персонажа">${regions.status}</aside>
     <div data-sara-task-region data-combat-task-region
       class="${regions.activeWorkspace ? "combat-active-task" : "combat-home-task"}">
       <div data-sara-idle-content ${regions.activeWorkspace ? "hidden" : ""}>
@@ -433,6 +450,12 @@ export function updateBattleConsole(root, state, { forceUi = false } = {}) {
   updateSaraHudRegion(
     shell.querySelector("[data-sara-home-hud]"),
     getSaraHudModel(state),
+    { section: "resources" },
+  );
+  updateSaraHudRegion(
+    shell.querySelector("[data-sara-combat-status]"),
+    getSaraHudModel(state),
+    { section: "status" },
   );
   updateRegion("[data-sara-budget]", regions.budget);
   const navigation = shell.querySelector("[data-sara-navigation]");

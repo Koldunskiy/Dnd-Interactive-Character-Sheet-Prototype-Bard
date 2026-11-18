@@ -100,6 +100,26 @@ test("HP and Ki meters independently render zero, partial, full, and over-maximu
   }
 });
 
+test("battle HUD resource and status fragments can update independently", () => {
+  const model = {
+    hp: 18, maxHp: 30, tempHp: 4, ki: { current: 2, maximum: 5 },
+    armorClass: 16, practiced: { current: 1, maximum: 3 }, speed: 35,
+    reactionAvailable: true, concentration: "Blur",
+    effects: [{ name: "Guarded", source: "stance" }],
+  };
+  const resources = renderSaraHud(model, { section: "resources" });
+  const status = renderSaraHud(model, { section: "status" });
+
+  assertValidResource(resources, "hp", 18, 30, 60);
+  assertValidResource(resources, "ki", 2, 5, 40);
+  assert.match(resources, /Временные ХП/);
+  assert.doesNotMatch(resources, /КД|Отработано|Guarded/);
+  assert.doesNotMatch(status, /sara-hud__resource|Временные ХП/);
+  assert.match(status, /КД <strong>16<\/strong>/);
+  assert.match(status, /Концентрация: <strong>Blur<\/strong>/);
+  assert.match(status, /Guarded/);
+});
+
 test("invalid HP and Ki pairs are independently neutral and exclude invalid meter attributes", () => {
   const model = {
     hp: 25, maxHp: 100, tempHp: 0, ki: { current: 75, maximum: 100 }, effects: [],

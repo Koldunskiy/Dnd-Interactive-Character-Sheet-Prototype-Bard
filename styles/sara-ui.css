@@ -36,6 +36,7 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   --sara-muted: var(--muted);
   --sara-accent: var(--accent);
   --sara-selected: var(--selected-surface);
+  --sara-warm: var(--accent-secondary);
   --sara-error: var(--error);
   --sara-error-surface: var(--error-surface);
 }
@@ -57,10 +58,11 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   --sara-error-surface: #382b30;
   box-sizing: border-box;
   width: 100%;
+  max-width: 1280px;
   min-height: 100dvh;
   margin: 0 auto;
-  padding: 10px max(12px, env(safe-area-inset-left)) calc(88px + env(safe-area-inset-bottom))
-    max(12px, env(safe-area-inset-right));
+  padding: 10px max(12px, env(safe-area-inset-right)) calc(88px + env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
   color: var(--sara-text);
   background: var(--sara-background);
   font: 16px/1.45 system-ui, sans-serif;
@@ -76,6 +78,7 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   --sara-muted: var(--muted);
   --sara-accent: var(--accent);
   --sara-selected: var(--selected-surface);
+  --sara-warm: var(--accent-secondary);
   --sara-error: var(--error);
   --sara-error-surface: var(--error-surface);
 }
@@ -90,6 +93,7 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   --sara-muted: var(--muted);
   --sara-accent: var(--accent);
   --sara-selected: var(--selected-surface);
+  --sara-warm: var(--accent-secondary);
   --sara-error: var(--error);
   --sara-error-surface: var(--error-surface);
 }
@@ -236,6 +240,7 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 .page[data-character-id="sara-velaris"] .content {
   display: block;
   width: 100%;
+  max-width: none;
   margin: 0 auto;
 }
 
@@ -1016,5 +1021,779 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 @media (prefers-reduced-motion: reduce) {
   .page[data-character-id="sara-velaris"] .sara-hud__fill {
     transition: none;
+  }
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "heading"
+    "resources"
+    "budget"
+    "navigation"
+    "turn"
+    "phase"
+    "status"
+    "pending";
+  gap: 12px;
+  width: 100%;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell > [data-sara-hud] {
+  display: contents;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell [data-sara-hud-heading] {
+  grid-area: heading;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell [data-sara-home-hud] {
+  grid-area: resources;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell [data-sara-budget] {
+  grid-area: budget;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell [data-sara-navigation] {
+  grid-area: navigation;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell [data-sara-task-region] {
+  grid-area: phase;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell [data-sara-combat-status] {
+  grid-area: status;
+  min-width: 0;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell [data-sara-combat-status] .sara-hud {
+  height: 100%;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell [data-sara-pending-work] {
+  grid-area: pending;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell [data-sara-turn-controls] {
+  grid-area: turn;
+  min-width: 0;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell [hidden] {
+  display: none !important;
+}
+
+.page[data-character-id="sara-velaris"] .battle-quick-rolls,
+.page[data-character-id="sara-velaris"] .battle-command-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 10px;
+}
+
+.page[data-character-id="sara-velaris"] .battle-command-card,
+.page[data-character-id="sara-velaris"] .saved-record,
+.page[data-character-id="sara-velaris"] .battle-incoming-events,
+.page[data-character-id="sara-velaris"] .battle-turn-review,
+.page[data-character-id="sara-velaris"] .battle-outside-abilities {
+  padding: 14px;
+  border: 1px solid var(--sara-border);
+  border-radius: 14px;
+  background: var(--sara-card);
+  box-shadow: 0 6px 16px #0002;
+}
+
+.page[data-character-id="sara-velaris"] .battle-command-card__heading,
+.page[data-character-id="sara-velaris"] .technique-card__heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.page[data-character-id="sara-velaris"] .battle-command-card__heading svg,
+.page[data-character-id="sara-velaris"] .technique-card__icon {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  color: var(--sara-accent);
+}
+
+.page[data-character-id="sara-velaris"] .battle-command-card__heading h3,
+.page[data-character-id="sara-velaris"] .technique-card__heading h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .battle-command-card.is-unavailable {
+  border-style: dashed;
+}
+
+.page[data-character-id="sara-velaris"] .battle-command-card__reason,
+.page[data-character-id="sara-velaris"] [data-sara-workspace-recovery],
+.page[data-character-id="sara-velaris"] .combat-save-recovery__item,
+.page[data-character-id="sara-velaris"] .workspace-save-recovery,
+.page[data-character-id="sara-velaris"] .workspace-warning,
+.page[data-character-id="sara-velaris"] .workspace-live-error:not(:empty) {
+  border: 1px solid var(--sara-error);
+  border-radius: 12px;
+  color: var(--sara-error);
+  background: var(--sara-error-surface);
+}
+
+.page[data-character-id="sara-velaris"] .battle-command-card__reason {
+  padding: 8px;
+}
+
+.page[data-character-id="sara-velaris"] .combat-budget {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0;
+}
+
+.page[data-character-id="sara-velaris"] .combat-budget__item {
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.page[data-character-id="sara-velaris"] .combat-primary-footer {
+  display: grid;
+  gap: 8px;
+}
+
+.page[data-character-id="sara-velaris"] .battle-saved-records {
+  border: 1px solid var(--sara-border);
+  border-radius: 14px;
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] .saved-record strong {
+  color: var(--sara-text);
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host:not([hidden]) {
+  max-height: min(72vh, var(--workspace-available-height, 72vh));
+  border: 1px solid var(--sara-border);
+  border-radius: 16px;
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host .action-workspace__header,
+.page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host .action-workspace__footer {
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host .action-workspace__body > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host [data-workspace-form],
+.page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host .workspace-current-result,
+.page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host .workspace-record,
+.page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host .workspace-post-hit {
+  border: 1px solid var(--sara-border);
+  border-radius: 14px;
+  background: var(--sara-card);
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host .workspace-entry-result {
+  padding: 12px;
+  border: 1px solid var(--sara-border);
+  border-radius: 14px;
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host .workspace-error,
+.page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host .workspace-live-error,
+.page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host [role="alert"] {
+  color: var(--sara-error);
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] #profilePanel > .panel-section--hero,
+.page[data-character-id="sara-velaris"] #profilePanel > .panel-section[data-sara-key="profile-abilities"],
+.page[data-character-id="sara-velaris"] #profilePanel > .profile-skills-panel,
+.page[data-character-id="sara-velaris"] #profilePanel > .panel-section[data-sara-key="profile-race"],
+.page[data-character-id="sara-velaris"] #profilePanel > .panel-section[data-sara-key="profile-background"],
+.page[data-character-id="sara-velaris"] #profilePanel > .panel-section[data-sara-key="profile-class-features"] {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--sara-border);
+  border-radius: 17px;
+  background: var(--sara-card);
+}
+
+.page[data-character-id="sara-velaris"] #profilePanel > .panel-section--hero {
+  background: linear-gradient(135deg, var(--sara-card), var(--sara-background));
+}
+
+.page[data-character-id="sara-velaris"] .profile-hero-stats {
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  margin-top: 12px;
+}
+
+.page[data-character-id="sara-velaris"] .hero-stat-card {
+  min-width: 0;
+  border: 1px solid var(--sara-border);
+  border-radius: 12px;
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] .hero-stat-label,
+.page[data-character-id="sara-velaris"] .ability-card-label,
+.page[data-character-id="sara-velaris"] .ability-card-mod-label {
+  color: var(--sara-muted);
+}
+
+.page[data-character-id="sara-velaris"] .ability-card-head,
+.page[data-character-id="sara-velaris"] .ability-card-summary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.page[data-character-id="sara-velaris"] .ability-card-score-inline {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.page[data-character-id="sara-velaris"] .ability-card-score {
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id="sara-velaris"] .ability-card-mod {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id="sara-velaris"] .ability-card-stat-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--sara-border);
+}
+
+.page[data-character-id="sara-velaris"] .profile-roll-button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.page[data-character-id="sara-velaris"] .profile-skill-group,
+.page[data-character-id="sara-velaris"] .profile-passives {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--sara-border);
+  border-radius: 14px;
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] .profile-skill-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+}
+
+.page[data-character-id="sara-velaris"] .profile-skill-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px;
+  border: 1px solid var(--sara-border);
+  border-radius: 12px;
+  background: var(--sara-card);
+}
+
+.page[data-character-id="sara-velaris"] .profile-skill-controls {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-skill-search {
+  min-width: min(100%, 220px);
+}
+
+.page[data-character-id="sara-velaris"] .sara-inventory-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+}
+
+.page[data-character-id="sara-velaris"] .sara-inventory-editors {
+  min-width: 0;
+  padding: 14px;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-list {
+  min-width: 0;
+  gap: 16px;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-group {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-group > h3 {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--sara-border);
+  color: var(--sara-muted);
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-card {
+  gap: 12px;
+  padding: 14px;
+  border-radius: 15px;
+  background: var(--sara-card);
+  box-shadow: 0 6px 16px #0002;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-main {
+  align-items: flex-start;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-icon {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  color: var(--sara-warm);
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-title {
+  min-width: 0;
+  color: var(--sara-text);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-badges > span {
+  padding: 3px 8px;
+  border: 1px solid var(--sara-border);
+  border-radius: 999px;
+  color: var(--sara-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-summary {
+  color: var(--sara-muted);
+  opacity: 1;
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-main__controls {
+  flex: 1 1 260px;
+  justify-content: flex-start;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-expandable {
+  border-color: var(--sara-border);
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-details,
+.page[data-character-id="sara-velaris"] .inventory-item-edit {
+  padding: 12px;
+  border: 1px solid var(--sara-border);
+  border-radius: 12px;
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-details > details,
+.page[data-character-id="sara-velaris"] .inventory-item-edit > details {
+  border: 0;
+}
+
+.page[data-character-id="sara-velaris"] .inventory-item-edit__fields {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.page[data-character-id="sara-velaris"] .inventory-edit-field--notes {
+  grid-column: auto;
+}
+
+.page[data-character-id="sara-velaris"] .sara-inventory-search {
+  max-width: 620px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-technique-summary {
+  padding: 10px 12px;
+  border-left: 3px solid var(--sara-accent);
+  border-radius: 0 10px 10px 0;
+  background: var(--sara-card);
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id="sara-velaris"] .sara-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--sara-border);
+  border-radius: 12px;
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] .sara-subtabs button {
+  flex: 1 1 140px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.page[data-character-id="sara-velaris"] .sara-subtabs button[aria-selected="true"] {
+  border-color: var(--sara-accent);
+  color: var(--sara-text);
+  background: var(--sara-selected);
+  box-shadow: inset 0 -3px 0 var(--sara-accent);
+}
+
+.page[data-character-id="sara-velaris"] .sara-technique-catalog,
+.page[data-character-id="sara-velaris"] .sara-technique-preparation {
+  padding: 14px;
+  border: 1px solid var(--sara-border);
+  border-radius: 15px;
+  background: var(--sara-card);
+}
+
+.page[data-character-id="sara-velaris"] .technique-controls {
+  margin: 8px 0;
+}
+
+.page[data-character-id="sara-velaris"] .technique-list {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.page[data-character-id="sara-velaris"] .technique-card {
+  min-width: 0;
+  gap: 10px;
+  border-color: var(--sara-border);
+  border-radius: 15px;
+  background: var(--sara-card);
+}
+
+.page[data-character-id="sara-velaris"] .technique-card[data-available="false"] {
+  opacity: 1;
+  border-style: dashed;
+}
+
+.page[data-character-id="sara-velaris"] .technique-card[data-selected="true"] {
+  border-color: var(--sara-accent);
+  box-shadow: inset 3px 0 0 var(--sara-accent);
+}
+
+.page[data-character-id="sara-velaris"] .technique-card__meta,
+.page[data-character-id="sara-velaris"] .technique-card__status {
+  color: var(--sara-muted);
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .technique-card__description {
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .technique-card__state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.page[data-character-id="sara-velaris"] .technique-card details,
+.page[data-character-id="sara-velaris"] .technique-card__status,
+.page[data-character-id="sara-velaris"] .sara-status {
+  min-width: 0;
+}
+
+.page[data-character-id="sara-velaris"] .sara-status {
+  padding: 14px;
+  border: 1px solid var(--sara-border);
+  border-radius: 14px;
+  background: var(--sara-card);
+}
+
+.page[data-character-id="sara-velaris"] .sara-biography {
+  gap: 12px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-biography > h2 {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--sara-border);
+  font-size: 22px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-biography > h3,
+.page[data-character-id="sara-velaris"] .sara-biography__subtitle {
+  color: var(--sara-muted);
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .lore-note-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+}
+
+.page[data-character-id="sara-velaris"] .sara-biography details,
+.page[data-character-id="sara-velaris"] .lore-note-card,
+.page[data-character-id="sara-velaris"] #loreNotesRoot {
+  min-width: 0;
+}
+
+.page[data-character-id="sara-velaris"] .sara-biography details[open] {
+  grid-row: span 2;
+}
+
+.page[data-character-id="sara-velaris"] .sara-biography .info-card-text,
+.page[data-character-id="sara-velaris"] .lore-note-preview,
+.page[data-character-id="sara-velaris"] .lore-note-editor {
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .lore-note-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--sara-border);
+  border-radius: 14px;
+  background: var(--sara-card);
+}
+
+.page[data-character-id="sara-velaris"] .lore-note-heading {
+  align-items: center;
+}
+
+.page[data-character-id="sara-velaris"] .lore-note-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] .lore-note-editor {
+  padding-top: 10px;
+  border-top: 1px solid var(--sara-border);
+}
+
+.page[data-character-id="sara-velaris"] .lore-note-status,
+.page[data-character-id="sara-velaris"] .lore-notes-issue {
+  color: var(--sara-muted);
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 12px;
+  width: min(100% - 24px, 960px);
+  max-height: min(90vh, var(--workspace-available-height, 90vh));
+  margin-inline: auto;
+  padding: 18px;
+  border: 1px solid var(--sara-border);
+  border-radius: 18px;
+  color: var(--sara-text);
+  background: var(--sara-background);
+  box-shadow: 0 16px 48px #0005;
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] [data-workspace-header] {
+  min-width: 0;
+  color: var(--sara-text);
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] [data-workspace-body] {
+  min-width: 0;
+  width: 100%;
+  max-width: 720px;
+  margin-inline: auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] [data-workspace-body] > *,
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-entry-result,
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-current-result,
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-post-hit,
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-record {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--sara-border);
+  border-radius: 14px;
+  background: var(--sara-card);
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-entry-result {
+  border-inline-start: 4px solid var(--sara-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-error,
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-warning,
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] [data-workspace-error]:not([hidden]) {
+  padding: 10px 12px;
+  border: 1px solid var(--sara-error);
+  border-radius: 12px;
+  color: var(--sara-error);
+  background: var(--sara-error-surface);
+  overflow-wrap: anywhere;
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-save-recovery,
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-verification,
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] .workspace-applied-unsaved {
+  padding: 12px;
+  border: 2px solid var(--sara-warm);
+  border-radius: 14px;
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] .action-workspace__footer {
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--sara-border);
+  background: var(--sara-background);
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] [data-workspace-footer] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.page[data-character-id="sara-velaris"] [data-sara-task-dock] :focus-visible,
+.page[data-character-id="sara-velaris"] [data-active-tab="melee"] :focus-visible {
+  outline: 3px solid var(--sara-warm);
+  outline-offset: 3px;
+}
+
+.page[data-character-id="sara-velaris"] .tab-btn.is-active {
+  border-bottom: 3px solid var(--sara-accent);
+  font-weight: 700;
+}
+
+@media (min-width: 700px) {
+  .page[data-character-id="sara-velaris"] .sara-inventory-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+    align-items: start;
+  }
+
+  .page[data-character-id="sara-velaris"] .sara-inventory-editors {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .page[data-character-id="sara-velaris"] .sara-inventory-layout > .inventory-list {
+    grid-column: 1;
+    grid-row: 1;
+  }
+}
+
+@media (min-width: 700px) and (max-width: 1099px) {
+  .page[data-character-id="sara-velaris"] .sara-combat-shell {
+    grid-template-columns: minmax(185px, .34fr) minmax(0, 1fr);
+    grid-template-areas:
+      "heading heading"
+      "resources resources"
+      "budget phase"
+      "navigation phase"
+      "turn phase"
+      "status status"
+      "pending pending";
+    align-items: start;
+  }
+}
+
+@media (min-width: 1100px) {
+  .page[data-character-id="sara-velaris"] .content {
+    padding-inline: 12px;
+  }
+
+  .page[data-character-id="sara-velaris"] .tabs {
+    position: static;
+    left: auto;
+    bottom: auto;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin: 0 auto 16px;
+    transform: none;
+  }
+
+  .page[data-character-id="sara-velaris"] .tab-btn {
+    flex-direction: row;
+    flex: 0 1 190px;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .page[data-character-id="sara-velaris"] .sara-combat-shell {
+    grid-template-columns: minmax(200px, 220px) minmax(0, 1fr) minmax(230px, 260px);
+    grid-template-areas:
+      "heading heading heading"
+      "resources resources resources"
+      "budget phase status"
+      "navigation phase status"
+      "turn phase status"
+      "pending pending pending";
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .page[data-character-id="sara-velaris"] #profilePanel,
+  .page[data-character-id="sara-velaris"] #techniquesPanel,
+  .page[data-character-id="sara-velaris"] #inventoryPanel,
+  .page[data-character-id="sara-velaris"] #lorePanel {
+    gap: 16px;
+  }
+
+  .page[data-character-id="sara-velaris"] .profile-ability-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  }
+}
+
+@media (max-width: 699px) {
+  .page[data-character-id="sara-velaris"] [data-sara-task-dock] {
+    width: calc(100% - 12px);
+    max-height: min(94vh, var(--workspace-available-height, 94vh));
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .page[data-character-id="sara-velaris"] .technique-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page[data-character-id="sara-velaris"] .sara-combat-shell .combat-workspace-host:not([hidden]) {
+    max-height: min(94vh, var(--workspace-available-height, 94vh));
   }
 }

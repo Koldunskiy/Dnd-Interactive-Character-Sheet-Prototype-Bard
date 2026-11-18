@@ -118,18 +118,28 @@ function renderTechniqueCard(entry, character, draft) {
       ? `<p class="technique-card__status">Требует записи подходящего промаха; отдельный запуск недоступен, так как продолжение промаха не подключено.</p>`
     : BATTLE_WORKSPACE_TECHNIQUES.has(entry.id)
       ? `<p class="technique-card__status">Боевой сценарий доступен через категории боевого пульта.</p>` : "";
+  const iconPath = entry.category === "passive"
+    ? '<path d="M12 3 14.5 9.5 21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/>'
+    : entry.category === "choice"
+      ? '<circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/>'
+      : '<path d="M12 3 14 9l6 3-6 3-2 6-2-6-6-3 6-3 2-6Z"/>';
   return `
-    <article class="technique-card" data-technique-card data-available="${availability.available}"
+    <article class="technique-card ${isSelected ? "technique-card--selected" : ""}"
+      data-technique-card data-available="${availability.available}" data-effective="${isEffective}"
       data-source="${entry.sourceId === "laserllama-core" ? "core" : "expanded"}"
       data-type="${escapeHtml(entry.category)}" data-selected="${isSelected}">
-      <h3>${escapeHtml(techniqueTitle(entry))}</h3>
+      <header class="technique-card__heading">
+        <svg class="technique-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPath}</svg>
+        <h3>${escapeHtml(techniqueTitle(entry))}</h3>
+      </header>
       <p class="technique-card__meta">${source} · уровень ${entry.minimumMonkLevel} · ${escapeHtml(activationLabel(entry.activation))} · ${escapeHtml(paymentLabel(entry.payment))}</p>
       <p class="technique-card__description">${escapeHtml(entry.trigger)}</p>
       <details><summary>Подробнее</summary>
         <p class="technique-card__description">${escapeHtml(entry.description)}</p>
         <p><strong>Оригинал и источник:</strong> ${escapeHtml(entry.nameEn)} · ${escapeHtml(entry.sourceRevision)}</p>
       </details>
-      ${editControl}
+      <div class="technique-card__state">${editControl}</div>
       ${useControl}
       ${workspaceHint}
     </article>
