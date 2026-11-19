@@ -20,6 +20,7 @@ import { getDerivedStats } from "../calculations.js";
 import {
   activationLabel,
   fightingStylePresentation,
+  featureTitle,
   paymentLabel,
   sourceLabel,
   subchoiceLabel,
@@ -280,13 +281,13 @@ export function renderTechniquesPanel(character) {
     ${draft ? `<div class="technique-controls">${renderTechniqueChoices(character, draft)}</div>` : ""}
     </section>
     ${thirdEye.awakenThirdEyePending ? `<section class="sara-status" role="status">
-      <p>Требуется вручную подтвердить завершение минутной медитации. 8 Ki уже потрачены; прерывание не возмещает их.</p>
+      <p>Требуется вручную подтвердить завершение минутной медитации. 8 ци уже потрачены; прерывание не возмещает их.</p>
       <label class="sara-form-check"><input type="checkbox" data-awaken-complete-confirm>
         Подтверждаю завершение медитации</label>
       <button type="button" class="btn" data-awaken-complete>Подтвердить завершение медитации</button>
     </section>` : ""}
     ${thirdEye.awakenThirdEyeActive ? `<section class="sara-status" role="status">
-      <p>Foresight действует до 8 часов. Текущий максимум ци уменьшен на 8; эффекты отмечаются вручную.</p>
+      <p>${escapeHtml(featureTitle("Foresight"))} действует до 8 часов. Текущий максимум ци уменьшен на 8; эффекты отмечаются вручную.</p>
       <label class="sara-form-check"><input type="checkbox" data-awaken-end-confirm>
         Подтверждаю завершение эффекта; потраченная ци не возвращается</label>
       <button type="button" class="btn btn--utility" data-awaken-end>Завершить эффект вручную</button>

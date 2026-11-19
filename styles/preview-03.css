@@ -128,15 +128,6 @@
   border-radius: 14px;
 }
 
-.page[data-character-id] :is(.profile-hero-stats, .profile-ability-grid,
-  .profile-skill-grid, .profile-passive-grid, .info-grid, .feature-list,
-  .spell-grid, .spell-grid--library, .technique-list, .inventory-item-group,
-  .battle-command-grid) {
-  min-width: 0;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
-  gap: 10px;
-}
-
 .page[data-character-id] .profile-ability-card {
   min-width: 0;
   padding: 13px;
@@ -208,10 +199,6 @@
 .page[data-character-id] .battle-quick-rolls {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
   gap: 11px;
-}
-
-.page[data-character-id] .profile-hero {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .page[data-character-id] .battle-quick-rolls > .battle-home-action {
@@ -334,18 +321,11 @@
     gap: 8px;
   }
 
-  .page[data-character-id] .profile-hero-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 
   .page[data-character-id] .ability-card-score {
     font-size: 30px;
   }
 
-  .page[data-character-id] :is(.inventory-item-group, .spell-grid,
-    .spell-grid--library, .technique-list, .battle-command-grid) {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 @media (min-width: 700px) {

@@ -35,6 +35,9 @@ export const RU_LABELS = Object.freeze({
 });
 
 export const RU_FEATURE_TITLES = Object.freeze({
+  Foresight: "Предвидение",
+  "Gentling Touch": "Усыпляющее прикосновение",
+  "Seeking Strike": "Ищущий удар",
   "Martial Arts": "Боевые искусства",
   "Unarmored Defense": "Защита без доспехов",
   "Flurry of Blows": "Шквал ударов",
@@ -134,6 +137,10 @@ const FIGHTING_STYLE_PRESENTATION = Object.freeze({
 
 export function techniqueTitle(entry) {
   return entry.nameRu || RU_FEATURE_TITLES[entry.nameEn] || entry.nameEn;
+}
+
+export function featureTitle(name) {
+  return RU_FEATURE_TITLES[name] ?? name;
 }
 
 export function spellTitle(name) {

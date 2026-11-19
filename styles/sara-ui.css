@@ -432,11 +432,6 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
   display: none;
 }
 
-.page[data-character-id="sara-velaris"] .profile-hero-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
 
 .page[data-character-id="sara-velaris"] .sara-tab-heading,
 .page[data-character-id="sara-velaris"] .inventory-header-row,
@@ -1344,7 +1339,6 @@ body:has(.page[data-character-id="sara-velaris"][data-sara-theme="wine-gold"]) .
 }
 
 .page[data-character-id="sara-velaris"] .profile-hero-stats {
-  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
   margin-top: 12px;
 }
 

@@ -25,12 +25,18 @@ test("technique catalogue no longer renders replaced battle forms or missile ret
   };
 
   try {
-    renderTechniquesPanel(structuredClone(sara));
+    const state = structuredClone(sara);
+    state.monk.techniqueRuntime["ll-monk:awaken-the-third-eye"] = {
+      awakenThirdEyeActive: true,
+    };
+    renderTechniquesPanel(state);
     assert.match(panel.innerHTML, /<h2>Техники<\/h2>/);
     assert.match(panel.innerHTML, /data-technique-tab="mine"/);
     assert.match(panel.innerHTML, /technique-card__badge">Активация:/);
     assert.match(panel.innerHTML, /technique-card__badge">Стоимость:/);
     assert.match(panel.innerHTML, /Сияние божества: доступные заговоры — Указание, Свет, Починка, Сопротивление, Священное пламя, Уход за умирающим, Чудотворство, Погребальный звон, Слово сияния/);
+    assert.match(panel.innerHTML, /Предвидение действует до 8 часов/);
+    assert.doesNotMatch(panel.innerHTML, /Foresight действует до 8 часов/);
     for (const rawName of ["Guidance", "Light", "Mending", "Resistance", "Sacred Flame", "Spare the Dying", "Thaumaturgy", "Toll the Dead", "Word of Radiance"]) {
       assert.doesNotMatch(panel.innerHTML, new RegExp(`>${rawName}<|— ${rawName}(?:,|\\.)`));
     }

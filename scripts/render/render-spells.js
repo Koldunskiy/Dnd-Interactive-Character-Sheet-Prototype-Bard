@@ -18,6 +18,7 @@ import {
 } from "../calculations.js";
 import { renderSpellSlotPips } from "./shared/resource-pips.js";
 import { getSpellPersonalHint } from "../rule-reference.js";
+import { spellTitle } from "../presentation/ru.js";
 
 const slotChoiceByCharacter = new Map();
 
@@ -264,7 +265,7 @@ function renderSpellCard(spell, spellStats, options = {}) {
         hasSlotMode
           ? usableSlots.length
             ? `<label class="spell-slot-select-label">Ячейка для применения
-                <select class="input spell-slot-select" data-spell-slot-select="${escapeHtml(spell.id)}" aria-label="Выбрать ячейку для ${escapeHtml(spell.name)}">
+                <select class="input spell-slot-select" data-spell-slot-select="${escapeHtml(spell.id)}" aria-label="Выбрать ячейку для ${escapeHtml(spellTitle(spell.name))}">
                   ${usableSlots.map((slot) => `<option value="${escapeHtml(slot.level)}" ${Number(slot.level) === Number(selectedSlotLevel) ? "selected" : ""}>${escapeHtml(slot.level)} круг · ${escapeHtml(slot.available)} доступно</option>`).join("")}
                 </select>
               </label>

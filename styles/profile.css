@@ -7,12 +7,14 @@
 
 .profile-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(260px, 0.85fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
 }
 
 .profile-hero-main {
   display: grid;
+  width: 100%;
+  max-width: 100%;
   gap: 12px;
   min-width: 0;
   justify-items: start;
@@ -59,9 +61,12 @@
 
 .profile-hero-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  width: 100%;
+  max-width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
   gap: 12px;
   align-items: stretch;
+  justify-self: start;
 }
 
 .hero-stat-card {
@@ -600,10 +605,6 @@
 }
 
 @media (max-width: 560px) {
-  .profile-hero-stats {
-    grid-template-columns: 1fr;
-  }
-
   .ability-card-head {
     grid-template-columns: 1fr;
     min-height: auto;

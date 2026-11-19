@@ -61,6 +61,19 @@ test("preview 03 presentation styles retain a wide shell and full-width phone ac
   assert.match(css, /\.page\[data-character-id\] \.battle-quick-rolls > \.battle-home-action\s*\{[^}]*grid-template-columns:[^}]*grid-template-areas:[^}]*min-width:\s*0;[^}]*min-height:\s*0;[^}]*height:\s*auto;/s);
   assert.doesNotMatch(css, /\.page\[data-character-id\] \.battle-quick-rolls > \.battle-home-action\s*\{\s*min-height:\s*92px;/);
 });
+
+test("profile hero ownership uses one column and profile.css controls its stats grid", async () => {
+  const [profileCss, previewCss, saraCss] = await Promise.all([
+    readFile(new URL("../../styles/profile.css", import.meta.url), "utf8"),
+    readFile(new URL("../../styles/preview-03.css", import.meta.url), "utf8"),
+    readFile(new URL("../../styles/sara-ui.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(profileCss, /\.profile-hero\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+  assert.match(profileCss, /\.profile-hero-main\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*100%;[^}]*min-width:\s*0;/);
+  assert.match(profileCss, /\.profile-hero-stats\s*\{[^}]*width:\s*100%;[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(160px,\s*100%\),\s*1fr\)\);/);
+  assert.doesNotMatch(previewCss, /\.page\[data-character-id\]\s+:is\([^)]*profile-hero-stats|\.page\[data-character-id\]\s+\.profile-hero\s*\{[^}]*grid-template-columns/);
+  assert.doesNotMatch(saraCss, /\.page\[data-character-id="sara-velaris"\]\s+\.profile-hero-stats\s*\{[^}]*grid-template-columns:\s*repeat\(3/);
+});
 import { dispatchSceneUi } from "../../scripts/battle/scene-ui-state.js";
 import { startBattle } from "../../scripts/battle/transitions.js";
 

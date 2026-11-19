@@ -297,6 +297,21 @@ test("R3: library renders removal for a selected unavailable spell and wires the
   assert.deepEqual(state, afterRemoval);
 });
 
+test("R3b: spell slot accessible label uses the Russian spell display title", () => {
+  const state = cloneCharacter();
+  state.spellcasting.preparedSpellIds = ["hypnotic-pattern-2014"];
+  state.ui.spells.expandedSpellIds = ["hypnotic-pattern-2014"];
+  const derived = getDerivedStats(state);
+  derived.spellSlots = [
+    { level: 3, max: 2, available: 2 },
+  ];
+  const root = { innerHTML: "" };
+  renderSpells(root, state, derived);
+  assert.match(root.innerHTML, /<h3 class="spell-card-title">Гипнотический узор<\/h3>/);
+  assert.match(root.innerHTML, /aria-label="Выбрать ячейку для Гипнотический узор"/);
+  assert.doesNotMatch(root.innerHTML, /aria-label="Выбрать ячейку для Hypnotic Pattern"/);
+});
+
 test("R4: retained Eyebite gets a circle section without fictional slots", () => {
   const state = cloneCharacter();
   state.profile.level = 1;
