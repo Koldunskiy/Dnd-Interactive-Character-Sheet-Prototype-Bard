@@ -6,6 +6,7 @@ import { calculateCharacterRoll } from "../rolls/calculations.js";
 import { getSaraRollBreakdown } from "../rolls/providers/sara.js";
 import { getWorkspaceHost } from "../workspace/host.js";
 import { renderTechniqueApplicationFields } from "./technique-application-form.js";
+import { spellTitle } from "../presentation/ru.js";
 import { POTIONS } from "../sara-functional.js";
 import { previewSaraPotion } from "../actions/sara-functional.js";
 import {
@@ -392,9 +393,9 @@ export function renderRestReplacementSubchoices(session, state) {
   }
   if (selected?.id === "ll-monk:divine-light") {
     const first = selectField("cantrip1", "Заговор «Сияния божества» 1",
-      CLERIC_CANTRIPS.map((spell) => [spell.id, spell.name]), draft.cantrip1 ?? "");
+      CLERIC_CANTRIPS.map((spell) => [spell.id, spellTitle(spell.name)]), draft.cantrip1 ?? "");
     const second = selectField("cantrip2", "Заговор «Сияния божества» 2",
-      CLERIC_CANTRIPS.map((spell) => [spell.id, spell.name]), draft.cantrip2 ?? "");
+      CLERIC_CANTRIPS.map((spell) => [spell.id, spellTitle(spell.name)]), draft.cantrip2 ?? "");
     return first + second;
   }
   return "";
@@ -421,7 +422,7 @@ export function updateRestReplacementSubchoices(session, state, { refreshFields 
     if (!existing.has(spell.id) && second.ownerDocument?.createElement) {
       const option = second.ownerDocument.createElement("option");
       option.value = spell.id;
-      option.textContent = spell.name;
+      option.textContent = spellTitle(spell.name);
       second.append(option);
     }
   }

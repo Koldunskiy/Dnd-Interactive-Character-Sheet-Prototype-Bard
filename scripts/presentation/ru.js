@@ -55,6 +55,15 @@ export const RU_FEATURE_TITLES = Object.freeze({
 
 export const RU_SPELL_TITLES = Object.freeze({
   "Hypnotic Pattern": "Гипнотический узор",
+  Guidance: "Указание",
+  Light: "Свет",
+  Mending: "Починка",
+  Resistance: "Сопротивление",
+  "Sacred Flame": "Священное пламя",
+  "Spare the Dying": "Уход за умирающим",
+  Thaumaturgy: "Чудотворство",
+  "Toll the Dead": "Погребальный звон",
+  "Word of Radiance": "Слово сияния",
   "Poison Spray": "Ядовитые брызги",
   "Animal Friendship": "Дружба с животными",
   Suggestion: "Внушение",

@@ -215,10 +215,6 @@
 }
 
 .page[data-character-id] .battle-quick-rolls > .battle-home-action {
-  min-height: 92px;
-}
-
-.page[data-character-id] .battle-quick-rolls > .battle-home-action {
   grid-template-columns: 38px minmax(0, 1fr);
   grid-template-areas: "icon content" "meta meta";
   align-items: start;

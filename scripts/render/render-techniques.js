@@ -23,7 +23,8 @@ import {
   paymentLabel,
   sourceLabel,
   subchoiceLabel,
-  techniqueTitle
+  techniqueTitle,
+  spellTitle
 } from "../presentation/ru.js";
 import { isTechniqueEffectivelySelected } from "../selectors/techniques.js";
 import { eligibleEntitlement } from "../sara-functional.js";
@@ -180,7 +181,7 @@ function renderTechniqueChoices(character, draft) {
         ${[0, 1].map((index) => `<label class="field-label">Заговор ${index + 1}
           <select class="input" data-technique-choice="divine-light:${index}">
             <option value="">Выберите</option>
-            ${CLERIC_CANTRIPS.map((spell) => `<option value="${escapeHtml(spell.id)}" ${selected[index] === spell.id ? "selected" : ""}>${escapeHtml(spell.name)}</option>`).join("")}
+            ${CLERIC_CANTRIPS.map((spell) => `<option value="${escapeHtml(spell.id)}" ${selected[index] === spell.id ? "selected" : ""}>${escapeHtml(spellTitle(spell.name))}</option>`).join("")}
           </select>
         </label>`).join("")}
       </fieldset>`;
@@ -300,7 +301,7 @@ export function renderTechniquesPanel(character) {
           return `<article class="technique-card"><h4>${escapeHtml(presentation.title)}</h4><p>${escapeHtml(presentation.prerequisites.join("; ") || "без предварительных требований")}</p><p>${escapeHtml(presentation.text)}</p><details><summary>Оригинал и источник</summary><p>${escapeHtml(style.name)} · Alternate Monk</p></details></article>`;
         }).join("")}</div>
       </section>
-      <p class="technique-card__status">Сияние божества: доступные заговоры — ${CLERIC_CANTRIPS.map((spell) => escapeHtml(spell.name)).join(", ")}.</p>
+      <p class="technique-card__status">Сияние божества: доступные заговоры — ${CLERIC_CANTRIPS.map((spell) => escapeHtml(spellTitle(spell.name))).join(", ")}.</p>
     </details>
   `;
   setPanelMarkup(panel, markup, "sara-velaris");

@@ -58,6 +58,8 @@ test("preview 03 presentation styles retain a wide shell and full-width phone ac
   assert.match(css, /@media \(max-width: 699px\)\s*\{[\s\S]*?\.page\[data-character-id\] \.battle-quick-rolls\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
   assert.match(css, /--preview-hp:\s*#d77989;[\s\S]*?--preview-energy:\s*#73c9cb;/);
   assert.doesNotMatch(css, /html\s*,\s*body\s*\{[^}]*overflow-x:\s*hidden/);
+  assert.match(css, /\.page\[data-character-id\] \.battle-quick-rolls > \.battle-home-action\s*\{[^}]*grid-template-columns:[^}]*grid-template-areas:[^}]*min-width:\s*0;[^}]*min-height:\s*0;[^}]*height:\s*auto;/s);
+  assert.doesNotMatch(css, /\.page\[data-character-id\] \.battle-quick-rolls > \.battle-home-action\s*\{\s*min-height:\s*92px;/);
 });
 import { dispatchSceneUi } from "../../scripts/battle/scene-ui-state.js";
 import { startBattle } from "../../scripts/battle/transitions.js";

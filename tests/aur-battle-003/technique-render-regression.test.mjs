@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { sara } from "../../data/sara.js";
-import { WARRIOR_ADEPT_STYLES } from "../../data/monk-techniques.js";
+import { CLERIC_CANTRIPS, WARRIOR_ADEPT_STYLES } from "../../data/monk-techniques.js";
 import { renderTechniquesPanel } from "../../scripts/render/render-techniques.js";
 import { renderSpellCardHeader } from "../../scripts/render/shared/spell-card.js";
 import {
@@ -30,6 +30,10 @@ test("technique catalogue no longer renders replaced battle forms or missile ret
     assert.match(panel.innerHTML, /data-technique-tab="mine"/);
     assert.match(panel.innerHTML, /technique-card__badge">Активация:/);
     assert.match(panel.innerHTML, /technique-card__badge">Стоимость:/);
+    assert.match(panel.innerHTML, /Сияние божества: доступные заговоры — Указание, Свет, Починка, Сопротивление, Священное пламя, Уход за умирающим, Чудотворство, Погребальный звон, Слово сияния/);
+    for (const rawName of ["Guidance", "Light", "Mending", "Resistance", "Sacred Flame", "Spare the Dying", "Thaumaturgy", "Toll the Dead", "Word of Radiance"]) {
+      assert.doesNotMatch(panel.innerHTML, new RegExp(`>${rawName}<|— ${rawName}(?:,|\\.)`));
+    }
     assert.doesNotMatch(panel.innerHTML, /data-technique-form="ll-monk:(?:step-of-the-wind|patient-defense|mystic-regeneration|deflect-strike|deflect-missile|empowered-strike|stunning-strike|crippling-strike|slowing-strike)"/);
     assert.doesNotMatch(panel.innerHTML, /data-(?:missile-return|sara-attack-submit|sara-damage-submit|racial-spell-form|battle-technique-form)=/);
   } finally {
@@ -58,6 +62,21 @@ test("fighting styles and roll timing labels use Russian presentation text", () 
   assert.equal(activationLabel("after-roll"), "После броска");
   assert.equal(activationLabel("on-miss"), "При промахе");
   assert.equal(spellTitle("Hypnotic Pattern"), "Гипнотический узор");
+  const expectedCantrips = [
+    ["Guidance", "Указание"],
+    ["Light", "Свет"],
+    ["Mending", "Починка"],
+    ["Resistance", "Сопротивление"],
+    ["Sacred Flame", "Священное пламя"],
+    ["Spare the Dying", "Уход за умирающим"],
+    ["Thaumaturgy", "Чудотворство"],
+    ["Toll the Dead", "Погребальный звон"],
+    ["Word of Radiance", "Слово сияния"],
+  ];
+  assert.equal(CLERIC_CANTRIPS.length, expectedCantrips.length);
+  expectedCantrips.forEach(([name, expected]) => {
+    assert.equal(spellTitle(name), expected);
+  });
   const spellHeader = renderSpellCardHeader({
     name: "Hypnotic Pattern",
     originalName: "Hypnotic Pattern",
