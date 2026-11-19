@@ -610,12 +610,9 @@ function activateInitiativePresentation(root, input) {
   const shell = root.querySelector(".sara-combat-shell");
   if (shell) shell.dataset.initiativePresenting = "true";
   const update = () => {
-    form.style.position = "fixed";
-    form.style.top = `${viewport.offsetTop}px`;
-    form.style.left = "0";
-    form.style.right = "0";
-    form.style.height = `${viewport.height}px`;
-    form.style.zIndex = "1100";
+    const availableHeight = Math.max(280, viewport.height - viewport.offsetTop - 16);
+    form.style.maxHeight = `${availableHeight}px`;
+    form.style.overflowY = "auto";
   };
   update();
   viewport.addEventListener("resize", update);
@@ -636,6 +633,8 @@ function activateInitiativePresentation(root, input) {
     observer?.disconnect();
     viewport.removeEventListener("resize", update);
     viewport.removeEventListener("scroll", update);
+    form.style?.removeProperty?.("max-height");
+    form.style?.removeProperty?.("overflow-y");
     delete form.dataset.initiativePresentation;
     if (shell) delete shell.dataset.initiativePresenting;
     for (const property of ["position", "top", "left", "right", "height", "z-index"]) {

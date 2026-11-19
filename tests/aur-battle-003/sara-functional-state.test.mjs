@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import { sara } from "../../data/sara.js";
 import { getCharacterDescriptor } from "../../scripts/characters.js";
 import { getDerivedStats } from "../../scripts/calculations.js";
-import { adoptStarter, changeQuantity, previewPotion } from "../../scripts/sara-functional.js";
+import {
+  adoptStarter,
+  changeCurrency,
+  changeQuantity,
+  previewExternalHealing,
+  previewPotion,
+  receiveExternalHealing,
+} from "../../scripts/sara-functional.js";
 import {
   changeSaraItemQuantity,
   useSaraPotion,
@@ -212,6 +219,47 @@ test("potion binding cannot redirect a potion to darts and deleted stock is not 
   const adoption = adoptStarter(deleted);
   assert.equal(adoption.changed, false);
   assert.equal(adoption.state.inventory.items.some((item) => item.id === "healing-potion"), false);
+});
+
+test("external healing and currency mutations preserve replay and unknown-wallet guards", (t) => {
+  installStorage(t);
+  openCharacterSession("sara-velaris", () => ({ status: "missing" }));
+  const state = structuredClone(getState());
+  state.combat.hp.current = 90;
+  const preview = previewExternalHealing(state, "34", getDerivedStats);
+  assert.equal(preview.usefulHealing, 34);
+  assert.equal(preview.hpAfter, 124);
+  const healed = receiveExternalHealing(state, {
+    id: "healing-1", amount: "34", source: "Целитель", confirmed: true,
+  }, getDerivedStats);
+  assert.equal(healed.outcome.hpAfter, 124);
+  assert.equal(healed.outcome.source, "Целитель");
+  const replay = receiveExternalHealing(healed.state, {
+    id: "healing-1", amount: "34", source: "Целитель", confirmed: true,
+  }, getDerivedStats);
+  assert.equal(replay.replayed, true);
+  assert.equal(replay.state.combat.hp.current, 124);
+
+  const wallet = structuredClone(getState());
+  const changed = changeCurrency(wallet, {
+    id: "wallet-1", mode: "add",
+    amounts: { cp: 0, sp: 0, ep: 0, gp: 5, pp: 0 },
+  });
+  assert.equal(changed.outcome.after.gp, 20);
+
+  const unknown = structuredClone(getState());
+  unknown.inventory.currencyStatus = "Не заполнено";
+  unknown.inventory.currency = null;
+  assert.throws(() => changeCurrency(unknown, {
+    id: "wallet-unknown", mode: "add",
+    amounts: { cp: 0, sp: 0, ep: 0, gp: 1, pp: 0 },
+  }), /Кошелёк не заполнен/);
+  const filled = changeCurrency(unknown, {
+    id: "wallet-fill", mode: "set",
+    amounts: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+  });
+  assert.equal(filled.outcome.before, null);
+  assert.equal(filled.state.inventory.currencyStatus, "Заполнено");
 });
 
 test("inventory quantity adapter commits a guarded Sara quantity operation", (t) => {

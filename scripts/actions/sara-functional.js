@@ -1,11 +1,13 @@
 import { getDerivedStats } from "../calculations.js";
 import {
+  changeCurrency,
   changeQuantity,
   completeRest,
   declineRestReplacement,
   finishShortRest,
   previewPotion,
   replaceRestTechnique,
+  receiveExternalHealing,
   spendHitDie,
   usePotion,
 } from "../sara-functional.js";
@@ -20,6 +22,16 @@ function commit(owner, request, kind, execute) {
   return commitFunctionalSessionOperation(owner, request.id, execute, {
     metadata: { kind, functionalOperationId: request.id },
   });
+}
+
+export function receiveSaraExternalHealing(owner, request) {
+  return commit(owner, request, "sara-external-healing",
+    (state) => receiveExternalHealing(state, request, getDerivedStats));
+}
+
+export function changeSaraCurrency(owner, request) {
+  return commit(owner, request, "sara-currency",
+    (state) => changeCurrency(state, request));
 }
 
 export function changeSaraItemQuantity(owner, request) {

@@ -282,6 +282,11 @@ function bindActionButtons(root = document) {
         if (!opened.ok) showPersistenceWarning(`Задачу нельзя открыть: ${opened.reason}`);
         return;
       }
+      if (action === "open-currency-editor") {
+        const opened = openSaraBattleCommand("currency-editor", target);
+        if (!opened.ok) showPersistenceWarning(`Кошелёк нельзя открыть: ${opened.reason}`);
+        return;
+      }
       if (action === "inventory-quantity-adjust" &&
           getState().profile?.id === "sara-velaris") {
         const delta = Number(target.dataset.quantityDelta);

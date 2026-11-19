@@ -960,6 +960,21 @@
   background: rgba(255, 245, 239, 0.035);
 }
 
+#profilePanel .profile-skill-card--rollable {
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+#profilePanel .profile-skill-card--rollable > .profile-roll-button {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+#profilePanel .profile-skill-controls {
+  grid-column: 1 / -1;
+}
+
 #profilePanel .profile-skill-card-main {
   display: grid;
   min-width: 0;

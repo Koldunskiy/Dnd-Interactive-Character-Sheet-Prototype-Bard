@@ -225,6 +225,8 @@ test("initiative keyboard presentation cleanup removes viewport listeners and in
       set right(value) { styles.set("right", value); },
       set height(value) { styles.set("height", value); },
       set zIndex(value) { styles.set("z-index", value); },
+      set maxHeight(value) { styles.set("max-height", value); },
+      set overflowY(value) { styles.set("overflow-y", value); },
       removeProperty(name) { styles.delete(name); },
     },
   };
@@ -237,7 +239,8 @@ test("initiative keyboard presentation cleanup removes viewport listeners and in
   assert.equal(root.shell.dataset.initiativePresenting, "true");
   assert.equal(listeners.get("resize").size, 1);
   assert.equal(listeners.get("scroll").size, 1);
-  assert.equal(styles.get("position"), "fixed");
+  assert.equal(styles.has("position"), false);
+  assert.equal(styles.get("max-height"), "380px");
 
   assert.ok(observers.some((observer) => observer.target === panel &&
     observer.options.attributes && observer.options.attributeFilter.includes("hidden")));

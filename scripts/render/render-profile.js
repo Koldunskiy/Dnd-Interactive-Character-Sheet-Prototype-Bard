@@ -164,12 +164,6 @@ function getAbilityCardsData(character, derived) {
 function renderAbilityCard(card) {
   const canEdit = card.editable &&
     (card.characterId !== "sara-velaris" || card.id === "constitution");
-  const origin = card.effectiveScore !== card.score
-    ? card.characterId === "sara-velaris" && card.id === "constitution" &&
-      (card.activeItemEffects ?? []).includes("amulet-of-health")
-      ? "Амулет здоровья"
-      : "Действующий эффект"
-    : "";
   return `
     <article class="ability-card profile-ability-card">
       <div class="ability-card-top">
@@ -191,9 +185,6 @@ function renderAbilityCard(card) {
             <div class="ability-card-score" aria-label="Значение ${escapeHtml(card.label)}">
               ${escapeHtml(card.effectiveScore)}
             </div>
-            ${origin ? `<span class="ability-card-stat-label">${escapeHtml(origin)}</span>` : ""}
-            ${card.effectiveScore !== card.score
-              ? `<span class="ability-card-stat-label">Исходное значение: ${escapeHtml(card.score)}</span>` : ""}
           </div>
         </div>
         ${canEdit ? `<details class="ability-card-base-editor">
@@ -291,12 +282,18 @@ function renderSkillCard(skillId, character, derived) {
   const editable = Boolean(character.ui?.abilitiesEditable);
   const status = skill.expertise ? "Экспертность" : skill.proficient ? "Владение" : "";
   return `
-    <article class="profile-skill-card" data-sara-skill="${escapeHtml(skillId)}">
+    <article class="profile-skill-card${character.profile?.id === "sara-velaris" ? " profile-skill-card--rollable" : ""}" data-sara-skill="${escapeHtml(skillId)}">
       <div class="profile-skill-card-main">
-        <button type="button" class="profile-skill-name profile-roll-link" data-open-character-roll data-roll-kind="ability-check" data-roll-id="${escapeHtml(skillId)}">${escapeHtml(SKILL_LABELS[skillId])}</button>
+        <span class="profile-skill-name">${escapeHtml(SKILL_LABELS[skillId])}</span>
         ${status ? `<span class="profile-skill-status">${escapeHtml(status)}</span>` : ""}
       </div>
       <strong class="profile-skill-value">${escapeHtml(formatSigned(value))}</strong>
+      ${character.profile?.id === "sara-velaris" ? `
+        <button type="button" class="btn btn--utility profile-roll-button"
+          data-open-character-roll data-roll-kind="ability-check"
+          data-roll-id="${escapeHtml(skillId)}"
+          aria-label="Бросить: ${escapeHtml(SKILL_LABELS[skillId])}">Бросить</button>
+      ` : ""}
       ${editable ? `
         <div class="profile-skill-controls">
           <button type="button" class="skill-toggle-btn ${skill.proficient ? "skill-toggle-btn--active" : ""}" data-action="skill-toggle" data-skill-id="${escapeHtml(skillId)}" data-toggle="proficient" aria-pressed="${Boolean(skill.proficient)}" aria-label="Владение: ${escapeHtml(SKILL_LABELS[skillId])}">Владение</button>

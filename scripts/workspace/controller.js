@@ -134,10 +134,12 @@ import {
 import { MONK_TECHNIQUE_BY_ID } from "../../data/monk-techniques.js";
 import { POTIONS } from "../sara-functional.js";
 import {
+  changeSaraCurrency,
   completeSaraRest,
   declineSaraRestReplacement,
   finishSaraShortRest,
   replaceSaraRestTechnique,
+  receiveSaraExternalHealing,
   spendSaraHitDie,
   useSaraPotion,
 } from "../actions/sara-functional.js";
@@ -1489,6 +1491,7 @@ function syncSaveCompatibility(draft, state) {
     draft.stage === "save-input" ? { ...draft.saveDraft, amendment: null } : draft.saveDraft);
   draft.rollDraft = {
     kind: "saving-throw",
+    d20InputMode: draft.saveDraft.d20InputMode,
     ability: draft.saveDraft.ability,
     source: draft.saveDraft.source,
     rollMode: draft.saveDraft.rollMode,
@@ -1584,9 +1587,9 @@ function updateInput(field) {
     if (field.name === "incomingDamage") draft.rawDamage = field.value;
     else if (field.name === "deflectRoll") draft.rawDeflectRoll = field.value;
     else if (field.name === "saveDamage") draft.saveDraft.damage = field.value;
-    else if (["saveAbility", "saveSource", "firstD20", "secondD20", "rollMode", "dc",
+    else if (["saveAbility", "saveSource", "d20InputMode", "firstD20", "secondD20", "rollMode", "dc",
       "damageBasis", "effectProfile"].includes(field.name)) {
-      const sourceDecisionChanged = ["saveAbility", "saveSource", "firstD20",
+      const sourceDecisionChanged = ["saveAbility", "saveSource", "d20InputMode", "firstD20",
         "secondD20", "rollMode", "dc"].includes(field.name);
       if (sourceDecisionChanged) invalidateSaveDecision(draft.saveDraft);
       const key = {
@@ -1595,7 +1598,8 @@ function updateInput(field) {
         saveDamage: "damage",
       }[field.name] ?? field.name;
       draft.saveDraft[key] = field.type === "checkbox" ? field.checked : field.value;
-      if (field.name === "saveSource" && field.value === "spell") {
+      if (field.name === "saveSource" && field.value === "spell" &&
+          draft.saveDraft.d20InputMode !== "selected") {
         draft.saveDraft.rollMode = "advantage";
       }
     }
@@ -1977,6 +1981,7 @@ export function openIncomingAttack(invoker = null, options = {}) {
       ability: options.saveContext.ability,
       source: options.saveContext.source,
       rollMode: options.saveContext.rollMode,
+      d20InputMode: options.saveContext.d20InputMode,
       entryKind: options.saveContext.entryKind,
     } : null,
   };
@@ -2029,6 +2034,7 @@ export function openSaraSavingThrow(invoker = null, options = {}) {
     saveContext: {
       ability, source,
       rollMode: source === "spell" ? "advantage" : "normal",
+      d20InputMode: options.d20InputMode === "selected" ? "selected" : undefined,
       entryKind: options.entryKind === "incoming-spell-save"
         ? "incoming-spell-save" : "standalone-save",
     },
@@ -2045,6 +2051,7 @@ export function openSaraBattleCommand(commandId, invoker = null, options = {}) {
       ability: options.rollPreset.id,
       source: "unknown",
       entryKind: "standalone-save",
+      d20InputMode: "selected",
     });
   }
   if (commandId === "deflect-strike" || commandId === "deflect-missile") {
@@ -2170,7 +2177,8 @@ export function openSaraBattleCommand(commandId, invoker = null, options = {}) {
     session.rawInputsByStep[session.currentStepKey] = {
       kind: preset.kind ?? "ability-check",
       id: preset.id ?? "strength",
-      rollMode: "normal",
+      d20InputMode: "selected",
+      rollMode: "preselected",
       firstD20: "",
       secondD20: "",
       spellSaveSource: false,
@@ -3509,6 +3517,7 @@ function getWhitelistedRollInput(values) {
   return {
     kind: values.kind,
     id: values.id,
+    d20InputMode: values.d20InputMode,
     rollMode: values.rollMode,
     firstD20: values.firstD20,
     secondD20: values.secondD20,
@@ -3786,6 +3795,21 @@ function submitCommand() {
     result = recordSaraIncomingDamage(session.owner, values.damage, {
       confirmed: values.confirmed === true,
       operationId: operation,
+    });
+  } else if (id === "external-healing") {
+    result = receiveSaraExternalHealing(session.owner, {
+      id: operation,
+      amount: values.amount,
+      source: values.source,
+      confirmed: values.confirmed === true,
+    });
+  } else if (id === "currency-editor") {
+    const amounts = Object.fromEntries(["cp", "sp", "ep", "gp", "pp"].map((key) =>
+      [key, values[`amount-${key}`]]));
+    result = changeSaraCurrency(session.owner, {
+      id: operation,
+      mode: values.mode,
+      amounts,
     });
   } else if (id === "resource-correction") {
     result = correctSaraResource(session.owner, values.resourceId, values.value, operation);

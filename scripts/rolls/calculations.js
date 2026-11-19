@@ -13,27 +13,36 @@ export function calculateCharacterRoll(input, breakdown) {
   if (input.skillId && !breakdown.skillId) {
     return { ok: false, reason: "Выбранный навык не подходит этому броску." };
   }
-  if (!["normal", "advantage", "disadvantage"].includes(input.rollMode)) {
-    return { ok: false, reason: "Выберите обычный бросок, преимущество или помеху." };
+  const selected = input.d20InputMode === "selected";
+  if (input.d20InputMode != null && !selected) {
+    return { ok: false, reason: "Неизвестный способ ввода к20." };
+  }
+  if (selected ? input.rollMode !== "preselected"
+      : !["normal", "advantage", "disadvantage"].includes(input.rollMode)) {
+    return { ok: false, reason: "Способ ввода и режим броска не согласованы." };
+  }
+  if (selected && input.secondD20 != null && String(input.secondD20).trim() !== "") {
+    return { ok: false, reason: "Для выбранного результата укажите только один к20." };
   }
   if (input.spellSaveSource === true &&
-      (input.kind !== "saving-throw" || input.rollMode !== "advantage")) {
+      (input.kind !== "saving-throw" || (!selected && input.rollMode !== "advantage"))) {
     return {
       ok: false,
       reason: "Сопротивление магии Юань-ти применимо к спасброску от заклинания: выберите преимущество.",
     };
   }
-  const first = parsePhysicalInteger(input.firstD20, 1, 20, "Первый к20");
+  const first = parsePhysicalInteger(input.firstD20, 1, 20,
+    selected ? "Выбранный физический к20" : "Первый к20");
   if (!first.ok) return first;
   const rawRolls = [first.value];
-  if (input.rollMode !== "normal") {
+  if (!selected && input.rollMode !== "normal") {
     const second = parsePhysicalInteger(input.secondD20, 1, 20, "Второй к20");
     if (!second.ok) return second;
     rawRolls.push(second.value);
   }
-  const chosenD20 = input.rollMode === "advantage"
-    ? Math.max(...rawRolls)
-    : input.rollMode === "disadvantage" ? Math.min(...rawRolls) : rawRolls[0];
+  const chosenD20 = selected ? first.value
+    : input.rollMode === "advantage" ? Math.max(...rawRolls)
+      : input.rollMode === "disadvantage" ? Math.min(...rawRolls) : first.value;
   const modifier = breakdown.totalModifier;
   const total = chosenD20 + modifier;
   const dc = input.dc == null || String(input.dc).trim() === ""
@@ -62,6 +71,7 @@ export function calculateCharacterRoll(input, breakdown) {
     rawD20Rolls: rawRolls,
     chosenD20,
     rollMode: input.rollMode,
+    ...(selected ? { d20InputMode: "selected" } : {}),
     modifierSnapshot: structuredClone(breakdown.sources),
     totalModifier: modifier,
     total,

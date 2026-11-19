@@ -135,6 +135,15 @@ function getDefinitions(state, derived, effective, budget) {
   const patientDefense = MONK_TECHNIQUE_BY_ID.get("ll-monk:patient-defense");
   const normalSequenceOpen = (state.monk?.combatAssistant?.activeSequences ?? []).some((sequence) =>
     sequence.kind === "attack-action" && sequence.status === "open");
+  const regenerationSelected = selected("ll-monk:mystic-regeneration");
+  const regenerationKi = Number(state.combat?.ki?.current);
+  const regenerationKiKnown = Number.isSafeInteger(regenerationKi) && regenerationKi >= 0;
+  const regenerationHasKi = regenerationKiKnown && regenerationKi >= 2;
+  const regenerationReason = !regenerationSelected
+    ? "Техника не выбрана или сейчас недоступна."
+    : !actionAvailable ? "Действие уже использовано."
+      : !regenerationKiKnown ? "Не удалось определить текущий запас ци."
+        : !regenerationHasKi ? "Недостаточно ци для применения." : "";
 
   return [
     command("character-roll", "Проверка или спасбросок", ["action"], "none", "Без расхода",
@@ -145,17 +154,21 @@ function getDefinitions(state, derived, effective, budget) {
       "Только исправление фактического значения в активном листе; не выдаёт расходуемые предметы.",
       "Корректировка сохранённого ресурса",
       { enabled: true, reasonCode: null, reasonRu: "" }),
+    command("external-healing", "Получить лечение", ["action"], "none", "Без расхода",
+      "Внешнее лечение от союзника или эффекта; не расходует действие Сары.",
+      "Получение чужого лечения",
+      { enabled: true, reasonCode: null, reasonRu: "" }),
+    command("currency-editor", "Изменить деньги", ["action"], "none", "Без расхода",
+      "Явная операция с кошельком Сары.", "Управление кошельком",
+      { enabled: true, reasonCode: null, reasonRu: "" }),
     command("normal-attack", "Обычная безоружная атака", ["action"], "action", `${getSaraAttackCount(state)} ${pluralAttack(getSaraAttackCount(state))}`,
       "Физический к20; попадание и урон записываются отдельно.", "Действие «Атака» · безоружный профиль",
       openAction(budget.actionAvailable || normalSequenceOpen,
         budget.actionAvailable || normalSequenceOpen ? "" : "Действие уже использовано.")),
     command("mystic-regeneration", "Мистическая регенерация", ["action"], "action", regeneration?.payment ?? "Стоимость не задана",
       "Техника должна быть выбрана; физическая кость Боевых искусств.", regeneration?.description ?? "",
-      openAction(selected("ll-monk:mystic-regeneration") && actionAvailable &&
-        Number(state.combat?.ki?.current) >= 2,
-      !selected("ll-monk:mystic-regeneration") ? "Техника не выбрана или сейчас недоступна."
-        : !actionAvailable ? "Действие уже использовано."
-          : "Недостаточно ци для применения.")),
+      openAction(regenerationSelected && actionAvailable && regenerationHasKi,
+        regenerationReason)),
     ...racialSpells,
     command("dash", "Рывок", ["action", "movement"], "action", "Действие",
       "Отметьте действие; фактическое перемещение и расстояние определяются за столом.", "Базовое действие Dash",

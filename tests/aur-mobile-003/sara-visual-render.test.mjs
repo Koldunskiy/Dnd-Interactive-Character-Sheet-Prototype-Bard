@@ -307,8 +307,8 @@ test("profile shows effective Sara ability values without changing base stats an
     renderProfile(root, state, getDerivedStats(state));
     assert.match(root.innerHTML, /<details class="ability-card-base-editor">[\s\S]*Изменить исходное значение/);
     assert.match(root.innerHTML, /class="ability-card-score"[^>]*>[\s\S]*?19/);
-    assert.match(root.innerHTML, /Амулет здоровья/);
-    assert.match(root.innerHTML, /Исходное значение: 14/);
+    assert.doesNotMatch(root.innerHTML, /Амулет здоровья/);
+    assert.doesNotMatch(root.innerHTML, /Исходное значение: 14/);
     assert.match(root.innerHTML, /aria-label="Уменьшить исходное значение: Телосложение"/);
     assert.equal(state.abilities.constitution, 14);
     assert.match(root.innerHTML, new RegExp(`class="hero-stat-value">${getDerivedStats(state).monk.speedFeet} фт`));

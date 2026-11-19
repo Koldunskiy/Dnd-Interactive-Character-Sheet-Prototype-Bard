@@ -245,15 +245,22 @@ export function renderIncomingWorkspace(session, state) {
       {
       const save = draft.saveDraft;
       const projection = projectSavingThrow(state, { ...save, amendment: null });
+      const selectedD20 = save.d20InputMode === "selected";
       const modes = save.source === "spell" ? ["advantage"] : ["normal", "advantage", "disadvantage"];
       body = `<label>Источник<select data-workspace-field name="saveSource">${["unknown", "other", "spell"].map((source) =>
         `<option value="${source}" ${save.source === source ? "selected" : ""}>${source === "unknown" ? "Не указан" : source === "other" ? "Другое" : "Заклинание"}</option>`).join("")}</select></label>
         <label>Спасбросок<select data-workspace-field name="saveAbility">${ABILITIES.map(([key, label]) =>
         `<option value="${key}" ${save.ability === key ? "selected" : ""}>${label}</option>`).join("")}</select></label>
-        ${field("firstD20", "Первый физический к20", save.firstD20 ?? "", 'type="number" min="1" max="20" step="1"')}
-        <label>Режим<select data-workspace-field name="rollMode">${modes.map((mode) =>
-        `<option value="${mode}" ${save.rollMode === mode ? "selected" : ""}>${mode}</option>`).join("")}</select></label>
-        ${save.rollMode !== "normal" ? field("secondD20", "Второй физический к20", save.secondD20 ?? "", 'type="number" min="1" max="20" step="1"') : ""}
+        ${selectedD20
+          ? `${field("firstD20", "Выбранный физический к20", save.firstD20 ?? "", 'type="number" min="1" max="20" step="1"')}
+             <p>При преимуществе введите больший результат двух костей, при помехе - меньший. Приложение добавит модификатор.</p>
+             <input type="hidden" data-workspace-field name="d20InputMode" value="selected">
+             <input type="hidden" data-workspace-field name="rollMode" value="preselected">
+             <input type="hidden" data-workspace-field name="secondD20" value="">`
+          : `${field("firstD20", "Первый физический к20", save.firstD20 ?? "", 'type="number" min="1" max="20" step="1"')}
+             <label>Режим<select data-workspace-field name="rollMode">${modes.map((mode) =>
+             `<option value="${mode}" ${save.rollMode === mode ? "selected" : ""}>${mode}</option>`).join("")}</select></label>
+             ${save.rollMode !== "normal" ? field("secondD20", "Второй физический к20", save.secondD20 ?? "", 'type="number" min="1" max="20" step="1"') : ""}`}
         ${field("dc", "Сложность (если известна)", save.dc ?? "", 'type="number" min="1" max="99" step="1"')}
         ${save.source === "spell" ? "<small>Спасбросок от заклинания использует текущее правило: преимущество «Сопротивления магии» Юань-ти.</small>" : ""}
         <div data-incoming-preview>${renderIncomingPreview(session, state)}</div>`;

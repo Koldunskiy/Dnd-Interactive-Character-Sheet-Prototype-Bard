@@ -391,8 +391,19 @@ function attackNumber(state, session) {
   const sequence = (state.monk?.combatAssistant?.activeSequences ?? [])
     .find((entry) => entry.id === session.sequenceId);
   const attack = sequence?.resolvedAttacks?.find((entry) => entry.id === session.attackId);
-  return attack?.slotNumber ??
-    (sequence?.resolvedAttacks?.findIndex((entry) => entry.id === session.attackId) ?? -1) + 1;
+  if (attack && Number.isSafeInteger(attack.slotNumber)) return attack.slotNumber;
+  const pending = session.pendingSeekingIntent ?? session.pendingAttackIntent;
+  const request = pending?.request ?? pending;
+  if (Number.isSafeInteger(request?.slotNumber) &&
+      request.slotNumber >= 1 && request.slotNumber <= (sequence?.maximumAttacks ?? 0)) {
+    if (session.pendingSeekingIntent ||
+        request.sequenceId == null || request.sequenceId === session.sequenceId) {
+      return request.slotNumber;
+    }
+  }
+  if (session.pendingSeekingIntent) return null;
+  if (pending && sequence) return getUsedAttackSlots(sequence) + 1;
+  return null;
 }
 
 function recordedAttackFormula(attack) {
@@ -480,7 +491,7 @@ function renderAttackRecord(attack, state, attackIndex, maximumAttacks) {
   const application = (state.monk?.combatAssistant?.pendingApplications ?? [])
     .find((entry) => entry.id === attack.techniqueApplicationId);
   return `<article class="workspace-record">
-    <h3>Удар ${attack.slotNumber ?? attackIndex + 1}/${maximumAttacks} · ${attack.hitResult === "hit" ? "попадание" : "промах"}${attack.critical && attack.hitResult === "hit" ? " · критическое" : ""}</h3>
+    <h3>Удар ${attack.slotNumber ?? attackIndex + 1}/${maximumAttacks} · ${attack.hitResult === "hit" ? "попадание" : attack.hitResult === "miss" ? "промах" : "исход неизвестен"}${attack.critical && attack.hitResult === "hit" ? " · критическое" : ""}</h3>
     ${attack.optionalTargetLabel ? `<p>${escapeHtml(attack.optionalTargetLabel)}</p>` : ""}
     <p>${recordedAttackFormula(attack)}</p>
     ${attack.damageStatus === "awaiting-damage" ? "<p>Ожидает записи урона.</p>" : ""}

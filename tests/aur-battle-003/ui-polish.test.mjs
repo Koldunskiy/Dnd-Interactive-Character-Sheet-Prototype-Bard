@@ -199,7 +199,7 @@ test("battle cards and global surfaces have wrapping and theme-token safeguards"
   assert.match(workspaceCss, /font-size:\s*clamp\(4rem,\s*18vw,\s*4\.75rem\)/);
   assert.match(saraCss, /\.sara-hud__primary\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(150px,\s*100%\),\s*1fr\)\)/);
   assert.match(battleCss, /\.battle-console-init-form\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
-  assert.match(battleCss, /\.battle-console-init-form\[data-initiative-presentation="true"\]\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/);
+  assert.match(battleCss, /\.battle-console-init-form\[data-initiative-presentation="true"\]\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*grid-template-rows:\s*auto auto/);
   assert.match(battleCss, /\.battle-console-init-fields\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/);
   assert.match(battleCss, /\[data-sara-task-dock\]\[data-entry-active="true"\] \.sara-hud__secondary/);
   assert.match(battleCss, /--sara-bg:\s*#121d29/);

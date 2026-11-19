@@ -84,7 +84,6 @@
   order: 0;
   grid-column: auto;
   grid-row: auto;
-  display: flex;
   width: 100%;
   min-width: 0;
   gap: 6px;

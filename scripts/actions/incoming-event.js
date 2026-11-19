@@ -68,6 +68,14 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
         !["success", "failure", "unknown"].includes(request.outcome)) {
       return { ok: false, reason: "Выберите характеристику и допустимый исход спасброска." };
     }
+    if (roll.d20InputMode != null &&
+        (roll.d20InputMode !== "selected" || roll.rollMode !== "preselected")) {
+      return { ok: false, reason: "Способ ввода выбранного к20 недопустим." };
+    }
+    if (roll.d20InputMode === "selected" &&
+        roll.secondD20 != null && String(roll.secondD20).trim() !== "") {
+      return { ok: false, reason: "Для выбранного результата укажите только один к20." };
+    }
     if (Object.prototype.hasOwnProperty.call(request, "paidKi") ||
         Object.prototype.hasOwnProperty.call(request, "bonus")) {
       return { ok: false, reason: "Стоимость и бонус поправки определяются сервером." };
@@ -125,6 +133,7 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
     const calculated = calculateCharacterRoll({
       kind: "saving-throw",
       id: roll.id,
+      d20InputMode: roll.d20InputMode,
       firstD20: roll.firstD20,
       secondD20: roll.secondD20,
       rollMode: roll.rollMode,
@@ -155,6 +164,7 @@ export function normalizeIncomingEventRequest(request, state = getState()) {
           id: roll.id,
           firstD20: String(roll.firstD20),
           secondD20: roll.secondD20 == null ? null : String(roll.secondD20),
+          d20InputMode: roll.d20InputMode,
           rollMode: roll.rollMode,
           dc: roll.dc == null || String(roll.dc).trim() === "" ? null : String(roll.dc),
         },
@@ -346,6 +356,7 @@ export function commitIncomingEvent(context, request, operationId) {
       const calculated = calculateCharacterRoll({
         kind: "saving-throw",
         id: normalized.request.roll.id,
+        d20InputMode: normalized.request.roll.d20InputMode,
         firstD20: normalized.request.roll.firstD20,
         secondD20: normalized.request.roll.secondD20,
         rollMode: normalized.request.roll.rollMode,
@@ -362,6 +373,7 @@ export function commitIncomingEvent(context, request, operationId) {
         const saveDraft = {
           ability: normalized.request.roll.id,
           source: normalized.request.spellSaveSource ? "spell" : "unknown",
+          d20InputMode: normalized.request.roll.d20InputMode,
           rollMode: normalized.request.roll.rollMode,
           firstD20: normalized.request.roll.firstD20,
           secondD20: normalized.request.roll.secondD20,

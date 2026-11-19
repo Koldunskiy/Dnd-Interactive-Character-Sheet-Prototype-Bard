@@ -4,6 +4,8 @@
  * isolated candidate states; application adapters own session/revision checks
  * and persistence. Derivation is supplied by the production rules layer.
  */
+import { applyHealing } from "./combat/damage-pools.js";
+
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const plain = v => v !== null && typeof v === 'object' &&
   (Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null);
@@ -11,6 +13,7 @@ const clone = v => structuredClone(v);
 const fail = m => { throw new Error(m); };
 const assert = (v, m) => { if (!v) fail(m); };
 const put = (o, k, v) => Object.defineProperty(o, k, {value:v, writable:true, configurable:true, enumerable:true});
+const CURRENCY_CODES = Object.freeze(["cp", "sp", "ep", "gp", "pp"]);
 export function integer(raw, min = 0, max = Number.MAX_SAFE_INTEGER) {
   assert(typeof raw === 'number' || typeof raw === 'string', 'Expected an integer');
   if (typeof raw === 'string') assert(/^[+-]?\d+$/.test(raw.trim()), 'Nonempty integer required');
@@ -71,6 +74,84 @@ export function recordedMutation(state, intent, mutate) {
   validateFunctionalRuntime(draft);
   return {state:draft, outcome:clone(outcome), replayed:false};
 }
+
+export function previewExternalHealing(state, rawAmount, derive) {
+  sara(state);
+  const amount = integer(rawAmount, 0);
+  const hp = integer(state.combat?.hp?.current, 0);
+  const maximum = integer(derive(state).maxHitPoints, 0);
+  const healed = applyHealing(hp, maximum, amount);
+  assert(healed.ok, healed.reason || "Не удалось рассчитать лечение.");
+  return {
+    requestedHealing: amount,
+    usefulHealing: healed.healing,
+    hpBefore: healed.hpBefore,
+    hpAfter: healed.hpAfter,
+    maxHp: maximum,
+  };
+}
+
+export function receiveExternalHealing(state, request, derive) {
+  assert(request.confirmed === true, "Подтвердите получение лечения.");
+  assert(request.source == null || typeof request.source === "string",
+    "Источник лечения должен быть текстом.");
+  const source = (request.source ?? "").trim();
+  assert(source.length <= 160, "Источник лечения: не более 160 символов.");
+  const payload = { amount: integer(request.amount, 0), source };
+  return recordedMutation(state, {
+    id: request.id,
+    kind: "external-healing",
+    payload,
+  }, (draft) => {
+    const outcome = previewExternalHealing(draft, payload.amount, derive);
+    draft.combat.hp.current = outcome.hpAfter;
+    return { ...outcome, source: payload.source };
+  });
+}
+
+export function changeCurrency(state, request) {
+  assert(["add", "subtract", "set"].includes(request.mode),
+    "Выберите операцию с деньгами.");
+  assert(plain(request.amounts), "Укажите суммы валют.");
+  assert(Object.keys(request.amounts).every((key) => CURRENCY_CODES.includes(key)),
+    "Передана неизвестная валюта.");
+  const amounts = {};
+  for (const key of CURRENCY_CODES) {
+    assert(own(request.amounts, key), "Укажите все пять валют, включая нулевые.");
+    amounts[key] = integer(request.amounts[key], 0);
+  }
+  const payload = { mode: request.mode, amounts };
+  return recordedMutation(state, {
+    id: request.id,
+    kind: "currency",
+    payload,
+  }, (draft) => {
+    const inventory = draft.inventory;
+    assert(plain(inventory), "Раздел инвентаря отсутствует.");
+    const known = inventory.currencyStatus !== "Не заполнено" &&
+      plain(inventory.currency) &&
+      CURRENCY_CODES.every((key) => own(inventory.currency, key) &&
+        Number.isSafeInteger(inventory.currency[key]) && inventory.currency[key] >= 0);
+    assert(known || payload.mode === "set",
+      "Кошелёк не заполнен: сначала явно установите баланс всех валют.");
+    const before = known ? Object.fromEntries(
+      CURRENCY_CODES.map((key) => [key, inventory.currency[key]]),
+    ) : null;
+    const after = {};
+    for (const key of CURRENCY_CODES) {
+      const value = payload.mode === "set" ? payload.amounts[key]
+        : payload.mode === "add" ? before[key] + payload.amounts[key]
+          : before[key] - payload.amounts[key];
+      assert(Number.isSafeInteger(value) && value >= 0,
+        "Недостаточно монет или сумма выходит за допустимый диапазон.");
+      after[key] = value;
+    }
+    inventory.currency = { ...(plain(inventory.currency) ? inventory.currency : {}), ...after };
+    inventory.currencyStatus = "Заполнено";
+    return { mode: payload.mode, before, after };
+  });
+}
+
 export const POTIONS = Object.freeze({
   'healing-potion': {name:'Маленькое зелье лечения', dice:2, bonus:2},
   'greater-healing-potion': {name:'Среднее зелье лечения', dice:4, bonus:4},

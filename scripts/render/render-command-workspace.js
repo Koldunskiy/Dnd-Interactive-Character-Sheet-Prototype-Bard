@@ -114,8 +114,41 @@ function renderCommandForm(session, state) {
       ${number("damage", "Полученный урон", 0)}
       ${check("confirmed", "Подтверждаю полученный итоговый урон.")}`;
   }
+  if (id === "external-healing") {
+    return `<p>Лечение получает Сару как внешний эффект. Ци, действия и предметы не расходуются.</p>
+      ${number("amount", "Количество полученного лечения", 0)}
+      <label class="workspace-field">Источник (необязательно)
+        <input data-workspace-field="source" name="source" maxlength="160" value="${escapeHtml(draft.source ?? "")}">
+      </label>
+      ${check("confirmed", "Подтвердить получение лечения")}`;
+  }
+  if (id === "currency-editor") {
+    const inventory = state.inventory ?? {};
+    const known = inventory.currencyStatus !== "Не заполнено" &&
+      ["cp", "sp", "ep", "gp", "pp"].every((key) =>
+        Number.isSafeInteger(inventory.currency?.[key]) && inventory.currency[key] >= 0);
+    const currency = known ? inventory.currency : { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+    const mode = ["add", "subtract", "set"].includes(draft.mode) ? draft.mode : "set";
+    const amounts = draft.amounts && typeof draft.amounts === "object" ? draft.amounts : {};
+    return `<p>${known ? "Известный кошелёк заполнен." : "Кошелёк неизвестен: сначала установите весь баланс."}</p>
+      <label class="workspace-field">Операция
+        <select data-workspace-field="mode" name="mode">
+          <option value="add" ${mode === "add" ? "selected" : ""}>Добавить</option>
+          <option value="subtract" ${mode === "subtract" ? "selected" : ""}>Списать</option>
+          <option value="set" ${mode === "set" ? "selected" : ""}>Установить баланс</option>
+        </select>
+      </label>
+      <div class="workspace-currency-grid">
+        ${[["cp", "ММ"], ["sp", "СМ"], ["ep", "ЭМ"], ["gp", "ЗМ"], ["pp", "ПМ"]].map(([key, label]) =>
+          `<label class="workspace-field">${label}
+            <input data-workspace-field="amount-${key}" name="amount-${key}" type="number" min="0" step="1"
+              value="${escapeHtml(amounts[key] ?? (mode === "set" ? currency[key] : 0))}">
+          </label>`).join("")}
+      </div>`;
+  }
   if (id === "character-roll") {
     const kind = draft.kind === "saving-throw" ? "saving-throw" : "ability-check";
+    const selectedD20 = draft.d20InputMode === "selected";
     const rollMode = ["normal", "advantage", "disadvantage"].includes(draft.rollMode)
       ? draft.rollMode : "normal";
     const choices = kind === "saving-throw"
@@ -128,59 +161,73 @@ function renderCommandForm(session, state) {
     const rollBreakdown = getSaraRollBreakdown(state, kind, draft.id);
     const selectedLabel = rollBreakdown.ok ? rollBreakdown.label.toLocaleUpperCase("ru-RU") : "ФИЗИЧЕСКИЙ БРОСОК";
     return `<label class="workspace-field">Тип броска
-        <select data-workspace-field="kind" name="kind">
-          <option value="ability-check" ${kind === "ability-check" ? "selected" : ""}>Проверка характеристики или навыка</option>
-          <option value="saving-throw" ${kind === "saving-throw" ? "selected" : ""}>Спасбросок</option>
-        </select>
-      </label>
-      ${select("id", kind === "saving-throw" ? "Характеристика спасброска" : "Характеристика или навык", choices)}
-      <fieldset class="workspace-roll-mode">
-        <legend>Режим броска</legend>
-        <div>
-          ${[["normal", "Обычный"], ["advantage", "Преимущество"], ["disadvantage", "Помеха"]]
-            .map(([value, label]) => `<button type="button" class="workspace-roll-mode__option"
-              data-workspace-action="roll-mode-${value}" aria-pressed="${rollMode === value}">${label}</button>`).join("")}
-        </div>
-        <input type="hidden" data-workspace-field="rollMode" name="rollMode" value="${rollMode}">
-      </fieldset>
-      <div class="workspace-entry-core">
-        <div class="workspace-entry-fields ${rollMode === "normal" ? "" : "workspace-entry-fields--pair"}">
-          ${number("firstD20", "Физический к20", 1, 20)}
-          <div data-workspace-second-d20 ${rollMode === "normal" ? "hidden" : ""}>
-            ${number("secondD20", "Второй к20", 1, 20)}
+      <select data-workspace-field="kind" name="kind">
+        <option value="ability-check" ${kind === "ability-check" ? "selected" : ""}>Проверка характеристики или навыка</option>
+        <option value="saving-throw" ${kind === "saving-throw" ? "selected" : ""}>Спасбросок</option>
+      </select>
+    </label>
+    ${select("id", kind === "saving-throw" ? "Характеристика спасброска" : "Характеристика или навык", choices)}
+    ${selectedD20
+      ? `<p>При преимуществе введите больший результат двух костей, при помехе - меньший. Приложение добавит модификатор.</p>
+        <div class="workspace-entry-core">
+          ${number("firstD20", "Выбранный физический к20", 1, 20)}
+          <input type="hidden" data-workspace-field="d20InputMode" name="d20InputMode" value="selected">
+          <input type="hidden" data-workspace-field="rollMode" name="rollMode" value="preselected">
+          <input type="hidden" data-workspace-field="secondD20" name="secondD20" value="">
+          <section class="workspace-entry-result workspace-attack-result workspace-roll-result" aria-live="polite">
+            <span class="workspace-attack-result__label" data-roll-label>${escapeHtml(selectedLabel)}</span>
+            <output class="workspace-attack-result__total" data-roll-total>—</output>
+            <span class="workspace-attack-result__formula" data-roll-formula></span>
+            <span class="workspace-input-message" data-roll-validation role="status"></span>
+          </section>
+        </div>`
+      : `<fieldset class="workspace-roll-mode">
+          <legend>Режим броска</legend>
+          <div>
+            ${[["normal", "Обычный"], ["advantage", "Преимущество"], ["disadvantage", "Помеха"]]
+              .map(([value, label]) => `<button type="button" class="workspace-roll-mode__option"
+                data-workspace-action="roll-mode-${value}" aria-pressed="${rollMode === value}">${label}</button>`).join("")}
           </div>
+          <input type="hidden" data-workspace-field="rollMode" name="rollMode" value="${rollMode}">
+        </fieldset>
+        <div class="workspace-entry-core">
+          <div class="workspace-entry-fields ${rollMode === "normal" ? "" : "workspace-entry-fields--pair"}">
+            ${number("firstD20", "Физический к20", 1, 20)}
+            <div data-workspace-second-d20 ${rollMode === "normal" ? "hidden" : ""}>
+              ${number("secondD20", "Второй к20", 1, 20)}
+            </div>
+          </div>
+          <section class="workspace-entry-result workspace-attack-result workspace-roll-result" aria-live="polite">
+            <span class="workspace-attack-result__label" data-roll-label>${escapeHtml(selectedLabel)}</span>
+            <output class="workspace-attack-result__total" data-roll-total>—</output>
+            <span class="workspace-attack-result__formula" data-roll-formula></span>
+            <span class="workspace-roll-result__selected" data-roll-selected></span>
+            <span class="workspace-roll-result__modifiers" data-roll-modifiers></span>
+            <span class="workspace-roll-result__mode" data-roll-mode-status></span>
+            <span class="workspace-input-message" data-roll-validation role="status"></span>
+          </section>
         </div>
-      <section class="workspace-entry-result workspace-attack-result workspace-roll-result" aria-live="polite">
-        <span class="workspace-attack-result__label" data-roll-label>${escapeHtml(selectedLabel)}</span>
-        <output class="workspace-attack-result__total" data-roll-total>—</output>
-        <span class="workspace-attack-result__formula" data-roll-formula></span>
-        <span class="workspace-roll-result__selected" data-roll-selected></span>
-        <span class="workspace-roll-result__modifiers" data-roll-modifiers></span>
-        <span class="workspace-roll-result__mode" data-roll-mode-status></span>
-        <span class="workspace-input-message" data-roll-validation role="status"></span>
-      </section>
-      </div>
-      ${kind === "saving-throw"
-        ? check("spellSaveSource", "Спасбросок от заклинания · преимущество Юань-ти") : ""}
-      <details class="workspace-roll-sources">
-        <summary>Источники преимущества или помехи</summary>
-        <label class="workspace-field">Причина преимущества
-          <input data-workspace-field="advantageReason" name="advantageReason" value="${escapeHtml(draft.advantageReason ?? "")}">
-        </label>
-        <label class="workspace-field">Причина помехи
-          <input data-workspace-field="disadvantageReason" name="disadvantageReason" value="${escapeHtml(draft.disadvantageReason ?? "")}">
-        </label>
-      </details>
-      ${kind === "ability-check" && draft.id === "persuasion" &&
-        effective.has("ll-monk:mantle-of-courtesy")
-        ? `<p>«Мантия учтивости» заменит выбранный к20 уровнем монаха и стоит 1 ци.</p>
-          <button type="button" class="btn btn--utility" data-workspace-action="roll-amend-mantle-preview">Записать с «Мантией учтивости» · 1 ци</button>` : ""}
-      ${kind === "ability-check" && draft.id === "athletics" &&
-        effective.has("ll-monk:indomitable-spirit")
-        ? `${check("timingConfirmed", "Подтверждаю: ведущий ещё не объявил исход проверки Атлетики.")}
-          <p>«Несокрушимый дух» добавит модификатор Мудрости к итогу и стоит 1 ци.</p>
-          <button type="button" class="btn btn--utility" data-workspace-action="roll-amend-spirit-preview">Записать с «Несокрушимым духом» · 1 ци</button>` : ""}
-      <p>Итог использует текущие параметры персонажа. Бросок не тратит действие или ресурс.</p>`;
+        ${kind === "saving-throw"
+          ? check("spellSaveSource", "Спасбросок от заклинания · преимущество Юань-ти") : ""}
+        <details class="workspace-roll-sources">
+          <summary>Источники преимущества или помехи</summary>
+          <label class="workspace-field">Причина преимущества
+            <input data-workspace-field="advantageReason" name="advantageReason" value="${escapeHtml(draft.advantageReason ?? "")}">
+          </label>
+          <label class="workspace-field">Причина помехи
+            <input data-workspace-field="disadvantageReason" name="disadvantageReason" value="${escapeHtml(draft.disadvantageReason ?? "")}">
+          </label>
+        </details>`}
+    ${kind === "ability-check" && draft.id === "persuasion" &&
+      effective.has("ll-monk:mantle-of-courtesy")
+      ? `<p>«Мантия учтивости» заменит выбранный к20 уровнем монаха и стоит 1 ци.</p>
+        <button type="button" class="btn btn--utility" data-workspace-action="roll-amend-mantle-preview">Записать с «Мантией учтивости» · 1 ци</button>` : ""}
+    ${kind === "ability-check" && draft.id === "athletics" &&
+      effective.has("ll-monk:indomitable-spirit")
+      ? `${check("timingConfirmed", "Подтверждаю: ведущий ещё не объявил исход проверки Атлетики.")}
+        <p>«Несокрушимый дух» добавит модификатор Мудрости к итогу и стоит 1 ци.</p>
+        <button type="button" class="btn btn--utility" data-workspace-action="roll-amend-spirit-preview">Записать с «Несокрушимым духом» · 1 ци</button>` : ""}
+    <p>Итог использует текущие параметры персонажа. Бросок не тратит действие или ресурс.</p>`;
   }
   if (id === "resource-correction") {
     const resources = [
@@ -315,6 +362,7 @@ function getRollPreviewInput(draft) {
   return {
     kind: draft.kind,
     id: draft.id,
+    d20InputMode: draft.d20InputMode,
     rollMode: draft.rollMode,
     firstD20: draft.firstD20,
     secondD20: draft.secondD20,

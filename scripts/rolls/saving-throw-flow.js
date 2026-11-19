@@ -8,10 +8,12 @@ const OUTCOMES = ["success", "failure", "unknown"];
 
 export function createSavingThrowDraft(options = {}) {
   const source = ["spell", "other", "unknown"].includes(options.source) ? options.source : "unknown";
+  const selected = options.d20InputMode === "selected";
   return {
     ability: ABILITIES.includes(options.ability) ? options.ability : "strength",
     source,
-    rollMode: source === "spell" ? "advantage" :
+    d20InputMode: selected ? "selected" : undefined,
+    rollMode: selected ? "preselected" : source === "spell" ? "advantage" :
       ["normal", "advantage", "disadvantage"].includes(options.rollMode) ? options.rollMode : "normal",
     firstD20: "",
     secondD20: "",
@@ -42,8 +44,13 @@ export function projectSavingThrow(state, saveDraft) {
   if (!saveDraft || !ABILITIES.includes(saveDraft.ability)) {
     return { ok: false, reason: "Выберите характеристику спасброска." };
   }
+  const selected = saveDraft.d20InputMode === "selected";
+  if (saveDraft.d20InputMode != null && !selected) {
+    return { ok: false, reason: "Неизвестный способ ввода к20." };
+  }
   if (!["spell", "other", "unknown"].includes(saveDraft.source) ||
-      saveDraft.source === "spell" && saveDraft.rollMode !== "advantage") {
+      (!selected && saveDraft.source === "spell" && saveDraft.rollMode !== "advantage") ||
+      (selected && saveDraft.rollMode !== "preselected")) {
     return { ok: false, reason: "Источник или режим спасброска недопустим." };
   }
   if (!["auto", "manual"].includes(saveDraft.baseOutcomeMode) ||
@@ -57,6 +64,7 @@ export function projectSavingThrow(state, saveDraft) {
   const base = calculateCharacterRoll({
     kind: "saving-throw",
     id: saveDraft.ability,
+    d20InputMode: saveDraft.d20InputMode,
     firstD20: saveDraft.firstD20,
     secondD20: saveDraft.secondD20,
     rollMode: saveDraft.rollMode,
@@ -156,6 +164,7 @@ export function buildCompletedSaveRequest(identity, projection, saveDraft) {
     spellSaveSource: saveDraft.source === "spell",
     roll: {
       id: saveDraft.ability, firstD20: saveDraft.firstD20, secondD20: saveDraft.secondD20,
+      d20InputMode: saveDraft.d20InputMode,
       rollMode: saveDraft.rollMode, dc: saveDraft.dc,
     },
   };

@@ -464,6 +464,7 @@ export function renderInventoryMarkup(state) {
       <aside class="sara-inventory-sidebar">
         <p class="sara-inventory-summary">Настроено: ${attunedCount}</p>
         <p class="sara-inventory-wallet">Кошелёк: <strong>${escapeHtml(currencySummary)}</strong></p>
+        <button type="button" class="btn btn--utility" data-action="open-currency-editor">Изменить деньги</button>
         <details class="sara-details sara-inventory-editors">
           <summary>Деньги и заметки о снаряжении</summary>
           <section class="info-card"><h3>Деньги</h3>${currencyMarkup}</section>

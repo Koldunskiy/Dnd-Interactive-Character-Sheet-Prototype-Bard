@@ -20,6 +20,18 @@ export function getSaraHudModel(state, derived = getDerivedStats(state)) {
     reactionAvailable: budget.reactionAvailable,
     concentration: typeof state?.combat?.concentration === "string"
       ? state.combat.concentration.trim() : "",
+    initiative: (() => {
+      const battle = state?.battleConsole?.current;
+      const initiative = battle?.initiative;
+      if (!battle?.id || !["waiting", "own-turn", "paused"].includes(battle.phase) ||
+          !initiative || !Number.isSafeInteger(initiative.total) ||
+          !Number.isSafeInteger(initiative.rawD20)) return null;
+      return {
+        total: initiative.total,
+        rawD20: initiative.rawD20,
+        modifierSources: Array.isArray(initiative.sources) ? initiative.sources : [],
+      };
+    })(),
     effects: effects.map(({ name, source, duration, notes }) => ({
       name, source, duration, notes,
     })),
@@ -82,6 +94,8 @@ export function renderSaraHud(model, {
         ? ""
         : `<div class="sara-hud__secondary">
             <span>КД <strong>${format(model.armorClass)}</strong></span>
+            ${model.initiative
+              ? `<span>Инициатива <strong>${format(model.initiative.total)}</strong></span>` : ""}
             <span>Приёмы <strong>${format(model.practiced?.current)}/${format(model.practiced?.maximum)}</strong></span>
             <span>Скорость <strong>${format(model.speed)} фт</strong></span>
             <span>Реакция <strong>${model.reactionAvailable ? "готова" : "потрачена"}</strong></span>
