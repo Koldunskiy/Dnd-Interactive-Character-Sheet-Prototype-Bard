@@ -2,7 +2,30 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { sara } from "../../data/sara.js";
 import { character as aurelia } from "../../data/character.js";
-import { renderBackgroundDetails } from "../../scripts/render/render-profile.js";
+import { getDerivedStats } from "../../scripts/calculations.js";
+import { renderBackgroundDetails, renderProfile } from "../../scripts/render/render-profile.js";
+
+function extractBackground(html) {
+  const opening = html.indexOf('data-sara-key="profile-background"');
+  if (opening < 0) return "";
+  const sectionStart = html.lastIndexOf("<section", opening);
+  let depth = 0;
+  let cursor = sectionStart;
+  while (cursor >= 0) {
+    const nextOpen = html.indexOf("<section", cursor);
+    const nextClose = html.indexOf("</section>", cursor);
+    if (nextClose < 0) return html.slice(sectionStart);
+    if (nextOpen >= 0 && nextOpen < nextClose) {
+      depth++;
+      cursor = nextOpen + 8;
+    } else {
+      depth--;
+      cursor = nextClose + 9;
+      if (depth === 0) return html.slice(sectionStart, cursor);
+    }
+  }
+  return html.slice(sectionStart);
+}
 
 test("A1: Aurelia proficiencies render correctly with ready Russian strings", () => {
   const bgDetails = structuredClone(aurelia.backgroundDetails);
@@ -32,34 +55,33 @@ test("A1: Aurelia proficiencies render correctly with ready Russian strings", ()
 test("A1: Sara proficiencies render localized via renderBackgroundDetails", () => {
   const bgDetails = structuredClone(sara.backgroundDetails);
   const html = renderBackgroundDetails(bgDetails);
-  
-  // Should have headers
-  assert.ok(html.includes("Владение навыками:"), "Should have skills header");
-  
-  // Extract the skills section to check for raw IDs
-  const skillsStart = html.indexOf("Владение навыками:");
-  const skillsEnd = html.indexOf(".", skillsStart);
-  const skillsText = html.slice(skillsStart, skillsEnd);
-  
-  // Raw technical IDs should NOT appear in display (they might be in attributes)
-  assert.ok(!skillsText.includes("deception"),
-    "Raw ID 'deception' should not appear in skills display");
-  assert.ok(!skillsText.includes("stealth"),
-    "Raw ID 'stealth' should not appear in skills display");
+  const section = extractBackground(html);
+
+  assert.match(section, /Владение навыками: Обман, Скрытность\./);
+  assert.match(section, /Владение инструментами: Воровские инструменты, Игральные карты\./);
+  for (const id of ["deception", "stealth", "thieves-tools", "playing-cards"]) {
+    assert.ok(!section.includes(id), `Raw technical ID ${id} must not appear in visible background text`);
+  }
 });
 
 test("A1: Empty proficiencies do not create output via renderBackgroundDetails", () => {
-  const bgDetails = structuredClone(aurelia.backgroundDetails);
-  bgDetails.proficiencies = { skills: [], tools: [] };
-  
-  const html = renderBackgroundDetails(bgDetails);
-  
-  // With empty proficiencies and feature name still present, output should still be generated
-  // But the skills/tools lines should not appear
-  if (html.includes("Владение навыками:")) {
-    // If it appears, it should be followed only by a period
-    assert.match(html, /Владение навыками:\s*\./);
+  for (const proficiencies of [
+    { skills: [], tools: [] },
+    { skills: null, tools: null },
+    { skills: undefined, tools: undefined },
+  ]) {
+    const bgDetails = structuredClone(aurelia.backgroundDetails);
+    bgDetails.proficiencies = proficiencies;
+    const section = extractBackground(renderBackgroundDetails(bgDetails));
+    assert.doesNotMatch(section, /Владение навыками:/);
+    assert.doesNotMatch(section, /Владение инструментами:/);
   }
+  const bgDetails = structuredClone(aurelia.backgroundDetails);
+  delete bgDetails.proficiencies;
+  const section = extractBackground(renderBackgroundDetails(bgDetails));
+  assert.doesNotMatch(section, /Владение навыками:/);
+  assert.doesNotMatch(section, /Владение инструментами:/);
+  assert.doesNotMatch(section, /\[object Object\]|undefined|null/);
 });
 
 test("A1: Proficiencies with structured entries render correctly via renderBackgroundDetails", () => {
@@ -80,21 +102,15 @@ test("A1: Proficiencies with structured entries render correctly via renderBackg
 
 test("A1: HTML escaping in proficiencies via renderBackgroundDetails", () => {
   const bgDetails = structuredClone(aurelia.backgroundDetails);
-  bgDetails.proficiencies.skills = ["Навык с <script>alert('xss')</script>"];
-  
+  bgDetails.proficiencies.skills = [
+    "Навык с <script>alert('xss')</script>",
+    { name: "<img src=x onerror=alert(1)> Навык" },
+  ];
   const html = renderBackgroundDetails(bgDetails);
-  
-  // Should NOT contain executable script tag in rendered output
-  assert.ok(!html.includes("<script>"),
-    "Script tags should be escaped");
-  
-  // But the text content should still be visible
-  assert.ok(html.includes("Навык с"),
-    "Text content should be preserved");
-  
-  // And the escaped version should be present
-  assert.ok(html.includes("&lt;script&gt;") || html.includes("&#") || !html.includes("script>"),
-    "HTML should be escaped");
+  const section = extractBackground(html);
+  assert.doesNotMatch(section, /<script\b|<img\b/);
+  assert.match(section, /Навык с &lt;script&gt;alert\(&#039;xss&#039;\)&lt;\/script&gt;/);
+  assert.match(section, /&lt;img src=x onerror=alert\(1\)&gt; Навык/);
 });
 
 test("A1: Null/undefined proficiencies handled without errors via renderBackgroundDetails", () => {
@@ -134,21 +150,47 @@ test("A1: Mixed skills/tools data - ID lookups and ready strings together", () =
   assert.ok(html.includes("Акробатика"), "Ready skill string should appear");
   assert.ok(html.includes("Набор для грима"), "Ready tool string should appear");
   
-  // IDs should be translated
-  assert.ok(html.includes("Скрытность") || html.includes("stealth"), 
-    "ID should be translated or preserved");
-  assert.ok(html.includes("Воровские инструменты") || html.includes("thieves-tools"),
-    "Tool ID should be translated or preserved");
-  
-  // Raw IDs in identifier form should NOT appear in skills display
-  const skillsStart = html.indexOf("Владение навыками:");
-  const skillsEnd = html.indexOf(".", skillsStart);
-  const skillsDisplay = html.slice(skillsStart, skillsEnd);
-  
-  // If stealth was not translated to Скрытность, that's acceptable (fallback),
-  // but we should not have both the ID and translation
-  assert.ok(!skillsDisplay.includes("stealth [") && !skillsDisplay.includes("] Скрытность"),
-    "Should not have duplicate ID and translation");
+  const section = extractBackground(html);
+  assert.match(section, /Владение навыками: Акробатика, Скрытность\./);
+  assert.match(section, /Владение инструментами: Набор для грима, Воровские инструменты\./);
+  assert.doesNotMatch(section, /\bstealth\b|\bthieves-tools\b/);
+});
+
+test("A1: Switching Aurelia -> Sara -> Aurelia renders only the active background proficiencies", () => {
+  const previousDocument = globalThis.document;
+  const previousWindow = globalThis.window;
+  globalThis.document = {
+    querySelectorAll: () => [],
+    querySelector: () => ({ dataset: { characterId: "aurelia" } }),
+  };
+  globalThis.window = {
+    matchMedia: () => ({ matches: true, addEventListener() {} }),
+  };
+  try {
+    const root = { innerHTML: "" };
+    renderProfile(root, structuredClone(aurelia), getDerivedStats(aurelia));
+    let section = extractBackground(root.innerHTML);
+    assert.match(section, /Акробатика/);
+    assert.match(section, /Выступление/);
+    assert.doesNotMatch(section, /Скрытность|Воровские инструменты/);
+
+    renderProfile(root, structuredClone(sara), getDerivedStats(sara));
+    section = extractBackground(root.innerHTML);
+    assert.match(section, /Обман, Скрытность/);
+    assert.match(section, /Воровские инструменты, Игральные карты/);
+    assert.doesNotMatch(section, /Акробатика|Выступление|Набор для грима|Музыкальный инструмент/);
+
+    renderProfile(root, structuredClone(aurelia), getDerivedStats(aurelia));
+    section = extractBackground(root.innerHTML);
+    assert.match(section, /Акробатика/);
+    assert.match(section, /Выступление/);
+    assert.doesNotMatch(section, /Скрытность|Воровские инструменты/);
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
 });
 
 test("A1: Mutation check - renderBackgroundDetails does not modify input", () => {

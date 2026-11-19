@@ -714,4 +714,4 @@ export function renderProfile(root, character, derived) {
   applyProfileDisclosureState(disclosureState, characterId);
 }
 
-export { renderBackgroundDetails, SKILL_LABELS };
+export { renderBackgroundDetails };

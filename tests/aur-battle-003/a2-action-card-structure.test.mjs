@@ -2,7 +2,50 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { renderHomeActionCard } from "../../scripts/render/render-battle-console.js";
 
-// Proper structure validator - correctly finds content closing tag
+// Limited structural parser for markup emitted by renderHomeActionCard().
+// It is not a general HTML parser; it tracks element stack and direct parents.
+function parseControlledMarkup(html) {
+  const root = { tag: "#root", parent: null, attrs: "", children: [] };
+  const stack = [root];
+  const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+  const tagPattern = /<!--[\s\S]*?-->|<![^>]*>|<\/?([A-Za-z][A-Za-z0-9:-]*)([^>]*)>/g;
+  let match;
+  while ((match = tagPattern.exec(html))) {
+    const token = match[0];
+    if (token.startsWith("<!--") || token.startsWith("<!") ) continue;
+    if (/^<\//.test(token)) {
+      const closing = /^<\/([A-Za-z][A-Za-z0-9:-]*)/.exec(token)?.[1].toLowerCase();
+      for (let index = stack.length - 1; index > 0; index--) {
+        if (stack[index].tag === closing) {
+          stack.length = index;
+          break;
+        }
+      }
+      continue;
+    }
+    const opening = /^<([A-Za-z][A-Za-z0-9:-]*)([^>]*)>/.exec(token);
+    if (!opening) continue;
+    const tag = opening[1].toLowerCase();
+    const attrs = opening[2];
+    const node = { tag, parent: stack.at(-1), attrs, children: [] };
+    stack.at(-1).children.push(node);
+    const selfClosing = /\/\s*>$/.test(token);
+    if (!voidTags.has(tag) && !selfClosing) stack.push(node);
+  }
+  return root;
+}
+
+function attributeValue(node, name) {
+  const match = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')`).exec(node.attrs);
+  return match ? (match[1] ?? match[2]) : null;
+}
+
+function findNodes(node, predicate, found = []) {
+  if (predicate(node)) found.push(node);
+  for (const child of node.children) findNodes(child, predicate, found);
+  return found;
+}
+
 function validateButtonStructure(html) {
   const result = {
     hasButton: false,
@@ -13,78 +56,62 @@ function validateButtonStructure(html) {
     contentIsDirectChild: false,
     metaIsDirectChild: false,
     metaNotInContent: false,
+    reasonInContent: false,
+    reasonNotInMeta: false,
+    disabledOnButton: false,
     errors: [],
   };
-  
-  // Find button opening
-  const buttonStart = html.indexOf('<button');
-  if (buttonStart < 0) {
+  const tree = parseControlledMarkup(html);
+  const [button] = findNodes(tree, (node) => node.tag === "button");
+  if (!button) {
     result.errors.push("No button element found");
     return result;
   }
   result.hasButton = true;
-  
-  const buttonTagEnd = html.indexOf('>', buttonStart);
-  const buttonEnd = html.indexOf('</button>', buttonStart);
-  if (buttonEnd < 0) {
-    result.errors.push("Button not closed");
-    return result;
+  result.disabledOnButton = /(?:^|\s)disabled(?:\s|=|$)/.test(attributeValue(button, "disabled") === "" ? " disabled" : ` ${button.attrs}`);
+
+  const direct = button.children;
+  const findClassDirect = (className) => direct.find((node) => attributeValue(node, "class")?.split(/\s+/).includes(className));
+  const icon = findClassDirect("battle-home-action__icon");
+  const content = findClassDirect("battle-home-action__content");
+  const meta = findClassDirect("battle-home-action__meta");
+  const allMeta = findNodes(button, (node) =>
+    attributeValue(node, "class")?.split(/\s+/).includes("battle-home-action__meta")
+  );
+
+  result.hasIcon = Boolean(icon);
+  result.iconIsDirectChild = Boolean(icon);
+  result.hasContent = Boolean(content);
+  result.contentIsDirectChild = Boolean(content);
+  result.hasMeta = allMeta.length > 0;
+  result.metaIsDirectChild = Boolean(meta);
+  result.metaNotInContent = Boolean(meta) && meta.parent === button &&
+    !(content && findNodes(content, (node) => node === meta).length);
+
+  if (icon && icon.parent !== button) result.errors.push("Icon is not a direct button child");
+  if (content && content.parent !== button) result.errors.push("Content is not a direct button child");
+  if (meta && meta.parent !== button) result.errors.push("Meta is not a direct button child");
+  if (!meta) result.errors.push("No meta span found");
+  if (!content) result.errors.push("No content span found");
+  if (content && findNodes(content, (node) =>
+    attributeValue(node, "class")?.split(/\s+/).includes("battle-home-action__meta")
+  ).length) result.errors.push("Meta is nested inside content");
+  if (!meta && allMeta.length) result.errors.push("Meta is not a direct button child");
+
+  if (content) {
+    const reasonNodes = findNodes(content, (node) =>
+      attributeValue(node, "class")?.split(/\s+/).includes("battle-home-action__reason")
+    );
+    result.reasonInContent = reasonNodes.length > 0;
   }
-  
-  const buttonInner = html.slice(buttonTagEnd + 1, buttonEnd);
-  
-  // Find icon
-  const iconStart = buttonInner.indexOf('<span class="battle-home-action__icon"');
-  if (iconStart >= 0) {
-    result.hasIcon = true;
-    result.iconIsDirectChild = true; // If found in buttonInner, it's direct child
-  }
-  
-  // Find content - correctly identify its closing tag
-  const contentStart = buttonInner.indexOf('<span class="battle-home-action__content"');
-  if (contentStart >= 0) {
-    result.hasContent = true;
-    result.contentIsDirectChild = true;
-    
-    // Find content closing tag by counting nested spans
-    let spanCount = 1;
-    let pos = contentStart + '<span class="battle-home-action__content"'.length;
-    
-    while (spanCount > 0 && pos < buttonInner.length) {
-      const nextOpen = buttonInner.indexOf('<span', pos);
-      const nextClose = buttonInner.indexOf('</span>', pos);
-      
-      if (nextClose < 0) break;
-      
-      if (nextOpen >= 0 && nextOpen < nextClose) {
-        spanCount++;
-        pos = nextOpen + 5;
-      } else {
-        spanCount--;
-        pos = nextClose + 7;
-      }
-    }
-    
-    const contentEnd = pos;
-    const contentSection = buttonInner.slice(contentStart, contentEnd);
-    
-    // Check if meta is inside content
-    if (contentSection.includes('class="battle-home-action__meta"')) {
-      result.errors.push("Meta is nested inside content");
-    } else {
-      result.metaNotInContent = true;
-    }
+  if (meta) {
+    const reasonNodes = findNodes(meta, (node) =>
+      attributeValue(node, "class")?.split(/\s+/).includes("battle-home-action__reason")
+    );
+    result.reasonNotInMeta = reasonNodes.length === 0;
   } else {
-    result.errors.push("No content span found");
+    result.reasonNotInMeta = true;
   }
-  
-  // Find meta
-  const metaStart = buttonInner.indexOf('<span class="battle-home-action__meta"');
-  if (metaStart >= 0) {
-    result.hasMeta = true;
-    result.metaIsDirectChild = true; // If found in buttonInner, it's direct child
-  }
-  
   return result;
 }
 
@@ -317,4 +344,56 @@ test("A2: NEGATIVE FIXTURE - old nested meta structure must fail validation", ()
     "NEGATIVE: Nested meta should fail - structure.metaNotInContent should be false");
   assert.ok(structure.errors.includes("Meta is nested inside content"),
     "NEGATIVE: Should detect meta nesting error");
+});
+
+test("A2: NEGATIVE FIXTURE - meta in div.wrapper is not a direct button child", () => {
+  const badHtml = `<button type="button" class="battle-home-action">
+    <span class="battle-home-action__icon"><svg><path d="M0 0"/></svg></span>
+    <span class="battle-home-action__content">
+      <strong>Атака</strong><span>Описание</span>
+    </span>
+    <div class="wrapper">
+      <span class="battle-home-action__meta">Действие</span>
+    </div>
+  </button>`;
+  const structure = validateButtonStructure(badHtml);
+  assert.ok(!structure.metaIsDirectChild);
+  assert.ok(structure.errors.includes("Meta is not a direct button child"));
+});
+
+test("A2: NEGATIVE FIXTURES - content and icon may not be wrapped", () => {
+  for (const [name, badHtml] of [
+    ["content", `<button class="battle-home-action"><span class="battle-home-action__icon"></span><div><span class="battle-home-action__content"><strong>Атака</strong></span></div><span class="battle-home-action__meta">Действие</span></button>`],
+    ["icon", `<button class="battle-home-action"><div><span class="battle-home-action__icon"></span></div><span class="battle-home-action__content"><strong>Атака</strong></span><span class="battle-home-action__meta">Действие</span></button>`],
+  ]) {
+    const structure = validateButtonStructure(badHtml);
+    if (name === "content") assert.ok(!structure.contentIsDirectChild);
+    if (name === "icon") assert.ok(!structure.iconIsDirectChild);
+  }
+});
+
+test("A2: production card keeps hooks, disabled state, reason and primary/cost semantics", () => {
+  const html = renderHomeActionCard({
+    icon: "attack",
+    title: "Основная атака",
+    description: "Первый удар",
+    actionType: "Действие",
+    cost: "2 ци",
+    hook: 'data-action="open-normal-attack"',
+    disabled: true,
+    reason: "Израсходовано действие",
+    prominent: true,
+  });
+  const structure = validateButtonStructure(html);
+  assert.ok(structure.iconIsDirectChild);
+  assert.ok(structure.contentIsDirectChild);
+  assert.ok(structure.metaIsDirectChild);
+  assert.ok(structure.metaNotInContent);
+  assert.equal(structure.disabledOnButton, true);
+  assert.equal(structure.reasonInContent, true);
+  assert.equal(structure.reasonNotInMeta, true);
+  assert.match(html, /battle-home-action--primary/);
+  assert.match(html, /data-action="open-normal-attack"/);
+  assert.match(html, /class="battle-home-action__meta">Действие<small>2 ци<\/small><\/span>/);
+  assert.deepEqual(structure.errors, []);
 });
