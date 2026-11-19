@@ -975,6 +975,20 @@
   grid-column: 1 / -1;
 }
 
+#profilePanel .ability-card-score,
+#profilePanel .ability-card-mod,
+#profilePanel .ability-card-stat-inline {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+#profilePanel .ability-card-stat-inline + .ability-card-stat-inline {
+  border-top: 1px solid rgba(213, 171, 146, 0.12);
+  padding-top: 8px;
+}
+
 #profilePanel .profile-skill-card-main {
   display: grid;
   min-width: 0;

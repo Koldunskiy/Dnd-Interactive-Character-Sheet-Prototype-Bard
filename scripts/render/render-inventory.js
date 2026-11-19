@@ -466,8 +466,7 @@ export function renderInventoryMarkup(state) {
         <p class="sara-inventory-wallet">Кошелёк: <strong>${escapeHtml(currencySummary)}</strong></p>
         <button type="button" class="btn btn--utility" data-action="open-currency-editor">Изменить деньги</button>
         <details class="sara-details sara-inventory-editors">
-          <summary>Деньги и заметки о снаряжении</summary>
-          <section class="info-card"><h3>Деньги</h3>${currencyMarkup}</section>
+          <summary>Заметки о снаряжении</summary>
           <section class="info-card"><h3>Заметки</h3>
             <textarea class="inventory-textarea inventory-textarea--large" rows="4"
               data-bind="inventory.notes" placeholder="Записи о снаряжении, добыче, долгах, квестовых предметах...">${escapeHtml(inventory.notes || "")}</textarea>

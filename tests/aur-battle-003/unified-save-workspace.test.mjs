@@ -141,6 +141,9 @@ test("generic ability-check to save type switch reuses the workspace without rec
   assert.equal(session.workspaceType, "incoming");
   assert.equal(session.incomingDraft.entryKind, "standalone-save");
   assert.equal(session.incomingDraft.stage, "save-input");
+  assert.equal(session.incomingDraft.saveDraft.d20InputMode, "selected");
+  assert.equal(session.incomingDraft.saveDraft.rollMode, "preselected");
+  assert.equal(session.incomingDraft.saveDraft.secondD20, "");
   assert.equal(getState().characterRolls?.records?.length ?? 0, 0);
   unsubscribe();
 });

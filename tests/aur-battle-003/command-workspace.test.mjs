@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getSessionContext, getState } from "../../scripts/state.js";
+import { getSessionContext, getState, updateState } from "../../scripts/state.js";
 import {
   disposeWorkspaceOwner,
   getWorkspaceSessionForTests,
@@ -11,6 +11,37 @@ import {
   fireWorkspaceAction,
   installWorkspaceFixture,
 } from "./workspace-fixture.mjs";
+
+test("external healing route opens, previews, commits, and reports without Ki", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture();
+  updateState((draft) => {
+    draft.combat.hp.current = 90;
+    return draft;
+  });
+  const hpBefore = getState().combat.hp.current;
+  assert.equal(openSaraBattleCommand("external-healing").ok, true);
+  dialog.forms.command = new FixtureForm("command", {
+    amount: "12", source: "Целитель", confirmed: true,
+  });
+  fireWorkspaceAction(dialog, "apply-command");
+  const session = getWorkspaceSessionForTests();
+  assert.equal(getState().combat.hp.current, hpBefore + 12);
+  assert.match(session.resultMessage, /Получено лечения: 12/);
+  assert.match(session.resultMessage, /Восстановлено: 12 ХП/);
+  assert.doesNotMatch(session.resultMessage, /ци|undefined|NaN/);
+  assert.match(session.resultMessage, /Источник: Целитель/);
+  unsubscribe();
+});
+
+test("currency workspace preserves flat drafts and separate mode values", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture();
+  assert.equal(openSaraBattleCommand("currency-editor").ok, true);
+  let session = getWorkspaceSessionForTests();
+  assert.equal(session.rawInputsByStep[session.currentStepKey]["amount-gp"], "15");
+  assert.match(dialog.body.innerHTML, /name="amount-gp"/);
+  assert.match(dialog.body.innerHTML, /value="15"/);
+  unsubscribe();
+});
 
 test("shared workspace applies battle commands, explicit roll outcomes, and save consequences", () => {
   const { dialog, unsubscribe } = installWorkspaceFixture();

@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { sara } from "../../data/sara.js";
 import { character as aurelia } from "../../data/character.js";
 import { getDerivedStats } from "../../scripts/calculations.js";
-import { renderProfile } from "../../scripts/render/render-profile.js";
+import {
+  renderProfile,
+  toggleProfileEditing,
+} from "../../scripts/render/render-profile.js";
 import {
   captureMovingItemStates,
   renderInventoryMarkup,
@@ -305,14 +308,23 @@ test("profile shows effective Sara ability values without changing base stats an
     const root = { innerHTML: "" };
 
     renderProfile(root, state, getDerivedStats(state));
-    assert.match(root.innerHTML, /<details class="ability-card-base-editor">[\s\S]*Изменить исходное значение/);
+    assert.doesNotMatch(root.innerHTML, /<details class="ability-card-base-editor">/);
+    assert.doesNotMatch(root.innerHTML, /skill-toggle-btn/);
     assert.match(root.innerHTML, /class="ability-card-score"[^>]*>[\s\S]*?19/);
     assert.doesNotMatch(root.innerHTML, /Амулет здоровья/);
     assert.doesNotMatch(root.innerHTML, /Исходное значение: 14/);
-    assert.match(root.innerHTML, /aria-label="Уменьшить исходное значение: Телосложение"/);
     assert.equal(state.abilities.constitution, 14);
     assert.match(root.innerHTML, new RegExp(`class="hero-stat-value">${getDerivedStats(state).monk.speedFeet} фт`));
     assert.doesNotMatch(root.innerHTML, />\s*(STR|DEX|CON|INT|WIS|CHA)\s*</);
+
+    assert.equal(toggleProfileEditing("sara-velaris"), true);
+    renderProfile(root, state, getDerivedStats(state));
+    assert.match(root.innerHTML, /<details class="ability-card-base-editor">[\s\S]*Изменить исходное значение/);
+    assert.match(root.innerHTML, /skill-toggle-btn/);
+    assert.equal(toggleProfileEditing("sara-velaris"), false);
+    renderProfile(root, state, getDerivedStats(state));
+    assert.doesNotMatch(root.innerHTML, /<details class="ability-card-base-editor">/);
+    assert.doesNotMatch(root.innerHTML, /skill-toggle-btn/);
 
     amulet.attuned = false;
     renderProfile(root, state, getDerivedStats(state));

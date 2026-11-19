@@ -27,6 +27,7 @@ import {
 } from "./rolls/controller.js";
 import { renderQuickStats, renderSidebarSummary } from "./render/render-sidebar.js";
 import { renderProfile } from "./render/render-profile.js";
+import { toggleProfileEditing } from "./render/render-profile.js";
 import { renderMeleePanel } from "./render/render-melee.js";
 import {
   bindBattleConsole,
@@ -285,6 +286,12 @@ function bindActionButtons(root = document) {
       if (action === "open-currency-editor") {
         const opened = openSaraBattleCommand("currency-editor", target);
         if (!opened.ok) showPersistenceWarning(`Кошелёк нельзя открыть: ${opened.reason}`);
+        return;
+      }
+      if (action === "toggle-profile-edit") {
+        toggleProfileEditing(getState().profile?.id);
+        renderProfile(target.closest("#profilePanel"), getState(), getDerivedStats(getState()));
+        bindUi(target.closest("#profilePanel") ?? document);
         return;
       }
       if (action === "inventory-quantity-adjust" &&

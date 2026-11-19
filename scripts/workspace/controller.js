@@ -1,4 +1,5 @@
 import { getDerivedStats } from "../calculations.js";
+import { SKILL_ID_META } from "../rules.js";
 import { getSaraHudModel, updateSaraHudRegion, renderSaraEndBattleButton } from "../render/sara-hud.js";
 import {
   buildRestReplacementCommandId,
@@ -116,6 +117,8 @@ import {
   renderWorkspaceConsequencePreview,
   renderWorkspaceRollPreview,
   renderWorkspacePotionPreview,
+  renderWorkspaceExternalHealingPreview,
+  renderWorkspaceCurrencyPreview,
   renderWorkspaceHitDiePreview,
   updateRestReplacementSubchoices,
 } from "../render/render-command-workspace.js";
@@ -691,6 +694,10 @@ function render() {
       session.currentStep === "command-input") renderWorkspaceRollPreview(session, state);
   if (session.workspaceType === "command" && session.scenarioId?.startsWith("potion-use:") &&
       session.currentStep === "command-input") renderWorkspacePotionPreview(session, state);
+  if (session.workspaceType === "command" && session.scenarioId === "external-healing" &&
+      session.currentStep === "command-input") renderWorkspaceExternalHealingPreview(session, state);
+  if (session.workspaceType === "command" && session.scenarioId === "currency-editor" &&
+      session.currentStep === "command-input") renderWorkspaceCurrencyPreview(session, state);
   if (session.workspaceType === "command" && session.currentStep === "roll-result") {
     renderWorkspaceConsequencePreview(session, state);
   }
@@ -1510,16 +1517,26 @@ function syncSaveCompatibility(draft, state) {
 }
 
 function switchGenericToSavingThrow(commandSession, genericDraft) {
-  const ability = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
-    .includes(genericDraft.id) ? genericDraft.id : "strength";
+  let ability = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+    .includes(genericDraft.id) ? genericDraft.id : null;
+  if (!ability && SKILL_ID_META && genericDraft.id in SKILL_ID_META) {
+    ability = SKILL_ID_META[genericDraft.id].ability;
+  }
+  if (!ability) ability = "strength";
   const saveDraft = createIncomingEventDraft(getState(), commandSession.owner, {
-    saveContext: { ability, source: "unknown", entryKind: "standalone-save" },
+    saveContext: {
+      ability,
+      source: "unknown",
+      entryKind: "standalone-save",
+      d20InputMode: "selected",
+      rollMode: "preselected",
+    },
   });
   saveDraft.stage = "save-input";
   saveDraft.saveDraft.firstD20 = genericDraft.firstD20 ?? "";
-  saveDraft.saveDraft.secondD20 = genericDraft.secondD20 ?? "";
-  saveDraft.saveDraft.rollMode = ["normal", "advantage", "disadvantage"].includes(genericDraft.rollMode)
-    ? genericDraft.rollMode : "normal";
+  saveDraft.saveDraft.secondD20 = "";
+  saveDraft.saveDraft.d20InputMode = "selected";
+  saveDraft.saveDraft.rollMode = "preselected";
   commandSession.workspaceType = "incoming";
   commandSession.incomingDraft = saveDraft;
   commandSession.currentStep = "incoming";
@@ -1635,6 +1652,38 @@ function updateInput(field) {
   const draft = getStepDraft();
   const previousValue = draft[field.name];
   draft[field.name] = field.type === "checkbox" ? field.checked : field.value;
+  if (session.scenarioId === "currency-editor" && /^amount-(cp|sp|ep|gp|pp)$/.test(field.name)) {
+    session.currencyDrafts ??= {};
+    const mode = draft.mode ?? "set";
+    session.currencyDrafts[mode] ??= {};
+    session.currencyDrafts[mode][field.name] = field.value;
+  }
+  if (session.scenarioId === "currency-editor" && field.name === "mode") {
+    const mode = ["add", "subtract", "set"].includes(field.value) ? field.value : "set";
+    session.currencyDrafts ??= {};
+    session.currencyDrafts[mode] ??= {};
+    for (const key of ["cp", "sp", "ep", "gp", "pp"]) {
+      const name = `amount-${key}`;
+      if (Object.prototype.hasOwnProperty.call(session.currencyDrafts[mode], name)) {
+        draft[name] = session.currencyDrafts[mode][name];
+      } else if (mode === "set") {
+        const inventory = getState().inventory ?? {};
+        draft[name] = String(inventory.currency?.[key] ?? "0");
+      } else {
+        draft[name] = "0";
+      }
+    }
+    draft.mode = mode;
+    session.currencyDrafts[mode] = Object.fromEntries(
+      ["cp", "sp", "ep", "gp", "pp"].map((key) => [
+        `amount-${key}`, draft[`amount-${key}`],
+      ]),
+    );
+    render();
+    const select = getWorkspaceHost()?.querySelector('[data-workspace-field][name="mode"]');
+    select?.focus({ preventScroll: true });
+    return;
+  }
   if (session.currentStep === "strike-input" &&
       ((field.name === "techniqueId" && previousValue !== field.value) ||
        (field.name === "paymentMode" && previousValue !== field.value))) {
@@ -1716,6 +1765,12 @@ function updateInput(field) {
   } else if (session.workspaceType === "command" &&
       session.scenarioId?.startsWith("potion-use:")) {
     renderWorkspacePotionPreview(session, getState());
+  } else if (session.workspaceType === "command" &&
+      session.scenarioId === "external-healing") {
+    renderWorkspaceExternalHealingPreview(session, getState());
+  } else if (session.workspaceType === "command" &&
+      session.scenarioId === "currency-editor") {
+    renderWorkspaceCurrencyPreview(session, getState());
   } else if (session.workspaceType === "command" &&
       session.command?.restStage === "edit" && field.name === "add") {
     updateRestReplacementSubchoices(session, getState(), { refreshFields: true });
@@ -2185,6 +2240,25 @@ export function openSaraBattleCommand(commandId, invoker = null, options = {}) {
       advantageReason: "",
       disadvantageReason: "",
       timingConfirmed: false,
+    };
+  }
+  if (commandId === "currency-editor") {
+    const inventory = state.inventory ?? {};
+    const known = inventory.currencyStatus !== "Не заполнено" &&
+      ["cp", "sp", "ep", "gp", "pp"].every((key) =>
+        Number.isSafeInteger(inventory.currency?.[key]) && inventory.currency[key] >= 0);
+    const currency = known ? inventory.currency : { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+    session.currencyDrafts = {
+      set: Object.fromEntries(["cp", "sp", "ep", "gp", "pp"].map((key) =>
+        [`amount-${key}`, String(currency[key])]))
+      ,add: Object.fromEntries(["cp", "sp", "ep", "gp", "pp"].map((key) =>
+        [`amount-${key}`, "0"]))
+      ,subtract: Object.fromEntries(["cp", "sp", "ep", "gp", "pp"].map((key) =>
+        [`amount-${key}`, "0"]))
+    };
+    session.rawInputsByStep[session.currentStepKey] = {
+      mode: "set",
+      ...session.currencyDrafts.set,
     };
   }
   if (commandId === "completed-rest" &&
@@ -3486,7 +3560,21 @@ function startCommandAttack(kind, values, { parentFeature = null } = {}) {
   return result;
 }
 
-function commandOutcomeSummary(result) {
+function commandOutcomeSummary(result, id) {
+  if (id === "currency-editor" && result.outcome?.before != null && result.outcome?.after) {
+    const names = { cp: "ММ", sp: "СМ", ep: "ЭМ", gp: "ЗМ", pp: "ПМ" };
+    const operation = result.outcome.mode === "set" ? "Установлен баланс"
+      : result.outcome.mode === "add" ? "Добавлено" : "Списано";
+    const values = ["cp", "sp", "ep", "gp", "pp"].map((key) =>
+      `${names[key]} ${result.outcome.before?.[key] ?? "—"} -> ${result.outcome.after[key]}`);
+    return `${operation}. ${values.join(" · ")}.`;
+  }
+  if (id === "external-healing" && result.outcome?.requestedHealing != null) {
+    const outcome = result.outcome;
+    const source = typeof outcome.source === "string" && outcome.source
+      ? ` Источник: ${outcome.source}.` : "";
+    return `Получено лечения: ${outcome.requestedHealing}. Восстановлено: ${outcome.usefulHealing} ХП. ХП ${outcome.hpBefore} -> ${outcome.hpAfter} из ${outcome.maxHp}.${source}`;
+  }
   if (result.outcome?.resourceId) {
     const outcome = result.outcome;
     return `${outcome.label}: ${outcome.previous} → ${outcome.current}.`;
@@ -3875,7 +3963,7 @@ function submitCommand() {
   session.appliedUnsaved = result.persistence?.ok === false;
   session.resultMessage = id.startsWith("monk-technique:")
     ? techniqueOutcomeSummary(result, currentCommand.titleRu, state)
-    : commandOutcomeSummary(result);
+    : commandOutcomeSummary(result, id);
   session.error = "";
   session.status = result.persistence?.ok === false ? "Применено, но не сохранено." : "";
   session.currentStep = id === "character-roll" ? "roll-result" : "command-result";

@@ -297,6 +297,7 @@ function buildBattleConsole(state, uiState = { panel: "home", initiativeDraft: {
   const toolsPanel = uiState.panel === "tools" ? `<section class="battle-secondary-tools">
     ${renderInitiative(view.battle)}
     <button type="button" data-battle-incoming-direct>Получить урон</button>
+    <button type="button" data-battle-command-open="external-healing">Получить лечение</button>
     <button type="button" data-battle-command-open="completed-rest">Записать завершённый отдых</button>
     ${restResumeId ? `<button type="button" data-battle-command-open="${escapeHtml(restResumeId)}">Продолжить сохранённое восстановление</button>` : ""}
     <button type="button" data-battle-roll-shortcut="all">Проверка или спасбросок</button>

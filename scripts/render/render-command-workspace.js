@@ -9,6 +9,8 @@ import { renderTechniqueApplicationFields } from "./technique-application-form.j
 import { spellTitle } from "../presentation/ru.js";
 import { POTIONS } from "../sara-functional.js";
 import { previewSaraPotion } from "../actions/sara-functional.js";
+import { previewExternalHealing } from "../sara-functional.js";
+import { changeCurrency } from "../sara-functional.js";
 import {
   CLERIC_CANTRIPS,
   MONK_TECHNIQUES,
@@ -120,7 +122,12 @@ function renderCommandForm(session, state) {
       <label class="workspace-field">Источник (необязательно)
         <input data-workspace-field="source" name="source" maxlength="160" value="${escapeHtml(draft.source ?? "")}">
       </label>
-      ${check("confirmed", "Подтвердить получение лечения")}`;
+      ${check("confirmed", "Подтвердить получение лечения")}
+      <section class="workspace-entry-result" aria-live="polite">
+        <span class="workspace-attack-result__label">Предпросмотр ХП</span>
+        <output data-healing-hp>—</output>
+        <span data-healing-useful>Введите количество лечения.</span>
+      </section>`;
   }
   if (id === "currency-editor") {
     const inventory = state.inventory ?? {};
@@ -129,7 +136,6 @@ function renderCommandForm(session, state) {
         Number.isSafeInteger(inventory.currency?.[key]) && inventory.currency[key] >= 0);
     const currency = known ? inventory.currency : { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
     const mode = ["add", "subtract", "set"].includes(draft.mode) ? draft.mode : "set";
-    const amounts = draft.amounts && typeof draft.amounts === "object" ? draft.amounts : {};
     return `<p>${known ? "Известный кошелёк заполнен." : "Кошелёк неизвестен: сначала установите весь баланс."}</p>
       <label class="workspace-field">Операция
         <select data-workspace-field="mode" name="mode">
@@ -142,9 +148,15 @@ function renderCommandForm(session, state) {
         ${[["cp", "ММ"], ["sp", "СМ"], ["ep", "ЭМ"], ["gp", "ЗМ"], ["pp", "ПМ"]].map(([key, label]) =>
           `<label class="workspace-field">${label}
             <input data-workspace-field="amount-${key}" name="amount-${key}" type="number" min="0" step="1"
-              value="${escapeHtml(amounts[key] ?? (mode === "set" ? currency[key] : 0))}">
+              value="${escapeHtml(Object.prototype.hasOwnProperty.call(draft, `amount-${key}`)
+                ? draft[`amount-${key}`]
+                : mode === "set" ? currency[key] : "0")}">
           </label>`).join("")}
-      </div>`;
+      </div>
+      <section class="workspace-entry-result" data-currency-preview aria-live="polite">
+        <span class="workspace-attack-result__label">Предпросмотр кошелька</span>
+        <span data-currency-preview-summary>Проверьте суммы всех валют.</span>
+      </section>`;
   }
   if (id === "character-roll") {
     const kind = draft.kind === "saving-throw" ? "saving-throw" : "ability-check";
@@ -476,6 +488,49 @@ export function updateRestReplacementSubchoices(session, state, { refreshFields 
   }
   for (const option of second.options ?? []) {
     if (option.value) option.disabled = !legalIds.includes(option.value);
+  }
+}
+
+export function renderWorkspaceExternalHealingPreview(session, state) {
+  const root = getWorkspaceHost();
+  if (!root || session.currentStep !== "command-input" ||
+      session.scenarioId !== "external-healing") return;
+  const draft = session.rawInputsByStep?.[session.currentStepKey] ?? {};
+  const hpOutput = root.querySelector("[data-healing-hp]");
+  const usefulOutput = root.querySelector("[data-healing-useful]");
+  if (!hpOutput || !usefulOutput) return;
+  try {
+    const preview = previewExternalHealing(state, draft.amount ?? "", getDerivedStats);
+    hpOutput.textContent = `ХП ${preview.hpBefore} → ${preview.hpAfter} из ${preview.maxHp}`;
+    usefulOutput.textContent = `Полезное лечение: ${preview.usefulHealing} ХП.`;
+  } catch (error) {
+    hpOutput.textContent = "ХП —";
+    usefulOutput.textContent = error instanceof Error
+      ? error.message : "Введите корректное количество лечения.";
+  }
+}
+
+export function renderWorkspaceCurrencyPreview(session, state) {
+  const root = getWorkspaceHost();
+  if (!root || session.currentStep !== "command-input" ||
+      session.scenarioId !== "currency-editor") return;
+  const draft = session.rawInputsByStep?.[session.currentStepKey] ?? {};
+  const summary = root.querySelector("[data-currency-preview-summary]");
+  if (!summary) return;
+  const amounts = Object.fromEntries(["cp", "sp", "ep", "gp", "pp"].map((key) =>
+    [key, draft[`amount-${key}`] ?? ""]));
+  try {
+    const preview = changeCurrency(structuredClone(state), {
+      id: "currency-preview",
+      mode: draft.mode ?? "set",
+      amounts,
+    });
+    const labels = { cp: "ММ", sp: "СМ", ep: "ЭМ", gp: "ЗМ", pp: "ПМ" };
+    summary.textContent = ["cp", "sp", "ep", "gp", "pp"].map((key) =>
+      `${labels[key]} ${preview.outcome.before?.[key] ?? "—"} → ${preview.outcome.after[key]}`).join(" · ");
+  } catch (error) {
+    summary.textContent = error instanceof Error
+      ? error.message : "Проверьте суммы всех валют.";
   }
 }
 

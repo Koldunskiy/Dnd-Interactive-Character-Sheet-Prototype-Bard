@@ -687,12 +687,37 @@ export function renderAttackWorkspace(session, state) {
         state, session.strikeParent?.sequenceId, session.strikeParent?.attackId,
       )
       : null;
-    body = `${currentAttack
+    body = `${session.currentStep === "summary"
+      ? `<section class="workspace-summary-slots" aria-label="Все результаты атаки">
+          ${(() => {
+            const slotRecords = new Map();
+            for (const attack of attacks) {
+              const slot = Number.isSafeInteger(attack.slotNumber)
+                ? attack.slotNumber : attacks.indexOf(attack) + 1;
+              slotRecords.set(slot, renderAttackRecord(
+                attack,
+                state,
+                Math.max(0, attacks.indexOf(attack)),
+                sequence?.maximumAttacks ?? attacks.length,
+              ));
+            }
+            for (const replacement of sequence?.replacementResults ?? []) {
+              if (!replacement?.slotNumber) continue;
+              slotRecords.set(replacement.slotNumber,
+                `<article class="workspace-record"><h3>Удар ${replacement.slotNumber}/${sequence.maximumAttacks} · Gentling Touch</h3>
+                  <p>${replacement.dice} костей d${replacement.sides} · сумма ${replacement.sum} · цель: ${replacement.targetHp} ХП</p>
+                  <p>${replacement.thresholdMet ? "Порог достигнут." : "Порог не достигнут."}</p></article>`);
+            }
+            return [...slotRecords.entries()].sort((a, b) => a[0] - b[0])
+              .map(([, markup]) => markup).join("");
+          })()}
+        </section>`
+      : currentAttack
       ? `<section class="workspace-current-result" aria-label="Текущий результат">
           ${renderAttackRecord(currentAttack, state, displayedIndex,
             sequence?.maximumAttacks ?? attacks.length)}
         </section>` : ""}
-      ${historyRecords.length ? `<details class="workspace-history"><summary>Предыдущие результаты · ${historyRecords.length}</summary>
+      ${session.currentStep !== "summary" && historyRecords.length ? `<details class="workspace-history"><summary>Предыдущие результаты · ${historyRecords.length}</summary>
         ${historyRecords.map((record) => record.markup).join("")}</details>` : ""}
       ${session.currentStep === "checkpoint" && strikeParent
         ? `<section class="workspace-post-hit"><h3>Урон записан</h3><p>Техника необязательна. Можно продолжить без оплаты.</p></section>`

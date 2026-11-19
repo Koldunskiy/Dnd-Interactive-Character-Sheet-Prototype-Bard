@@ -34,7 +34,24 @@ const SKILL_LABELS = {
 let profileDisclosureMediaQuery = null;
 let currentDisclosureCharacterId = null;
 const profileDisclosureStates = new Map();
+const profileEditingModes = new Map();
 const boundProfileDisclosures = new WeakSet();
+
+export function toggleProfileEditing(characterId) {
+  if (!characterId) return false;
+  const next = !profileEditingModes.get(characterId);
+  profileEditingModes.set(characterId, next);
+  return next;
+}
+
+export function isProfileEditing(characterId) {
+  return profileEditingModes.get(characterId) === true;
+}
+
+export function resetProfileEditing(characterId) {
+  if (characterId) profileEditingModes.delete(characterId);
+  else profileEditingModes.clear();
+}
 
 function getProfileDisclosureNodes(characterId) {
   if (characterId === "sara-velaris") {
@@ -151,6 +168,7 @@ function getAbilityCardsData(character, derived) {
       saveValue: save,
       saveProficient: Boolean(character.savingThrows?.[abilityId]?.proficient),
       editable: Boolean(character.ui?.abilitiesEditable),
+      profileEditing: isProfileEditing(character.profile?.id),
       characterId: character.profile?.id,
       activeItemEffects: abilityId === "constitution"
         ? (character.inventory?.items ?? []).filter((item) =>
@@ -162,7 +180,8 @@ function getAbilityCardsData(character, derived) {
 }
 
 function renderAbilityCard(card) {
-  const canEdit = card.editable &&
+  const canEdit = card.profileEditing &&
+    card.editable &&
     (card.characterId !== "sara-velaris" || card.id === "constitution");
   return `
     <article class="ability-card profile-ability-card">
@@ -206,7 +225,7 @@ function renderAbilityCard(card) {
           <strong class="ability-card-stat-value">${escapeHtml(formatSigned(card.saveValue))}</strong>
           ${card.characterId === "sara-velaris" ? `<button type="button" class="btn btn--utility profile-roll-button" data-open-character-roll data-roll-kind="saving-throw" data-roll-id="${escapeHtml(card.id)}">Бросить</button>` : ""}
           ${
-            card.editable
+            card.profileEditing && card.editable
               ? `
           <button
             type="button"
@@ -280,6 +299,8 @@ function renderSkillCard(skillId, character, derived) {
   const skillValues = getDerivedSkillMap(derived);
   const value = skillValues[skillId] ?? skillValues[SKILL_LABELS[skillId]] ?? 0;
   const editable = Boolean(character.ui?.abilitiesEditable);
+  const editing = isProfileEditing(character.profile?.id);
+  const canEdit = editing && editable;
   const status = skill.expertise ? "Экспертность" : skill.proficient ? "Владение" : "";
   return `
     <article class="profile-skill-card${character.profile?.id === "sara-velaris" ? " profile-skill-card--rollable" : ""}" data-sara-skill="${escapeHtml(skillId)}">
@@ -294,7 +315,7 @@ function renderSkillCard(skillId, character, derived) {
           data-roll-id="${escapeHtml(skillId)}"
           aria-label="Бросить: ${escapeHtml(SKILL_LABELS[skillId])}">Бросить</button>
       ` : ""}
-      ${editable ? `
+      ${canEdit ? `
         <div class="profile-skill-controls">
           <button type="button" class="skill-toggle-btn ${skill.proficient ? "skill-toggle-btn--active" : ""}" data-action="skill-toggle" data-skill-id="${escapeHtml(skillId)}" data-toggle="proficient" aria-pressed="${Boolean(skill.proficient)}" aria-label="Владение: ${escapeHtml(SKILL_LABELS[skillId])}">Владение</button>
           <button type="button" class="skill-toggle-btn ${skill.expertise ? "skill-toggle-btn--active" : ""}" data-action="skill-toggle" data-skill-id="${escapeHtml(skillId)}" data-toggle="expertise" aria-pressed="${Boolean(skill.expertise)}" aria-label="Экспертность: ${escapeHtml(SKILL_LABELS[skillId])}">Экспертность</button>
@@ -308,13 +329,15 @@ function renderSkillsSection(character, derived) {
   const skillValues = getDerivedSkillMap(derived);
   const passiveValue = (id) => 10 + Number(skillValues[id] ?? 0);
   const editable = Boolean(character.ui?.abilitiesEditable);
+  const editing = isProfileEditing(character.profile?.id);
   const isSara = character.profile?.id === "sara-velaris";
   return `
     <section class="panel-section profile-skills-panel" data-sara-key="profile-skills">
       <div class="section-heading-row">
         <div><h2 class="section-title">${isSara ? "Проверки" : "Навыки"}</h2><p class="section-subtitle">${isSara ? "Навыки персонажа" : "Все навыки персонажа"}</p></div>
         ${isSara ? `<label class="sara-skill-search">Поиск навыка<input type="search" data-sara-skill-search placeholder="Название навыка"></label>` : ""}
-        ${isSara ? "" : `<button type="button" class="btn btn--utility profile-edit-toggle" data-action="toggle-abilities-edit">${editable ? "Готово" : "Изменить"}</button>`}
+        ${isSara ? `<button type="button" class="btn btn--utility profile-edit-toggle" data-action="toggle-profile-edit">${editing ? "Готово" : "Изменить"}</button>`
+          : `<button type="button" class="btn btn--utility profile-edit-toggle" data-action="toggle-abilities-edit">${editable ? "Готово" : "Изменить"}</button>`}
       </div>
       <div class="profile-skill-groups">
         ${SKILL_GROUPS.map(([id, label, skillIds]) => `
@@ -643,6 +666,7 @@ export function renderProfile(root, character, derived) {
 
   const isSara = characterId === "sara-velaris";
   const editable = Boolean(character.ui?.abilitiesEditable);
+  const editing = isProfileEditing(characterId);
   const speedFeet = derived?.monk?.speedFeet ?? character.combat?.speedFeet ??
     character.raceDetails?.speedFeet;
   const heroStats = (isSara ? [
@@ -669,7 +693,7 @@ export function renderProfile(root, character, derived) {
   const markup = `
     ${isSara ? `<header class="sara-tab-heading" data-sara-key="profile-heading">
       <h2>Профиль</h2>
-      <button type="button" class="btn" data-action="toggle-abilities-edit">${editable ? "Готово" : "Редактировать"}</button>
+      <button type="button" class="btn" data-action="toggle-profile-edit">${editing ? "Готово" : "Редактировать"}</button>
     </header>` : ""}
     <section class="panel-section panel-section--hero" data-sara-key="profile-summary">
       <div class="profile-hero">
