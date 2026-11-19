@@ -493,52 +493,50 @@ export function updateRestReplacementSubchoices(session, state, { refreshFields 
 
 export function renderWorkspaceExternalHealingPreview(session, state) {
   const root = getWorkspaceHost();
-  if (!root || session.currentStep !== "command-input" ||
+  if (session.currentStep !== "command-input" ||
       session.scenarioId !== "external-healing") return;
   const draft = session.rawInputsByStep?.[session.currentStepKey] ?? {};
-  const hpOutput = root.querySelector("[data-healing-hp]");
-  const usefulOutput = root.querySelector("[data-healing-useful]");
-  if (!hpOutput || !usefulOutput) return;
+  const hpOutput = root?.querySelector?.("[data-healing-hp]");
+  const usefulOutput = root?.querySelector?.("[data-healing-useful]");
   const raw = draft.amount ?? "";
   if (raw === "" || !/^\d+$/.test(String(raw).trim()) ||
       !Number.isSafeInteger(Number(raw))) {
     session.healingPreviewValid = false;
-    hpOutput.textContent = "ХП —";
-    usefulOutput.textContent = "Введите неотрицательное целое число ХП.";
+    if (hpOutput) hpOutput.textContent = "ХП —";
+    if (usefulOutput) usefulOutput.textContent = "Введите неотрицательное целое число ХП.";
     return;
   }
   if (typeof draft.source === "string" && draft.source.length > 160) {
     session.healingPreviewValid = false;
-    hpOutput.textContent = "ХП —";
-    usefulOutput.textContent = "Источник лечения: не более 160 символов.";
+    if (hpOutput) hpOutput.textContent = "ХП —";
+    if (usefulOutput) usefulOutput.textContent = "Источник лечения: не более 160 символов.";
     return;
   }
   try {
     const preview = previewExternalHealing(state, draft.amount ?? "", getDerivedStats);
     session.healingPreviewValid = true;
-    hpOutput.textContent = `ХП ${preview.hpBefore} → ${preview.hpAfter} из ${preview.maxHp}`;
-    usefulOutput.textContent = `Полезное лечение: ${preview.usefulHealing} ХП.`;
+    if (hpOutput) hpOutput.textContent = `ХП ${preview.hpBefore} → ${preview.hpAfter} из ${preview.maxHp}`;
+    if (usefulOutput) usefulOutput.textContent = `Полезное лечение: ${preview.usefulHealing} ХП.`;
   } catch (error) {
     session.healingPreviewValid = false;
-    hpOutput.textContent = "ХП —";
-    usefulOutput.textContent = "Введите корректное количество лечения.";
+    if (hpOutput) hpOutput.textContent = "ХП —";
+    if (usefulOutput) usefulOutput.textContent = "Введите корректное количество лечения.";
   }
 }
 
 export function renderWorkspaceCurrencyPreview(session, state) {
   const root = getWorkspaceHost();
-  if (!root || session.currentStep !== "command-input" ||
+  if (session.currentStep !== "command-input" ||
       session.scenarioId !== "currency-editor") return;
   const draft = session.rawInputsByStep?.[session.currentStepKey] ?? {};
-  const summary = root.querySelector("[data-currency-preview-summary]");
-  if (!summary) return;
+  const summary = root?.querySelector?.("[data-currency-preview-summary]");
   const amounts = Object.fromEntries(["cp", "sp", "ep", "gp", "pp"].map((key) =>
     [key, draft[`amount-${key}`] ?? ""]));
   for (const [key, raw] of Object.entries(amounts)) {
     if (raw === "" || !/^\d+$/.test(String(raw).trim()) ||
         !Number.isSafeInteger(Number(raw))) {
       session.currencyPreviewValid = false;
-      summary.textContent = `Введите неотрицательное целое число для валюты ${key.toUpperCase()}.`;
+      if (summary) summary.textContent = `Введите неотрицательное целое число для валюты ${key.toUpperCase()}.`;
       return;
     }
   }
@@ -550,11 +548,11 @@ export function renderWorkspaceCurrencyPreview(session, state) {
     });
     session.currencyPreviewValid = true;
     const labels = { cp: "ММ", sp: "СМ", ep: "ЭМ", gp: "ЗМ", pp: "ПМ" };
-    summary.textContent = ["cp", "sp", "ep", "gp", "pp"].map((key) =>
+    if (summary) summary.textContent = ["cp", "sp", "ep", "gp", "pp"].map((key) =>
       `${labels[key]} ${preview.outcome.before?.[key] ?? "—"} → ${preview.outcome.after[key]}`).join(" · ");
   } catch (error) {
     session.currencyPreviewValid = false;
-    summary.textContent = draft.mode === "set"
+    if (summary) summary.textContent = draft.mode === "set"
       ? "Установите допустимый баланс всех пяти валют."
       : "Недостаточно монет или сумма некорректна.";
   }

@@ -9,9 +9,65 @@ import {
 import {
   FixtureForm,
   fireWorkspaceAction,
+  fireWorkspaceActionStrict,
   fireWorkspaceInput,
   installWorkspaceFixture,
 } from "./workspace-fixture.mjs";
+
+test("external healing and currency apply buttons follow preview inputs", () => {
+  const { dialog, unsubscribe } = installWorkspaceFixture();
+  updateState((draft) => {
+    draft.combat.hp.current = 90;
+    return draft;
+  });
+
+  assert.equal(openSaraBattleCommand("external-healing").ok, true);
+  let apply = dialog.footer.querySelector('[data-workspace-action="apply-command"]');
+  assert.equal(apply.disabled, true);
+
+  fireWorkspaceInput(dialog, "amount", "12");
+  apply = dialog.footer.querySelector('[data-workspace-action="apply-command"]');
+  assert.equal(getWorkspaceSessionForTests().rawInputsByStep[getWorkspaceSessionForTests().currentStepKey].amount, "12");
+  assert.equal(apply.disabled, true);
+  fireWorkspaceInput(dialog, "confirmed", true, "checkbox");
+  apply = dialog.footer.querySelector('[data-workspace-action="apply-command"]');
+  assert.equal(getWorkspaceSessionForTests().rawInputsByStep[getWorkspaceSessionForTests().currentStepKey].confirmed, true);
+  assert.equal(getWorkspaceSessionForTests().healingPreviewValid, true);
+  assert.equal(apply.disabled, false);
+
+  fireWorkspaceInput(dialog, "amount", "");
+  apply = dialog.footer.querySelector('[data-workspace-action="apply-command"]');
+  assert.equal(apply.disabled, true);
+  fireWorkspaceInput(dialog, "amount", "12");
+  apply = dialog.footer.querySelector('[data-workspace-action="apply-command"]');
+  assert.equal(apply.disabled, false);
+  fireWorkspaceInput(dialog, "confirmed", false, "checkbox");
+  apply = dialog.footer.querySelector('[data-workspace-action="apply-command"]');
+  assert.equal(apply.disabled, true);
+
+  disposeWorkspaceOwner(getSessionContext(), "test-next");
+  assert.equal(openSaraBattleCommand("currency-editor").ok, true);
+  apply = dialog.footer.querySelector('[data-workspace-action="apply-command"]');
+  assert.equal(apply.disabled, false);
+
+  fireWorkspaceInput(dialog, "amount-gp", "");
+  apply = dialog.footer.querySelector('[data-workspace-action="apply-command"]');
+  assert.equal(apply.disabled, true);
+  fireWorkspaceInput(dialog, "amount-gp", "15");
+  apply = dialog.footer.querySelector('[data-workspace-action="apply-command"]');
+  assert.equal(apply.disabled, false);
+
+  fireWorkspaceInput(dialog, "mode", "subtract");
+  fireWorkspaceInput(dialog, "amount-gp", "20");
+  apply = dialog.footer.querySelector('[data-workspace-action="apply-command"]');
+  assert.equal(apply.disabled, true);
+  fireWorkspaceInput(dialog, "amount-gp", "5");
+  apply = dialog.footer.querySelector('[data-workspace-action="apply-command"]');
+  assert.equal(apply.disabled, false);
+  fireWorkspaceActionStrict(dialog, "apply-command", { apply: true });
+
+  unsubscribe();
+});
 
 test("external healing route opens, previews, commits, and reports without Ki", () => {
   const { dialog, unsubscribe } = installWorkspaceFixture();

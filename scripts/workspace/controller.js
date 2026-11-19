@@ -1775,11 +1775,17 @@ function updateInput(field) {
       session.scenarioId?.startsWith("potion-use:")) {
     renderWorkspacePotionPreview(session, getState());
   } else if (session.workspaceType === "command" &&
+      session.currentStep === "command-input" &&
       session.scenarioId === "external-healing") {
-    renderWorkspaceExternalHealingPreview(session, getState());
+    const state = getState();
+    renderWorkspaceExternalHealingPreview(session, state);
+    updateWorkspaceFooter(renderCommandWorkspace(session, state).footer);
   } else if (session.workspaceType === "command" &&
+      session.currentStep === "command-input" &&
       session.scenarioId === "currency-editor") {
-    renderWorkspaceCurrencyPreview(session, getState());
+    const state = getState();
+    renderWorkspaceCurrencyPreview(session, state);
+    updateWorkspaceFooter(renderCommandWorkspace(session, state).footer);
   } else if (session.workspaceType === "command" &&
       session.command?.restStage === "edit" && field.name === "add") {
     updateRestReplacementSubchoices(session, getState(), { refreshFields: true });
