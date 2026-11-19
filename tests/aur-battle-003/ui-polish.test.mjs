@@ -74,6 +74,19 @@ test("profile hero ownership uses one column and profile.css controls its stats 
   assert.doesNotMatch(previewCss, /\.page\[data-character-id\]\s+:is\([^)]*profile-hero-stats|\.page\[data-character-id\]\s+\.profile-hero\s*\{[^}]*grid-template-columns/);
   assert.doesNotMatch(saraCss, /\.page\[data-character-id="sara-velaris"\]\s+\.profile-hero-stats\s*\{[^}]*grid-template-columns:\s*repeat\(3/);
 });
+
+test("profile hero has no two-column media rule and technique list has a component-owned grid", async () => {
+  const [profileCss, techniqueCss] = await Promise.all([
+    readFile(new URL("../../styles/profile.css", import.meta.url), "utf8"),
+    readFile(new URL("../../styles/techniques.css", import.meta.url), "utf8"),
+  ]);
+  assert.doesNotMatch(profileCss,
+    /@media \(max-width:\s*1100px\)\s*\{[\s\S]*?\.profile-hero\s*\{[\s\S]*?grid-template-columns:[\s\S]*?(?:minmax\(360px|minmax\(0,\s*1fr\)\s+minmax)/);
+  assert.match(techniqueCss,
+    /\.technique-list\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*250px\),\s*1fr\)\);[^}]*gap:\s*10px;/);
+  assert.match(techniqueCss,
+    /@media \(max-width:\s*699px\)\s*\{[\s\S]*?\.technique-list\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+});
 import { dispatchSceneUi } from "../../scripts/battle/scene-ui-state.js";
 import { startBattle } from "../../scripts/battle/transitions.js";
 

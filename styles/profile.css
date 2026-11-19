@@ -556,10 +556,6 @@
 }
 
 @media (max-width: 1100px) {
-  .profile-hero {
-    grid-template-columns: minmax(0, 1fr) minmax(360px, 0.95fr);
-  }
-
   .profile-hero-stats {
     grid-template-columns: repeat(2, minmax(160px, 1fr));
   }

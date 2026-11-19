@@ -81,7 +81,7 @@ function techniqueUnavailableReason(state, sequence, attack, technique, paymentM
       !(attack.profileSnapshot?.attackKind === "weapon" &&
         attack.profileSnapshot?.melee === true &&
         attack.profileSnapshot?.martialArtsEligible === true)) {
-    return "Требуется попадание безоружной атакой или подходящим melee Martial Arts оружием.";
+    return "Требуется попадание безоружной атакой или подходящим оружием ближнего боя для Боевых искусств.";
   }
   if (paymentMode === "practiced" && technique.practicedStrikesEligible) {
     if (Number(state.combat?.practiced?.current) < 1) return "Нет применений отработанного удара.";
@@ -265,15 +265,15 @@ function renderGentlingForm(session, state) {
   const outcome = result
     ? result.thresholdMet
       ? `Порог достигнут: ${result.sum} ≥ ${result.targetHp}.`
-      : `Порог не достигнут: ${result.sum} < ${result.targetHp}. При записи будут потрачены ${result.cost} ци и один слот Attack.`
-    : preview?.reason ?? "Укажите HP цели и физическую сумму.";
+      : `Порог не достигнут: ${result.sum} < ${result.targetHp}. При записи будут потрачены ${result.cost} ци и один слот действия „Атака“.`
+    : preview?.reason ?? "Укажите ХП цели и физическую сумму.";
   return `<form data-workspace-form="gentling">
     <h3>${escapeHtml(featureTitle("Gentling Touch"))} · слот ${session.gentlingIntent?.slotNumber ?? 1}/${projection.maximumAttacks}</h3>
-    <p>Замена одного свободного слота действия Attack. Ки и слот расходуются только при записи результата.</p>
+    <p>Замена одного свободного слота действия „Атака“. Ци и слот расходуются только при записи результата.</p>
     ${field("extraKi", "Дополнительная ци", values.extraKi ?? "0", {
       type: "number", min: 0, max: projection.maximumExtraKi, required: true,
     })}
-    ${field("targetHp", "Текущие HP цели", values.targetHp ?? "", {
+    ${field("targetHp", "Текущие ХП цели", values.targetHp ?? "", {
       type: "number", min: 0, required: true,
     })}
     ${field("sum", "Физическая сумма костей Боевых искусств", values.sum ?? "", {
@@ -381,8 +381,8 @@ export function updateWorkspaceGentlingProjection(session, state) {
     previewNode.textContent = completed?.ok
       ? completed.result.thresholdMet
         ? `Порог достигнут: ${completed.result.sum} ≥ ${completed.result.targetHp}.`
-        : `Порог не достигнут: ${completed.result.sum} < ${completed.result.targetHp}. При записи будут потрачены ${completed.result.cost} ци и один слот Attack.`
-      : completed?.reason ?? "Укажите HP цели и физическую сумму.";
+        : `Порог не достигнут: ${completed.result.sum} < ${completed.result.targetHp}. При записи будут потрачены ${completed.result.cost} ци и один слот действия „Атака“.`
+        : completed?.reason ?? "Укажите ХП цели и физическую сумму.";
   }
   return renderAttackWorkspace(session, state).footer;
 }
@@ -667,7 +667,7 @@ export function renderAttackWorkspace(session, state) {
       ...(sequence?.replacementResults ?? []).map((result) => ({
         slotNumber: result.slotNumber,
         markup: `<article class="workspace-record"><h3>Удар ${result.slotNumber}/${sequence.maximumAttacks} · ${escapeHtml(featureTitle("Gentling Touch"))}</h3>
-          <p>${result.dice} костей d${result.sides} · сумма ${result.sum} · цель ${result.targetHp} HP</p>
+          <p>${result.dice} костей d${result.sides} · сумма ${result.sum} · цель: ${result.targetHp} ХП</p>
           <p>${result.thresholdMet ? "Порог достигнут." : "Порог не достигнут."}</p></article>`,
       })),
     ].sort((a, b) => a.slotNumber - b.slotNumber);

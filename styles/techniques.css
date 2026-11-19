@@ -7,7 +7,14 @@
 
 .technique-list {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
   gap: 10px;
+}
+
+@media (max-width: 699px) {
+  .technique-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .technique-card {

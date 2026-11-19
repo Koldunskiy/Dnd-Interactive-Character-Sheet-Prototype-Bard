@@ -158,6 +158,9 @@ test("W04-W07, W22-W23, W26: rendered form commits one slot and next attack uses
     assert.ok(form);
     assert.match(form, /name="extraKi" type="number"[^>]*min="0"[^>]*max="\d+"[^>]*required/);
     assert.match(form, /name="targetHp" type="number"[^>]*min="0"[^>]*required/);
+    assert.match(form, /Текущие ХП цели/);
+    assert.match(form, /Замена одного свободного слота действия „Атака“/);
+    assert.doesNotMatch(form, /Текущие HP цели|свободного слота действия Attack/);
     assert.doesNotMatch(form, /name="targetHp"[^>]*max=/);
     assert.match(form, /name="sum" type="number"[^>]*min="5"[^>]*max="\d+"[^>]*required/);
     assert.match(form, new RegExp(
