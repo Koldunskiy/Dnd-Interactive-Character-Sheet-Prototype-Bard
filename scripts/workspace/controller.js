@@ -695,9 +695,15 @@ function render() {
   if (session.workspaceType === "command" && session.scenarioId?.startsWith("potion-use:") &&
       session.currentStep === "command-input") renderWorkspacePotionPreview(session, state);
   if (session.workspaceType === "command" && session.scenarioId === "external-healing" &&
-      session.currentStep === "command-input") renderWorkspaceExternalHealingPreview(session, state);
+      session.currentStep === "command-input") {
+    renderWorkspaceExternalHealingPreview(session, state);
+    updateWorkspaceFooter(renderCommandWorkspace(session, state).footer);
+  }
   if (session.workspaceType === "command" && session.scenarioId === "currency-editor" &&
-      session.currentStep === "command-input") renderWorkspaceCurrencyPreview(session, state);
+      session.currentStep === "command-input") {
+    renderWorkspaceCurrencyPreview(session, state);
+    updateWorkspaceFooter(renderCommandWorkspace(session, state).footer);
+  }
   if (session.workspaceType === "command" && session.currentStep === "roll-result") {
     renderWorkspaceConsequencePreview(session, state);
   }
@@ -1517,10 +1523,15 @@ function syncSaveCompatibility(draft, state) {
 }
 
 function switchGenericToSavingThrow(commandSession, genericDraft) {
-  let ability = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
-    .includes(genericDraft.id) ? genericDraft.id : null;
-  if (!ability && SKILL_ID_META && genericDraft.id in SKILL_ID_META) {
-    ability = SKILL_ID_META[genericDraft.id].ability;
+  let ability = null;
+  const state = getState();
+  if (["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+      .includes(genericDraft.id)) {
+    ability = genericDraft.id;
+  } else if (SKILL_ID_META && genericDraft.id in SKILL_ID_META) {
+    const breakdown = getSaraRollBreakdown(state, "ability-check", genericDraft.id);
+    ability = breakdown.ok ? breakdown.ability
+      : SKILL_ID_META[genericDraft.id].ability;
   }
   if (!ability) ability = "strength";
   const saveDraft = createIncomingEventDraft(getState(), commandSession.owner, {
@@ -1699,9 +1710,7 @@ function updateInput(field) {
   } else if (session.currentStep === "attack-input") {
     clearAttackInputFeedback();
   }
-  if (session.workspaceType === "command" && field.name === "kind") {
-    draft.id = "strength";
-  } else if (session.workspaceType === "command" &&
+  if (session.workspaceType === "command" &&
       field.name === "spellSaveSource" && field.checked) {
     draft.kind = "saving-throw";
     draft.rollMode = "advantage";
@@ -3561,12 +3570,13 @@ function startCommandAttack(kind, values, { parentFeature = null } = {}) {
 }
 
 function commandOutcomeSummary(result, id) {
-  if (id === "currency-editor" && result.outcome?.before != null && result.outcome?.after) {
+  if (id === "currency-editor" && result.outcome?.after) {
     const names = { cp: "ММ", sp: "СМ", ep: "ЭМ", gp: "ЗМ", pp: "ПМ" };
     const operation = result.outcome.mode === "set" ? "Установлен баланс"
       : result.outcome.mode === "add" ? "Добавлено" : "Списано";
     const values = ["cp", "sp", "ep", "gp", "pp"].map((key) =>
-      `${names[key]} ${result.outcome.before?.[key] ?? "—"} -> ${result.outcome.after[key]}`);
+      `${names[key]} ${result.outcome.before == null
+        ? "не заполнено" : result.outcome.before[key] ?? "не заполнено"} -> ${result.outcome.after[key]}`);
     return `${operation}. ${values.join(" · ")}.`;
   }
   if (id === "external-healing" && result.outcome?.requestedHealing != null) {

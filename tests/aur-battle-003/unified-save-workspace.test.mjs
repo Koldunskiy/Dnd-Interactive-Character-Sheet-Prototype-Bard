@@ -130,6 +130,20 @@ test("saving preset routes through the unified production handler and records dc
 test("generic ability-check to save type switch reuses the workspace without recording", () => {
   const { dialog, unsubscribe } = installWorkspaceFixture({ embeddedHost: true });
   assert.equal(openSaraBattleCommand("character-roll").ok, true);
+  const id = {
+    name: "id", value: "dexterity", type: "select-one",
+    dataset: { workspaceField: "id" },
+    closest(selector) { return selector === "[data-workspace-field]" ? this : null; },
+  };
+  id.parentElement = dialog.body;
+  dialog.fire("input", { target: id });
+  const first = {
+    name: "firstD20", value: "17", type: "number",
+    dataset: { workspaceField: "firstD20" },
+    closest(selector) { return selector === "[data-workspace-field]" ? this : null; },
+  };
+  first.parentElement = dialog.body;
+  dialog.fire("input", { target: first });
   const kind = {
     name: "kind", value: "saving-throw", type: "select-one",
     dataset: { workspaceField: "kind" },
@@ -143,6 +157,8 @@ test("generic ability-check to save type switch reuses the workspace without rec
   assert.equal(session.incomingDraft.stage, "save-input");
   assert.equal(session.incomingDraft.saveDraft.d20InputMode, "selected");
   assert.equal(session.incomingDraft.saveDraft.rollMode, "preselected");
+  assert.equal(session.incomingDraft.saveDraft.ability, "dexterity");
+  assert.equal(session.incomingDraft.saveDraft.firstD20, "17");
   assert.equal(session.incomingDraft.saveDraft.secondD20, "");
   assert.equal(getState().characterRolls?.records?.length ?? 0, 0);
   unsubscribe();

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { sara } from "../../data/sara.js";
 import { character as aurelia } from "../../data/character.js";
 import { getDerivedStats } from "../../scripts/calculations.js";
+import { createActionHandlers } from "../../scripts/actions.js";
 import {
   renderProfile,
   toggleProfileEditing,
@@ -361,9 +362,21 @@ test("Aurelia profile uses its derived ability values and effective movement wit
   };
   try {
     const state = structuredClone(aurelia);
+    state.ui ??= {};
+    state.ui.abilitiesEditable = false;
     const derived = getDerivedStats(state);
     const root = { innerHTML: "" };
     renderProfile(root, state, derived);
+    assert.doesNotMatch(root.innerHTML, /ability-card-base-editor|skill-toggle-btn/);
+    const handlers = createActionHandlers({ resetState() {} });
+    handlers["toggle-abilities-edit"](state, null);
+    assert.equal(state.ui.abilitiesEditable, true);
+    renderProfile(root, state, getDerivedStats(state));
+    assert.match(root.innerHTML, /ability-card-base-editor|skill-toggle-btn/);
+    handlers["toggle-abilities-edit"](state, null);
+    assert.equal(state.ui.abilitiesEditable, false);
+    renderProfile(root, state, getDerivedStats(state));
+    assert.doesNotMatch(root.innerHTML, /ability-card-base-editor|skill-toggle-btn/);
     assert.match(root.innerHTML, /class="ability-card-score"[^>]*>\s*19\s*</);
     assert.match(root.innerHTML, /class="ability-card-mod"[^>]*>\s*\+4\s*</);
     assert.doesNotMatch(root.innerHTML, /Характеристики[\s\S]*?STR|С учётом предмета: undefined/);

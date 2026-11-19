@@ -878,6 +878,19 @@ html[data-combat-entry-active="true"] .combat-workspace-host .workspace-entry-he
   background: var(--sara-panel, var(--panel, #17232d));
 }
 .battle-console-init-fields { min-height: 0; overflow-y: auto; }
+
+@media (max-width: 767px) {
+  .sara-combat-shell .combat-workspace-host .workspace-entry-core,
+  .sara-combat-shell .combat-workspace-host .workspace-entry-core:has(.workspace-entry-fields--pair) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sara-combat-shell .combat-workspace-host .workspace-entry-result {
+    padding: 10px 0 0;
+    border-inline-start: 0;
+    border-top: 1px solid var(--line, var(--sara-line));
+  }
+}
 .battle-console-init-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

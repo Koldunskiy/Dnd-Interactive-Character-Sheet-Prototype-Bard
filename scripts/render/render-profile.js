@@ -53,6 +53,12 @@ export function resetProfileEditing(characterId) {
   else profileEditingModes.clear();
 }
 
+function getProfilePresentationEditing(character) {
+  return character.profile?.id === "sara-velaris"
+    ? isProfileEditing(character.profile.id)
+    : Boolean(character.ui?.abilitiesEditable);
+}
+
 function getProfileDisclosureNodes(characterId) {
   if (characterId === "sara-velaris") {
     return [
@@ -168,7 +174,7 @@ function getAbilityCardsData(character, derived) {
       saveValue: save,
       saveProficient: Boolean(character.savingThrows?.[abilityId]?.proficient),
       editable: Boolean(character.ui?.abilitiesEditable),
-      profileEditing: isProfileEditing(character.profile?.id),
+      profileEditing: getProfilePresentationEditing(character),
       characterId: character.profile?.id,
       activeItemEffects: abilityId === "constitution"
         ? (character.inventory?.items ?? []).filter((item) =>
@@ -299,7 +305,7 @@ function renderSkillCard(skillId, character, derived) {
   const skillValues = getDerivedSkillMap(derived);
   const value = skillValues[skillId] ?? skillValues[SKILL_LABELS[skillId]] ?? 0;
   const editable = Boolean(character.ui?.abilitiesEditable);
-  const editing = isProfileEditing(character.profile?.id);
+  const editing = getProfilePresentationEditing(character);
   const canEdit = editing && editable;
   const status = skill.expertise ? "Экспертность" : skill.proficient ? "Владение" : "";
   return `
@@ -329,7 +335,7 @@ function renderSkillsSection(character, derived) {
   const skillValues = getDerivedSkillMap(derived);
   const passiveValue = (id) => 10 + Number(skillValues[id] ?? 0);
   const editable = Boolean(character.ui?.abilitiesEditable);
-  const editing = isProfileEditing(character.profile?.id);
+  const editing = getProfilePresentationEditing(character);
   const isSara = character.profile?.id === "sara-velaris";
   return `
     <section class="panel-section profile-skills-panel" data-sara-key="profile-skills">

@@ -27,7 +27,7 @@ import {
 } from "./rolls/controller.js";
 import { renderQuickStats, renderSidebarSummary } from "./render/render-sidebar.js";
 import { renderProfile } from "./render/render-profile.js";
-import { toggleProfileEditing } from "./render/render-profile.js";
+import { resetProfileEditing, toggleProfileEditing } from "./render/render-profile.js";
 import { renderMeleePanel } from "./render/render-melee.js";
 import {
   bindBattleConsole,
@@ -1070,6 +1070,7 @@ function configureTabs(characterId) {
 }
 
 function showPicker(message = "", isError = false) {
+  resetProfileEditing();
   const meleePanel = document.getElementById("meleePanel");
   clearBattleConsolePresentation(meleePanel);
   resetSceneUi(meleePanel);
@@ -1281,6 +1282,7 @@ function configureSaraPresentation(characterId) {
 }
 
 function completeCharacterOpen(characterId, warning = "") {
+  resetProfileEditing(characterId);
   const meleePanel = document.getElementById("meleePanel");
   clearBattleConsolePresentation(meleePanel);
   resetSceneUi(meleePanel);
@@ -1542,6 +1544,7 @@ subscribe((_state, metadata) => {
     showPersistenceWarning("");
   }
   if (metadata?.kind === "reset") {
+    resetProfileEditing(metadata.characterId);
     disposeWorkspaceOwner(getSessionContext(), "character-reset");
     clearTechniqueDrafts(metadata.characterId);
     resetPortraitForCharacter(metadata.characterId);

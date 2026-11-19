@@ -499,14 +499,29 @@ export function renderWorkspaceExternalHealingPreview(session, state) {
   const hpOutput = root.querySelector("[data-healing-hp]");
   const usefulOutput = root.querySelector("[data-healing-useful]");
   if (!hpOutput || !usefulOutput) return;
+  const raw = draft.amount ?? "";
+  if (raw === "" || !/^\d+$/.test(String(raw).trim()) ||
+      !Number.isSafeInteger(Number(raw))) {
+    session.healingPreviewValid = false;
+    hpOutput.textContent = "ХП —";
+    usefulOutput.textContent = "Введите неотрицательное целое число ХП.";
+    return;
+  }
+  if (typeof draft.source === "string" && draft.source.length > 160) {
+    session.healingPreviewValid = false;
+    hpOutput.textContent = "ХП —";
+    usefulOutput.textContent = "Источник лечения: не более 160 символов.";
+    return;
+  }
   try {
     const preview = previewExternalHealing(state, draft.amount ?? "", getDerivedStats);
+    session.healingPreviewValid = true;
     hpOutput.textContent = `ХП ${preview.hpBefore} → ${preview.hpAfter} из ${preview.maxHp}`;
     usefulOutput.textContent = `Полезное лечение: ${preview.usefulHealing} ХП.`;
   } catch (error) {
+    session.healingPreviewValid = false;
     hpOutput.textContent = "ХП —";
-    usefulOutput.textContent = error instanceof Error
-      ? error.message : "Введите корректное количество лечения.";
+    usefulOutput.textContent = "Введите корректное количество лечения.";
   }
 }
 
@@ -519,18 +534,29 @@ export function renderWorkspaceCurrencyPreview(session, state) {
   if (!summary) return;
   const amounts = Object.fromEntries(["cp", "sp", "ep", "gp", "pp"].map((key) =>
     [key, draft[`amount-${key}`] ?? ""]));
+  for (const [key, raw] of Object.entries(amounts)) {
+    if (raw === "" || !/^\d+$/.test(String(raw).trim()) ||
+        !Number.isSafeInteger(Number(raw))) {
+      session.currencyPreviewValid = false;
+      summary.textContent = `Введите неотрицательное целое число для валюты ${key.toUpperCase()}.`;
+      return;
+    }
+  }
   try {
     const preview = changeCurrency(structuredClone(state), {
       id: "currency-preview",
       mode: draft.mode ?? "set",
       amounts,
     });
+    session.currencyPreviewValid = true;
     const labels = { cp: "ММ", sp: "СМ", ep: "ЭМ", gp: "ЗМ", pp: "ПМ" };
     summary.textContent = ["cp", "sp", "ep", "gp", "pp"].map((key) =>
       `${labels[key]} ${preview.outcome.before?.[key] ?? "—"} → ${preview.outcome.after[key]}`).join(" · ");
   } catch (error) {
-    summary.textContent = error instanceof Error
-      ? error.message : "Проверьте суммы всех валют.";
+    session.currencyPreviewValid = false;
+    summary.textContent = draft.mode === "set"
+      ? "Установите допустимый баланс всех пяти валют."
+      : "Недостаточно монет или сумма некорректна.";
   }
 }
 
@@ -716,7 +742,12 @@ export function renderCommandWorkspace(session, state) {
     ? renderCharacterRollFooter(session)
     : session.currentStep === "command-input"
     ? `<button type="button" class="btn btn--primary" data-workspace-action="apply-command"
-        ${session.submitting || session.appliedUnsaved || unavailableReason ? "disabled" : ""}>${session.scenarioId?.startsWith("potion-use:")
+        ${session.submitting || session.appliedUnsaved || unavailableReason ||
+          (session.scenarioId === "external-healing" &&
+            (session.healingPreviewValid !== true ||
+             session.rawInputsByStep?.[session.currentStepKey]?.confirmed !== true)) ||
+          (session.scenarioId === "currency-editor" &&
+            session.currencyPreviewValid !== true) ? "disabled" : ""}>${session.scenarioId?.startsWith("potion-use:")
           ? "Применить зелье · записать итог" : "Подтвердить и записать"}</button>`
     : session.currentStep === "missile-return"
       ? `<button type="button" class="btn btn--primary" data-workspace-action="submit-missile-return"

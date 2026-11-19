@@ -9,6 +9,7 @@ import {
 import {
   FixtureForm,
   fireWorkspaceAction,
+  fireWorkspaceInput,
   installWorkspaceFixture,
 } from "./workspace-fixture.mjs";
 
@@ -40,6 +41,16 @@ test("currency workspace preserves flat drafts and separate mode values", () => 
   assert.equal(session.rawInputsByStep[session.currentStepKey]["amount-gp"], "15");
   assert.match(dialog.body.innerHTML, /name="amount-gp"/);
   assert.match(dialog.body.innerHTML, /value="15"/);
+  fireWorkspaceInput(dialog, "amount-gp", "5");
+  session = getWorkspaceSessionForTests();
+  assert.equal(session.rawInputsByStep[session.currentStepKey]["amount-gp"], "5");
+  fireWorkspaceInput(dialog, "mode", "add");
+  session = getWorkspaceSessionForTests();
+  assert.equal(session.rawInputsByStep[session.currentStepKey]["amount-gp"], "0");
+  fireWorkspaceInput(dialog, "amount-gp", "7");
+  fireWorkspaceInput(dialog, "mode", "set");
+  session = getWorkspaceSessionForTests();
+  assert.equal(session.rawInputsByStep[session.currentStepKey]["amount-gp"], "5");
   unsubscribe();
 });
 

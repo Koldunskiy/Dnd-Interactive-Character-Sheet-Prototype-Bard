@@ -127,6 +127,7 @@ test("battle cards use compact reference composition and keep full spell details
   });
   const toolsMarkup = renderBattleConsole(structuredClone(sara), tools);
   assert.equal((toolsMarkup.match(/data-battle-menu="home">Назад/g) ?? []).length, 1);
+  assert.match(toolsMarkup, /data-battle-command-open="external-healing"/);
 });
 
 test("Sara exploration home keeps initiative closed until explicitly opened", () => {
@@ -204,6 +205,7 @@ test("battle cards and global surfaces have wrapping and theme-token safeguards"
   assert.match(battleCss, /\[data-sara-task-dock\]\[data-entry-active="true"\] \.sara-hud__secondary/);
   assert.match(battleCss, /--sara-bg:\s*#121d29/);
   assert.match(battleCss, /--sara-active:\s*#263a38/);
+  assert.match(battleCss, /@media \(max-width:\s*767px\)[\s\S]*?\.sara-combat-shell \.combat-workspace-host \.workspace-entry-core[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   assert.match(workspaceCss, /\.action-workspace\[open\]\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   assert.match(workspaceCss, /\.action-workspace__body\s*\{[\s\S]*?overflow-y:\s*auto/);
   assert.match(workspaceCss, /\.workspace-nav\s*\{[\s\S]*?flex-wrap:\s*wrap/);
