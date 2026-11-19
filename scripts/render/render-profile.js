@@ -713,3 +713,5 @@ export function renderProfile(root, character, derived) {
   setPanelMarkup(root, markup, characterId);
   applyProfileDisclosureState(disclosureState, characterId);
 }
+
+export { renderBackgroundDetails, SKILL_LABELS };
